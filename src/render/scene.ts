@@ -11,7 +11,7 @@ import { createWater, type WaterView } from './water';
 
 const GRID_CELL = 5; // TUNING GUESS: grid cell size, m (grid snaps to multiples of this)
 const GRID_CELLS = 80; // TUNING GUESS: grid cells per side
-const FOV_DEG = 75; // TUNING GUESS
+const FOV_DEG = 85; // User-selected vertical cockpit field of view, degrees
 const FOG_NEAR = 400; // visual estimate, m
 const FOG_FAR = 2500; // visual estimate, m
 const MAX_PIXEL_RATIO = 2; // quality cap for high-DPI laptop screens

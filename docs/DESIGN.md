@@ -25,7 +25,7 @@ Keep the boat data-driven so that is possible later.
   separate big-wave/ripple multipliers, broad period and direction controls are in the debug menu.
   Spectrum, wind scaling and response tuning are TUNING GUESS, not a calibrated sea-state model.
 - No planing, no capsizing. Heel clamps at a limit.
-- First-person camera only.
+- First-person camera only; vertical cockpit field of view 85 degrees.
 - Controls: mouse look, keyboard for tiller / sheet / hiking.
 - Navigation: compass plus a paper-style chart with a drifting dead-reckoning marker,
   corrected by bearings to buoys.
