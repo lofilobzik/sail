@@ -33,6 +33,8 @@ export interface Rig {
   vang: THREE.Line;
   /** Boom-frame point -> heel-group local for boom angle b. */
   fromBoom(p: THREE.Vector3, b: number, out: THREE.Vector3): THREE.Vector3;
+  /** Heel-group local direction -> boom-frame direction for boom angle b. */
+  toBoomDir(v: THREE.Vector3, b: number, out: THREE.Vector3): THREE.Vector3;
 }
 
 function block(material: THREE.Material): THREE.Mesh {
@@ -127,6 +129,10 @@ export function createRig(layout: BoatLayout, parent: THREE.Group): Rig {
     fromBoom(p, b, out) {
       qSwing.setFromAxisAngle(Y, b).premultiply(qTilt).multiply(qUntilt);
       return out.copy(p).applyQuaternion(qSwing).add(mastFrame.position);
+    },
+    toBoomDir(v, b, out) {
+      qSwing.setFromAxisAngle(Y, b).premultiply(qTilt).multiply(qUntilt).invert();
+      return out.copy(v).applyQuaternion(qSwing);
     },
   };
 }

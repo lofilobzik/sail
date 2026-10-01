@@ -29,6 +29,9 @@ export interface BoatPose {
   apparentU: number;
   apparentV: number;
   luffAmount: number;
+  stallAmount: number;
+  /** Real time since the last rendered frame, s (drives the cloth). */
+  dt: number;
 }
 
 export interface BoatMesh {
@@ -73,6 +76,7 @@ export function createBoatMesh(model: BoatModel): BoatMesh {
     mid: new THREE.Vector3(),
     vang: new THREE.Vector3(),
     flow: new THREE.Vector3(),
+    sailWind: new THREE.Vector3(),
   };
   const fromBoom = rig.fromBoom;
 
@@ -86,8 +90,11 @@ export function createBoatMesh(model: BoatModel): BoatMesh {
       rig.boomPivot.rotation.y = pose.boom;
       rudder.pivot.rotation.y = -pose.rudderAngle;
 
-      const boomMinRad = (model.cfg.rig.boomMinDeg * Math.PI) / 180;
-      sail.update(Math.max(-1, Math.min(1, pose.boom / boomMinRad)), pose.luffAmount);
+      bodyToLocal(pose.apparentU, pose.apparentV, 0, tmp.flow);
+      const aws = tmp.flow.length();
+      if (aws > 1e-6) rig.toBoomDir(tmp.flow, pose.boom, tmp.sailWind).divideScalar(aws);
+      else tmp.sailWind.set(0, 0, 1);
+      sail.update({ dt: pose.dt, luffAmount: pose.luffAmount, stallAmount: pose.stallAmount, windDir: tmp.sailWind, apparentSpeed: aws });
       sailor.update({ crewY: pose.crewY, rudderAngle: pose.rudderAngle, sheet: pose.sheet });
 
       fromBoom(rig.boomEndBlock, pose.boom, tmp.end);
@@ -99,7 +106,6 @@ export function createBoatMesh(model: BoatModel): BoatMesh {
       setLine(rig.vang, [rig.vangTang, fromBoom(rig.vangBoomPoint, pose.boom, tmp.vang)]);
 
       // Masthead indicator: fin (+z) downwind along the apparent flow, arrow into the wind.
-      bodyToLocal(pose.apparentU, pose.apparentV, 0, tmp.flow);
       if (tmp.flow.lengthSq() > 1e-6) rig.indicator.rotation.y = Math.atan2(tmp.flow.x, tmp.flow.z);
     },
   };

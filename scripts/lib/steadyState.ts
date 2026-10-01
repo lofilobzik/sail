@@ -25,6 +25,7 @@ export interface SteadyResult {
   awsKn: number;
   awaDeg: number;
   luffAmount: number;
+  stallAmount: number;
   converged: boolean;
   simSeconds: number;
 }
@@ -44,7 +45,8 @@ export function sailToSteadyState(boat: BoatModel, cfg: SimConfig, twaDeg: numbe
   const pilot = createAutopilot(heading, sheet, cfg.layers.yaw);
   const windowSteps = Math.round(WINDOW / cfg.dt);
 
-  let sum = { speed: 0, vmg: 0, leeway: 0, heel: 0, hike: 0, rudder: 0, aws: 0, awa: 0, luff: 0 };
+  const zero = () => ({ speed: 0, vmg: 0, leeway: 0, heel: 0, hike: 0, rudder: 0, aws: 0, awa: 0, luff: 0, stall: 0 });
+  let sum = zero();
   let prevMean = Number.NaN;
   let n = 0;
   let converged = false;
@@ -64,25 +66,17 @@ export function sailToSteadyState(boat: BoatModel, cfg: SimConfig, twaDeg: numbe
     sum.aws += last.apparent.speed;
     sum.awa += Math.abs(last.apparent.angle);
     sum.luff += last.sail?.luffAmount ?? 0;
+    sum.stall += last.sail?.stallAmount ?? 0;
     n++;
     if (i % windowSteps === 0) {
-      mean = {
-        speed: sum.speed / n,
-        vmg: sum.vmg / n,
-        leeway: sum.leeway / n,
-        heel: sum.heel / n,
-        hike: sum.hike / n,
-        rudder: sum.rudder / n,
-        aws: sum.aws / n,
-        awa: sum.awa / n,
-        luff: sum.luff / n,
-      };
+      const count = n;
+      mean = Object.fromEntries(Object.entries(sum).map(([k, val]) => [k, val / count])) as typeof sum;
       if (state.t >= MIN_TIME && Math.abs(mean.speed - prevMean) < TOLERANCE) {
         converged = true;
         break;
       }
       prevMean = mean.speed;
-      sum = { speed: 0, vmg: 0, leeway: 0, heel: 0, hike: 0, rudder: 0, aws: 0, awa: 0, luff: 0 };
+      sum = zero();
       n = 0;
     }
   }
@@ -98,6 +92,7 @@ export function sailToSteadyState(boat: BoatModel, cfg: SimConfig, twaDeg: numbe
     awsKn: mean.aws / KNOT,
     awaDeg: mean.awa / DEG,
     luffAmount: mean.luff,
+    stallAmount: mean.stall,
     converged,
     simSeconds: state.t,
   };

@@ -140,8 +140,31 @@
       "headWidth": 0.1,
       "camberDepthFrac": 0.1,
       "camberPosFrac": 0.4,
-      "chordSegments": 8,
-      "heightSegments": 12
+      "chordPoints": 12,
+      "heightPoints": 20
+    },
+    "cloth": {
+      "substep": 0.008333,
+      "iterations": 10,
+      "damping": 0.985,
+      "gravity": 9.81,
+      "pressure": 40,
+      "flutter": 70,
+      "flutterHz": 3.5,
+      "flutterWaveNumber": 4.0,
+      "flagDrag": 25,
+      "bendStiffness": 0.25,
+      "maxStep": 0.05,
+      "referenceAws": 4.0,
+      "maxWindScale": 2.0
+    },
+    "telltales": {
+      "luff": [[0.16, 0.33], [0.16, 0.58]],
+      "leech": [[1.0, 0.5], [1.0, 0.76]],
+      "segments": 4,
+      "length": 0.22,
+      "width": 0.025,
+      "surfaceOffset": 0.006
     },
     "daggerboard": { "topAboveDeck": 0.12, "tipRadius": 0.06 },
     "rudder": {
@@ -221,7 +244,9 @@
     "visual.hullSections.deckHalfBeamFrac": "Deck half-beam as a fraction of beam/2, read off the hull outline in the ILCA hull fittings diagram D.4.3 (docs/ilca-class-rules.pdf p27) at 250 dpi. APPROXIMATE: the diagram is 'only a guide' and its overall width is about 2.5% wider than 1.37 m relative to its length, so values are normalised to its own maximum (at 38% of LOA from the transom).",
     "visual.hullSections.keelZ/sheerZ": "VISUAL ESTIMATE, constrained to: canoe-body draft Tc 0.094 m (Day Table 2), transom just touching the waterline (Day 2017 p6, level trim), waterline ending at Lwl 3.81 m from the transom (keelZ 0 at xFrac 0.90), hull depth 0.375 m just forward of the mast (web source, see hull.depthDeckToKeel) and freeboard 0.28 m at the deepest section. Checked (milestone 3): the lofted hull gives Bwl 1.116 m (sim 1.109), Cm 0.765 (Day Table 2: 0.757), Cp 0.559 (0.552) and a displaced volume 7% above the sim's.",
     "visual.hullSections.bilgeExponent": "VISUAL ESTIMATE: superellipse exponent of each half-section (2 = ellipse, larger = boxier). 2.8 at the widest stations makes the lofted waterline beam about 0.81 of the deck beam, close to Bwl/beam = 1.109/1.37 from Day Table 2.",
-    "visual.hullStations/sectionPoints/sail.chordSegments/heightSegments": "Mesh resolution (triangle budget), not dimensions.",
+    "visual.hullStations/sectionPoints/sail.chordPoints/heightPoints": "Mesh resolution (triangle budget), not dimensions. Cloth grid 12 x 20 points, DESIGN.md: around 20 x 12.",
+    "visual.cloth": "VISUAL ESTIMATE: Verlet cloth gains (accelerations in m/s^2). pressure 40 is of the order of dCp q / areal mass at 4 m/s apparent wind (1 x 10 Pa / 0.25 kg/m^2).",
+    "visual.telltales": "VISUAL ESTIMATE: luff telltales at 16% chord, 1/3 and 0.58 of the height, both sides; leech ribbons at 1/2 and 3/4 height. Positions as (chord fraction, height fraction) on the cloth. 22 x 2.5 cm, about twice real wool size so they read on screen.",
     "visual.cockpit.foreFromTransom/aftFromTransom/halfWidth": "Read off the ILCA hull fittings diagram D.4.3 (p27), APPROXIMATE (diagram is 'only a guide').",
     "visual.cockpit.depth/cornerRadius": "VISUAL ESTIMATE.",
     "visual.mast.lowerLength/upperLength/upperInsert/vangTangAboveButt": "ILCA class rules p33: ILCA 7 lower mast max 2865, upper mast max 3600 with collar 305 +/- 5 from its lower end (taken as the insertion depth), lowest vang tang fitting min 445 from the butt.",

@@ -19,7 +19,7 @@ const TILE_LABELS = {
   lee: 'LEEWAY',
   tiller: 'TILLER',
   sheet: 'SHEET',
-  luff: 'LUFF',
+  luff: 'LUFF / STALL',
 } as const;
 type TileKey = keyof typeof TILE_LABELS;
 
@@ -45,6 +45,7 @@ export class TestHud {
   private readonly root = document.createElement('div');
   private readonly tiles: Record<TileKey, Tile>;
   private readonly luffBar = document.createElement('div');
+  private readonly stallBar = document.createElement('div');
   private readonly perf = document.createElement('div');
   private lastUpdate = -Infinity;
 
@@ -81,11 +82,16 @@ export class TestHud {
     sub.style.cssText = 'font-size:14px;opacity:0.85;white-space:nowrap;min-height:17px;';
     el.append(l, value);
     if (withBar) {
-      const track = document.createElement('div');
-      track.style.cssText = 'height:10px;background:rgba(255,255,255,0.2);border-radius:5px;margin:4px 0 2px;';
-      this.luffBar.style.cssText = 'height:100%;width:0;border-radius:5px;background:#ffcc33;';
-      track.appendChild(this.luffBar);
-      el.appendChild(track);
+      for (const [bar, color] of [
+        [this.luffBar, '#ffcc33'],
+        [this.stallBar, '#ff5a3c'],
+      ] as const) {
+        const track = document.createElement('div');
+        track.style.cssText = 'height:8px;background:rgba(255,255,255,0.2);border-radius:4px;margin:3px 0 1px;';
+        bar.style.cssText = `height:100%;width:0;border-radius:4px;background:${color};`;
+        track.appendChild(bar);
+        el.appendChild(track);
+      }
     }
     el.appendChild(sub);
     this.root.appendChild(el);
@@ -107,6 +113,7 @@ export class TestHud {
     const tws = Math.hypot(d.trueWind.x, d.trueWind.z);
     const rudder = d.controls.tiller * this.model.cfg.rudder.maxAngleDeg * DEG;
     const luff = d.sail?.luffAmount ?? 0;
+    const stall = d.sail?.stallAmount ?? 0;
 
     this.set('hdg', `${(wrap2Pi(s.heading) / DEG).toFixed(0).padStart(3, '0')}°`, 'true');
     this.set('spd', `${(d.speed / KNOT).toFixed(2)}`, 'kn');
@@ -117,8 +124,10 @@ export class TestHud {
     this.set('lee', `${deg(d.leeway, 1)}${side(d.leeway)}`, 'sliding toward');
     this.set('tiller', `${deg(rudder)}${side(rudder)}`, `${(d.controls.tiller * 100).toFixed(0)}%`);
     this.set('sheet', `${(d.controls.sheet * 100).toFixed(0)}%`, `eased · boom ${deg(s.boom)}`);
-    this.set('luff', luff.toFixed(2), luff > 0.5 ? 'luffing' : luff > 0.05 ? 'soft' : 'drawing');
+    const state = luff > 0.5 ? 'luffing' : stall > 0.5 ? 'stalled' : luff > 0.05 || stall > 0.05 ? 'soft' : 'attached';
+    this.set('luff', `${luff.toFixed(2)} / ${stall.toFixed(2)}`, state);
     this.luffBar.style.width = `${(luff * 100).toFixed(0)}%`;
+    this.stallBar.style.width = `${(stall * 100).toFixed(0)}%`;
     this.perf.textContent =
       `frame ${perf.frameMs.toFixed(1)} ms · cpu ${perf.cpuMs.toFixed(2)} ms · ` +
       `${(perf.triangles / 1000).toFixed(1)}k tris · ${perf.calls} calls`;

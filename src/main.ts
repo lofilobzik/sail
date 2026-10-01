@@ -90,6 +90,8 @@ function frame(now: number): void {
     apparentU: diagnostics.apparent.u,
     apparentV: diagnostics.apparent.v,
     luffAmount: diagnostics.sail?.luffAmount ?? 0,
+    stallAmount: diagnostics.sail?.stallAmount ?? 0,
+    dt: frameSeconds,
     lookYaw: look.yaw,
     lookPitch: look.pitch,
   };

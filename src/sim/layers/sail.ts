@@ -38,6 +38,13 @@ export interface SailCoefficients {
   cdv: number;
   /** 0 = drawing, 1 = fully luffing. */
   luffAmount: number;
+  /**
+   * Visual diagnostic, does not affect forces: 0 = flow attached on the leeward side,
+   * 1 = fully separated. Grows with the angle of attack beyond the max-lift angle
+   * (over-sheeted, or boom at its limit on a run), same shape and width as the stall
+   * falloff: 1 - 1 / (1 + (excess / stallWidth)^2).
+   */
+  stallAmount: number;
   /** Boom angle minus best-trim boom angle, rad (+ = eased too far). */
   trimError: number;
   /** Angle of attack, rad: apparent wind angle on the sail side minus boom angle. */
@@ -73,6 +80,7 @@ export interface SailResult {
   cdi: number;
   alpha: number;
   luffAmount: number;
+  stallAmount: number;
   trimError: number;
   /** Apparent wind in the heeled plane. */
   awsHeeled: number;
@@ -145,7 +153,10 @@ export function sailCoefficients(boat: BoatModel, betaW: number, delta: number):
     cdv = kStall * cdv + (1 - kStall) * plate * Math.sin(alpha) ** 2;
   }
 
-  return { cl, cdv, luffAmount, trimError, alpha };
+  const excess = (alpha - alphaOpt) / (rig.stallWidthDeg * DEG);
+  const stallAmount = excess > 0 ? 1 - 1 / (1 + excess * excess) : 0;
+
+  return { cl, cdv, luffAmount, stallAmount, trimError, alpha };
 }
 
 function windage(
@@ -262,6 +273,7 @@ export function sailForces(
     cdi,
     alpha: coef.alpha,
     luffAmount: coef.luffAmount,
+    stallAmount: coef.stallAmount,
     trimError: coef.trimError,
     awsHeeled,
     awaHeeled,

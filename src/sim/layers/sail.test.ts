@@ -79,6 +79,17 @@ describe('L2 sail coefficients (best-trim envelope over Day 2017 Table 1)', () =
   it('luffs when pinching head to wind even with the sheet in', () => {
     expect(sailCoefficients(boat, 4 * DEG, rig.boomMinDeg * DEG).luffAmount).toBeGreaterThan(0.5);
   });
+
+  it('stallAmount: zero at best trim, grows when over-sheeted and on a run with the boom at its limit', () => {
+    for (const beta of [28, 60, 90, 120]) expect(sailCoefficients(boat, beta * DEG, bestBoom(beta * DEG)).stallAmount).toBe(0);
+    const beta = 90 * DEG;
+    const over10 = sailCoefficients(boat, beta, bestBoom(beta) - 10 * DEG).stallAmount;
+    const over30 = sailCoefficients(boat, beta, bestBoom(beta) - 30 * DEG).stallAmount;
+    expect(over10).toBeGreaterThan(0);
+    expect(over30).toBeGreaterThan(over10);
+    expect(sailCoefficients(boat, beta, bestBoom(beta) + 10 * DEG).stallAmount).toBe(0); // eased: luffing side
+    expect(sailCoefficients(boat, Math.PI, rig.boomMaxDeg * DEG).stallAmount).toBeGreaterThan(0.9); // dead run
+  });
 });
 
 describe('L2 boom kinematics', () => {

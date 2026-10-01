@@ -34,4 +34,11 @@ export default tseslint.config(
       'no-restricted-globals': ['error', 'window', 'document', 'navigator', 'requestAnimationFrame', 'performance'],
     },
   },
+  {
+    // Cloth and telltale math stays testable under Node without Three.js.
+    files: ['src/render/cloth/**/*.ts'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [{ group: ['three', 'three/*'], message: 'render/cloth must not import Three.js.' }] }],
+    },
+  },
 );

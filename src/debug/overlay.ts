@@ -87,7 +87,7 @@ export class DebugOverlay {
       ? `CL ${f3(sl.cl)}  CD ${f3(sl.cd)}  CDv ${f3(sl.cdv)}  CDi ${f3(sl.cdi)}  alpha ${deg(sl.alpha)}\n` +
         `lift ${n(sl.lift)}  drag ${n(sl.drag)}  drive fx ${n(sl.fx)}  side fy ${n(sl.fy)}\n` +
         `heel M ${nm(sl.heelMoment)}  yaw M ${nm(sl.yawMoment)}\n` +
-        `trim err ${deg(sl.trimError)}  luff ${f3(sl.luffAmount)}  windage drag ${n(sl.windage.drag)}`
+        `trim err ${deg(sl.trimError)}  luff ${f3(sl.luffAmount)}  stall ${f3(sl.stallAmount)}  windage drag ${n(sl.windage.drag)}`
       : OFF;
 
     const fo = d.foils;

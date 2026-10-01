@@ -93,7 +93,7 @@ console.log(`Disabled layers: ${offLayers.join(', ') || 'none'}; disabled terms:
 console.log(`Models: ${JSON.stringify(base.models)}${values.set ? `; boat overrides: ${values.set}` : ''}`);
 
 const rows: string[] = [
-  'tws_kn,twa_deg,boat_speed_kn,vmg_kn,leeway_deg,heel_deg,sheet,hike,rudder_deg,aws_kn,awa_deg,luff,converged,sim_s',
+  'tws_kn,twa_deg,boat_speed_kn,vmg_kn,leeway_deg,heel_deg,sheet,hike,rudder_deg,aws_kn,awa_deg,luff,stall,converged,sim_s',
 ];
 const curves = [];
 const f = (x: number, d = 2) => x.toFixed(d);
@@ -105,17 +105,17 @@ for (const tws of twsList) {
     const r = bestTrim(boat, cfg, twa);
     results.push(r);
     rows.push(
-      [tws, twa, f(r.speedKn, 3), f(r.vmgKn, 3), f(r.leewayDeg), f(r.heelDeg), f(r.sheet, 3), f(r.hike), f(r.rudderDeg), f(r.awsKn), f(r.awaDeg, 1), f(r.luffAmount), r.converged, f(r.simSeconds, 0)].join(','),
+      [tws, twa, f(r.speedKn, 3), f(r.vmgKn, 3), f(r.leewayDeg), f(r.heelDeg), f(r.sheet, 3), f(r.hike), f(r.rudderDeg), f(r.awsKn), f(r.awaDeg, 1), f(r.luffAmount), f(r.stallAmount), r.converged, f(r.simSeconds, 0)].join(','),
     );
   }
   curves.push({ label: `TWS ${tws} kn`, points: results.map((r) => ({ twaDeg: r.twaDeg, speedKn: r.speedKn })) });
 
   console.log(`\nTWS ${tws} kn`);
   if (!values.quiet) {
-    console.log(' TWA  speed  VMG   leeway heel  sheet hike rudder AWA  luff conv');
+    console.log(' TWA  speed  VMG   leeway heel  sheet hike rudder AWA  luff stall conv');
     for (const r of results) {
       console.log(
-        `${f(r.twaDeg, 0).padStart(4)} ${f(r.speedKn).padStart(6)} ${f(r.vmgKn).padStart(5)} ${f(r.leewayDeg, 1).padStart(6)} ${f(r.heelDeg, 1).padStart(5)} ${f(r.sheet).padStart(5)} ${f(r.hike).padStart(4)} ${f(r.rudderDeg, 1).padStart(6)} ${f(r.awaDeg, 0).padStart(4)} ${f(r.luffAmount).padStart(5)} ${r.converged ? 'y' : 'n'}`,
+        `${f(r.twaDeg, 0).padStart(4)} ${f(r.speedKn).padStart(6)} ${f(r.vmgKn).padStart(5)} ${f(r.leewayDeg, 1).padStart(6)} ${f(r.heelDeg, 1).padStart(5)} ${f(r.sheet).padStart(5)} ${f(r.hike).padStart(4)} ${f(r.rudderDeg, 1).padStart(6)} ${f(r.awaDeg, 0).padStart(4)} ${f(r.luffAmount).padStart(5)} ${f(r.stallAmount).padStart(5)} ${r.converged ? 'y' : 'n'}`,
       );
     }
   }
