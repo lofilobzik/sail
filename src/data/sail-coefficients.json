@@ -1,0 +1,12 @@
+{
+  "source": "docs/day-2017-performance-prediction-sailing-dinghies.pdf, PDF page 3 (journal p69), Table 1: ORC \"Low Lift\" mainsail coefficients. Transcribed from the page image rendered at 300 dpi, not the text layer. All values legible; none unclear.",
+  "notes": [
+    "Indexed by apparent wind angle beta in degrees, not by angle of attack.",
+    "The drag row is the VISCOUS drag coefficient CDv only. Day Eq. 1 (PDF p4) adds parasitic drag CDp and lift-related drag CL^2 (1/(pi ARe) + CDs) on top.",
+    "Day p3: interpolation between the tabulated angles is by cubic spline.",
+    "Coefficients are based on sail cloth area (Day p3)."
+  ],
+  "betaDeg": [0, 7, 9, 12, 28, 60, 90, 120, 150, 180],
+  "cl": [0.0, 0.862, 1.052, 1.164, 1.347, 1.239, 1.125, 0.838, 0.296, -0.112],
+  "cdv": [0.043, 0.026, 0.023, 0.023, 0.033, 0.113, 0.383, 0.969, 1.316, 1.345]
+}
