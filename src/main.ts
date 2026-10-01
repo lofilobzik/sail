@@ -112,7 +112,7 @@ function frame(now: number): void {
   };
   view.render(lastPose);
 
-  if (overlay.visible) vectors.update(diagnostics, x, z, overlay.arrows);
+  if (overlay.visible) vectors.update(diagnostics, view.boat.yaw.position, overlay.arrows);
   else vectors.hideAll();
   overlay.update(diagnostics, curr);
   const info = view.renderer.info.render;

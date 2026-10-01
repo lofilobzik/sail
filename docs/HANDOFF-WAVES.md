@@ -1,4 +1,4 @@
-# Water rendering handoff: blinking repair verified
+# Water rendering handoff: blinking repair and floating origin verified
 
 ## Current status
 
@@ -6,7 +6,10 @@ The intermittent snap-related water blinking reported after `cb6b58b` has been i
 The original physical wave implementation is still intact. This document supersedes the earlier
 unresolved Opus handoff; see `PHYSICS.md` L7 for detailed model and verification notes.
 
-The investigation browser has been closed and the `sail-water-repair` preview server stopped.
+Render-side floating origin is also implemented. It preserves logical simulation coordinates and
+world-anchored waves while keeping rendered coordinates and shader phase inputs small.
+
+The investigation browsers have been closed and the preview servers stopped.
 The temporary `window.__probe` hook left by Opus was removed. No unrelated reference PDFs/text
 were included in the repair.
 
@@ -35,14 +38,29 @@ The repair:
 - Keep CPU physics unfiltered. The shared GLSL kernel takes a footprint; zero footprint reproduces
   the physical model, and the actual near-boat cell footprint preserves it across allowed controls.
 
+## Floating-origin contract
+
+- `SceneView.origin` is the interpolated boat's logical x/z position, updated every frame.
+  There is no distance threshold or discrete origin jump. Do not rebase simulation/navigation state.
+- Boat x/z and water centre are render-local zero; cockpit/outside cameras and force arrows stay nearby.
+  Fixed buoy transforms compose with their rebased parent in JS doubles before GPU upload/culling.
+  The debug grid stays logically snapped but subtracts the render origin.
+- `wavePhaseAt` folds each component's logical-origin and rendered-time phase in double precision,
+  then reduces it to [-pi, pi]. GLSL adds only nearby label phase. `waveMotion` now holds
+  `(reduced phase, choppiness)`; `gerstnerWave` no longer takes a time argument.
+- Keep CPU wave samples, orbital flow, roll/pitch response and integration unchanged.
+- Future wakes should store history in logical world coordinates, subtracting the current render
+  origin before filling GPU buffers. Do not attach the historical trail to the moving boat.
+
 ## File map
 
 - `src/render/water.ts`: grid generation, continuous recentering, geometry/pixel footprint filtering,
-  per-fragment normals, antialiased sun glint.
-- `src/sim/waves.ts`: unchanged CPU sampling; shared GLSL now accepts the render footprint.
+  per-fragment normals, antialiased sun glint, reduced phase-uniform updates.
+- `src/sim/waves.ts`: unchanged CPU sampling; reduced-origin phase helper and render-local GLSL kernel.
 - `src/data/waves.json`: grid/filter choices plus original wave spectrum and response parameters.
-- `src/render/scene.ts`: water creation/update, boat surface-height following, snapped debug grid.
-- `src/main.ts`: normal fixed-step/interpolated render loop; no temporary debug exposure.
+- `src/render/scene.ts`: shared render origin, local boat/cameras/water, rebased buoys/debug grid.
+- `src/render/vectors.ts`: true-wind arrow takes the render-local boat position; body arrows follow it.
+- `src/main.ts`: normal fixed-step/interpolated render loop and local arrow updates; no debug exposure.
 - `src/sim/step.ts` and `layers/foils.ts`: original slope-driven rocking and depth-decayed orbital inflow.
 - `src/debug/overlay.ts`: existing waves toggle, amplitude, primary period, and propagation direction.
 
@@ -72,6 +90,26 @@ Polar comparison: `/tmp/sail-flat-before` vs `/tmp/sail-water-repair-polar`.
 These are temporary local evidence, not committed fixtures. GPU/image checks ran as throwaway browser
 experiments; the ordinary test suite alone does not verify visual continuity.
 
+### Floating-origin checks
+
+- Reproduced visible distant-water precision loss at `(1e9, -1e9)` m before the change.
+- 7,344 GPU/CPU samples through +/-1e9 m and 1e7 s; max position/normal-component errors
+  1.36e-6 m / 1.16e-6, no WebGL error. Allowed controls, near-boat footprints and phase wraps covered.
+- 324 fixed-world/render-origin image comparisons: worst mean RGB change 0.000211 (0-255 scale),
+  at most six pixels above two levels; not bit-exact, with isolated differences up to 33 levels.
+- Three 120-frame distant moving-water sequences cover default and control extremes. Nine former
+  snap crossings and 25 phase wraps have no boundary spikes; worst neighbor ratios 0.9992 / 1.0007.
+- 24 consumer checks preserve buoy anchors, nearby cameras/arrows, heave and flat-grid placement.
+  Rendering leaves simulation state/config/diagnostics unchanged.
+- Actual-game cockpit/outside views, zero amplitude, wave toggle and live period/direction controls
+  exercised. A six-second actual-game recording was captured. No reported shader/JS errors.
+- Original 6/7/8/9 kn waves-off CSV/SVG still match byte-for-byte; 75 tests, lint/typecheck/build pass.
+  The existing Vite bundle-size warning remains.
+
+Local floating-origin evidence: `/tmp/sail-floating-origin-water.webm`,
+`/tmp/sail-floating-origin-game.webm`, `/tmp/sail-floating-origin-polar`.
+No browser harness or temporary app hook was added to the repository.
+
 ## Rechecking a future renderer change
 
 For a clean visual comparison, import `createWater` into an isolated scene and render only water/sky:
@@ -91,8 +129,9 @@ V switches cockpit/outside view, H toggles test HUD, F3/Backquote opens wave con
 
 The far field is a deliberately filtered approximation, not the exact unfiltered CPU surface.
 The reflected sky is still a color gradient, not scene/environment reflections. No new empirical
-Laser calibration, long-session/floating-origin proof, or target-laptop GPU performance qualification.
-A floating origin has not been implemented.
+Laser calibration or target-laptop GPU performance qualification. Distant coordinates and long elapsed
+times were exercised synthetically, not through a multi-month session. CPU doubles remain finite;
+the floating origin is not an unlimited-distance guarantee.
 
 Wave defaults remain TUNING GUESS. Primary wave A = 0.12 m, L = 12 m, period about 2.77 s; two smaller
 crossing components. The existing physical response has no measured Laser wave data: local-slope

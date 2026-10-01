@@ -49,9 +49,10 @@ export class ForceVectors {
     for (const a of [this.trueWind, this.apparent, this.sail, this.board, this.rudder, this.hull]) a.visible = false;
   }
 
-  update(d: Diagnostics, boatX: number, boatZ: number, show: ArrowVisibility): void {
+  /** Boat position is render-local; diagnostics and wind directions remain logical-world. */
+  update(d: Diagnostics, boatPosition: Readonly<THREE.Vector3>, show: ArrowVisibility): void {
     const m = this.model;
-    this.origin.set(boatX, this.mastTop, boatZ);
+    this.origin.set(boatPosition.x, boatPosition.y + this.mastTop, boatPosition.z);
     this.place(this.trueWind, show.L1, this.dir.set(d.trueWind.x, 0, d.trueWind.z), METERS_PER_MPS);
 
     bodyToLocal(m.xMast, 0, this.mastTop, this.origin);

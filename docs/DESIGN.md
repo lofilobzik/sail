@@ -61,7 +61,11 @@ Rules:
   Do not recall coefficient tables from memory.
 - Water follows the boat continuously, but wave phase stays anchored to world coordinates.
   Only the flat-water debug grid snaps. Filter rendering detail to mesh/pixel resolution.
-  Add a **floating origin** if long-distance precision jitter appears; it is not implemented yet.
+  A **render-side floating origin** follows the interpolated boat every frame, without threshold jumps.
+  Simulation/navigation coordinates stay in logical-world doubles. Boat, cameras, water and debug
+  arrows use small render-local coordinates; fixed buoy transforms are rebased before GPU upload.
+  Reduce each wave's origin/time phase in double precision before the shader adds local spatial phase.
+  Future wake history must stay world-anchored: subtract this same origin before writing GPU vertices.
 
 ## Controls
 
@@ -126,8 +130,8 @@ One milestone per session. Commit after each working one.
    is visible: a flat plane that follows the boat on a snapped grid, a plain sky colour, and a few buoys.
 4. **Cloth sail:** visual cloth driven by `luffAmount`, telltales, masthead fly.
 5. **Water and sky:** shared Gerstner waves with physical rocking and orbital foil cross-flow implemented.
+   Render-side floating origin and precision-safe world-anchored wave phases implemented.
    Analytic sky and quality setting remain planned, outside the water/waves change.
-   Floating origin only if jitter appears.
 6. **Navigation:** compass, chart, buoys, dead reckoning with drift, bearing fixes.
 7. **Sailor body and hiking pose.**
 8. **Polish:** sound, quality settings, tuning against the polar.

@@ -3,7 +3,7 @@
  * cameras (first-person, plus an outside view for checking). Reads state only.
  */
 import * as THREE from 'three';
-import type { BoatModel } from '../sim';
+import type { BoatModel, Vec2 } from '../sim';
 import { createWaveSample, sampleWaves, waveAmplitude, type WaveConfig } from '../sim/waves';
 import { createBoatMesh, type BoatMesh, type BoatPose } from './boatMesh';
 import { SKY_HORIZON, createBuoys, createSky } from './environment';
@@ -24,6 +24,7 @@ export type CameraMode = 'cockpit' | 'outside';
 export interface RenderPose extends BoatPose {
   /** Interpolated simulation time; matches the water sampled by physics. */
   t: number;
+  /** Logical world coordinates, never rebased in the simulation. */
   x: number;
   z: number;
   heading: number;
@@ -37,10 +38,13 @@ export class SceneView {
   readonly camera: THREE.PerspectiveCamera;
   readonly outsideCamera: THREE.PerspectiveCamera;
   readonly boat: BoatMesh;
+  /** Logical position of render-local zero, continuously following the interpolated boat. */
+  readonly origin: Vec2 = { x: 0, z: 0 };
   mode: CameraMode = 'cockpit';
   private readonly water: WaterView;
   private readonly grid: THREE.GridHelper;
   private readonly sky: THREE.Mesh;
+  private readonly buoys = createBuoys();
   private readonly surface = createWaveSample();
 
   constructor(model: BoatModel, private readonly waves: WaveConfig) {
@@ -66,7 +70,7 @@ export class SceneView {
     this.grid.position.y = 0.01;
     this.scene.add(this.grid);
 
-    this.scene.add(createBuoys());
+    this.scene.add(this.buoys);
 
     this.boat = createBoatMesh(model);
     this.scene.add(this.boat.yaw);
@@ -98,19 +102,23 @@ export class SceneView {
 
   render(pose: RenderPose): void {
     const b = this.boat;
+    // Rebase drawing only. Double-precision logical positions remain untouched.
+    this.origin.x = pose.x;
+    this.origin.z = pose.z;
     const wavesActive = waveAmplitude(this.waves) !== 0;
     sampleWaves(this.waves, pose.x, pose.z, pose.t, 0, this.surface);
-    b.yaw.position.set(pose.x, this.surface.y, pose.z);
+    b.yaw.position.set(0, this.surface.y, 0);
     b.yaw.rotation.y = -pose.heading;
     b.update(pose);
     // An immediate debug toggle can precede the next physics/interpolation frame.
     if (!wavesActive) b.pitch.rotation.x = 0;
 
-    // Water follows continuously; only the flat-water debug grid snaps.
-    this.water.update(pose.x, pose.z, pose.t);
+    // Fixed buoy transforms compose in JS doubles before GPU matrix upload/culling.
+    this.buoys.position.set(-this.origin.x, 0, -this.origin.z);
+    this.water.update(this.origin, pose.t);
     this.grid.visible = this.water.mesh.visible && !wavesActive;
-    this.grid.position.x = Math.round(pose.x / GRID_CELL) * GRID_CELL;
-    this.grid.position.z = Math.round(pose.z / GRID_CELL) * GRID_CELL;
+    this.grid.position.x = Math.round(pose.x / GRID_CELL) * GRID_CELL - this.origin.x;
+    this.grid.position.z = Math.round(pose.z / GRID_CELL) * GRID_CELL - this.origin.z;
 
     let cam: THREE.PerspectiveCamera;
     if (this.mode === 'cockpit') {
@@ -122,11 +130,11 @@ export class SceneView {
       const el = Math.min(Math.max(0.3 - pose.lookPitch, 0.03), 1.4);
       const c = this.outsideCamera;
       c.position.set(
-        pose.x + OUTSIDE_DISTANCE * Math.cos(el) * Math.sin(az),
+        OUTSIDE_DISTANCE * Math.cos(el) * Math.sin(az),
         this.surface.y + OUTSIDE_TARGET_HEIGHT + OUTSIDE_DISTANCE * Math.sin(el),
-        pose.z - OUTSIDE_DISTANCE * Math.cos(el) * Math.cos(az),
+        -OUTSIDE_DISTANCE * Math.cos(el) * Math.cos(az),
       );
-      c.lookAt(pose.x, this.surface.y + OUTSIDE_TARGET_HEIGHT, pose.z);
+      c.lookAt(0, this.surface.y + OUTSIDE_TARGET_HEIGHT, 0);
       cam = c;
     }
     cam.getWorldPosition(this.sky.position);

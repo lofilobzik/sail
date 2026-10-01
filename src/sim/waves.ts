@@ -146,9 +146,21 @@ export function sampleWaves(
 }
 
 /**
+ * Phase at a logical-world origin, reduced in double precision before GPU upload.
+ * The shader adds only the nearby label's spatial phase; neither large world
+ * coordinates nor elapsed time enter float32 arithmetic. CPU sampling is unchanged.
+ */
+export function wavePhaseAt(w: WaveComponent, x: number, z: number, t: number): number {
+  const phase = (w.k * (w.dx * x + w.dz * z) - w.omega * t + w.phase) % (2 * Math.PI);
+  return phase > Math.PI ? phase - 2 * Math.PI : phase < -Math.PI ? phase + 2 * Math.PI : phase;
+}
+
+/**
  * GLSL specialization of this model, generated from the SAME compiled components.
  * Called once during material creation, never per frame. The shader exposes both
  * displacement and analytic tangents (not mesh finite-difference normals).
+ * Labels/positions are render-local. waveMotion holds the reduced phase at the
+ * render origin and choppiness; upload it using wavePhaseAt for the rendered time.
  * Footprint is the x/z sampling interval (mesh cell or pixel). Zero footprint
  * gives the unfiltered physical model. Nonzero footprints band-limit rendering,
  * not CPU physics; normals ignore derivatives of the slowly changing LOD weight.
@@ -156,8 +168,8 @@ export function sampleWaves(
 export function gerstnerGLSL(waves: readonly WaveComponent[]): string {
   return `
 uniform vec4 waveShape[${waves.length}];
-uniform vec3 waveMotion[${waves.length}];
-void gerstnerWave(vec2 label, float time, float scale, vec2 footprint, out vec3 position, out vec3 normal) {
+uniform vec2 waveMotion[${waves.length}];
+void gerstnerWave(vec2 label, float scale, vec2 footprint, out vec3 position, out vec3 normal) {
   position = vec3(label.x, 0.0, label.y);
   vec3 tx = vec3(1.0, 0.0, 0.0);
   vec3 tz = vec3(0.0, 0.0, 1.0);
@@ -169,8 +181,8 @@ void gerstnerWave(vec2 label, float time, float scale, vec2 footprint, out vec3 
       ${(2 * Math.PI / parameters.waterFilterFullSamples).toFixed(10)},
       ${(2 * Math.PI / parameters.waterFilterZeroSamples).toFixed(10)}, phaseStep);
     float a = scale * waveShape[${i}].w * weight;
-    float qa = a * waveMotion[${i}].z;
-    float phase = k * dot(d, label) - waveMotion[${i}].x * time + waveMotion[${i}].y;
+    float qa = a * waveMotion[${i}].y;
+    float phase = k * dot(d, label) + waveMotion[${i}].x;
     float s = sin(phase), c = cos(phase);
     position += vec3(qa * d.x * c, a * s, qa * d.y * c);
     tx += vec3(-qa*k*d.x*d.x*s, a*k*d.x*c, -qa*k*d.x*d.y*s);

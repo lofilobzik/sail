@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createWaveSample, defaultWaves, sampleWaveParticle, sampleWaves, setWaveParameters, waveAmplitude, WAVE_PARAMETERS } from './waves';
+import { createWaveSample, defaultWaves, sampleWaveParticle, sampleWaves, setWaveParameters, waveAmplitude, wavePhaseAt, WAVE_PARAMETERS } from './waves';
 
 describe('shared Gerstner wave field', () => {
   const cfg = { ...defaultWaves(), enabled: true };
@@ -75,5 +75,47 @@ describe('shared Gerstner wave field', () => {
     setWaveParameters(tuned, 100, -90);
     expect(tuned.periodSeconds).toBe(WAVE_PARAMETERS.maxPeriodSeconds);
     expect(tuned.directionDeg).toBe(270);
+  });
+
+  it('preserves the physical surface after distant origins and long elapsed times enter float32', () => {
+    const tuned = { ...cfg };
+    for (const period of [2, cfg.periodSeconds, 8]) for (const direction of [0, 90, 225]) {
+      setWaveParameters(tuned, period, direction);
+      for (const distance of [-1e9, 0, 1e9]) for (const t of [0, 1e7]) {
+        // One fixed logical particle, represented relative to two different render origins.
+        const x = distance + 5.25, z = -distance - 8.75;
+        const physical = sampleWaveParticle(tuned, x, z, t, 0, createWaveSample());
+        for (const offset of [0, 0.02, 5]) {
+          const ox = distance + offset, oz = -distance - offset;
+          let height = 0;
+          for (const w of tuned.components) {
+            const phase = wavePhaseAt(w, ox, oz, t);
+            expect(Math.abs(phase)).toBeLessThanOrEqual(Math.PI);
+            const localPhase = Math.fround(
+              Math.fround(Math.fround(w.k) * Math.fround(
+                Math.fround(Math.fround(w.dx) * Math.fround(x - ox))
+                + Math.fround(Math.fround(w.dz) * Math.fround(z - oz)),
+              )) + Math.fround(phase),
+            );
+            height += w.amplitude * Math.sin(localPhase);
+          }
+          expect(height).toBeCloseTo(physical.y, 6);
+        }
+      }
+    }
+  });
+
+  it('does not jump the surface when the reduced phase wraps across minus pi', () => {
+    const dt = 1e-5;
+    for (const w of cfg.components) {
+      const t = (w.phase + Math.PI) / w.omega;
+      const before = wavePhaseAt(w, 0, 0, t - dt);
+      const after = wavePhaseAt(w, 0, 0, t + dt);
+      expect(before).toBeLessThan(0);
+      expect(after).toBeGreaterThan(0);
+      expect(Math.sin(before)).toBeCloseTo(Math.sin(-Math.PI + w.omega * dt), 12);
+      expect(Math.sin(after)).toBeCloseTo(Math.sin(-Math.PI - w.omega * dt), 12);
+      expect(Math.cos(before)).toBeCloseTo(Math.cos(after), 12);
+    }
   });
 });

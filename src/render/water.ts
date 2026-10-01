@@ -1,6 +1,7 @@
 /** World-anchored Gerstner water; CPU samples and this shader share waves.ts. */
 import * as THREE from 'three';
-import { gerstnerGLSL, waveAmplitude, WAVE_PARAMETERS, type WaveConfig } from '../sim/waves';
+import { gerstnerGLSL, waveAmplitude, wavePhaseAt, WAVE_PARAMETERS, type WaveConfig } from '../sim/waves';
+import type { Vec2 } from '../sim/frames';
 
 const WATER_COLOR = 0x1f4f6e; // TUNING GUESS: deep-water body colour
 const WATER_REFRACTIVE_INDEX = 1.333; // Water/air index; https://en.wikipedia.org/wiki/Refractive_index
@@ -9,7 +10,8 @@ const SUN_SHININESS = 96; // TUNING GUESS: broad water glint, no measured roughn
 
 export interface WaterView {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
-  update(x: number, z: number, t: number): void;
+  /** The patch is centred at render-local zero; origin stays in logical world coordinates. */
+  update(origin: Readonly<Vec2>, t: number): void;
 }
 
 /** Uniform near-boat cells; smoothly growing outer cells cover the fog horizon. */
@@ -99,10 +101,9 @@ export function createWater(
     uniforms: THREE.UniformsUtils.merge([
       THREE.UniformsLib.fog,
       {
-        waveTime: { value: 0 },
         waveScale: { value: waveAmplitude(cfg) },
         waveShape: { value: components.map((w) => new THREE.Vector4(w.dx, w.dz, w.k, w.amplitude)) },
-        waveMotion: { value: components.map((w) => new THREE.Vector3(w.omega, w.phase, w.choppiness)) },
+        waveMotion: { value: components.map((w) => new THREE.Vector2(w.phase, w.choppiness)) },
         waterColour: { value: new THREE.Color(WATER_COLOR) },
         skyHorizon: { value: colours.horizon },
         skyZenith: { value: colours.zenith },
@@ -113,7 +114,6 @@ export function createWater(
       },
     ]),
     vertexShader: `
-      uniform float waveTime;
       uniform float waveScale;
       attribute vec2 cellFootprint;
       varying vec3 waterPosition;
@@ -121,10 +121,10 @@ export function createWater(
       #include <fog_pars_vertex>
       ${waveCode}
       void main() {
-        // Continuous recentering changes sampling smoothly, not the world-space phase.
+        // Only small render-local coordinates enter the GPU; uniforms restore world phase.
         waterLabel = position.xz + modelMatrix[3].xz;
         vec3 unusedNormal;
-        gerstnerWave(waterLabel, waveTime, waveScale, cellFootprint, waterPosition, unusedNormal);
+        gerstnerWave(waterLabel, waveScale, cellFootprint, waterPosition, unusedNormal);
         vec4 mvPosition = viewMatrix * vec4(waterPosition, 1.0);
         gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
@@ -138,7 +138,6 @@ export function createWater(
       uniform vec3 sunColour;
       uniform vec3 hemisphereSky;
       uniform vec3 hemisphereGround;
-      uniform float waveTime;
       uniform float waveScale;
       varying vec3 waterPosition;
       varying vec2 waterLabel;
@@ -149,7 +148,7 @@ export function createWater(
         // Pixel-footprint filtering prevents that detail aliasing at grazing angles.
         vec2 footprint = max(abs(dFdx(waterLabel)), abs(dFdy(waterLabel)));
         vec3 unusedPosition, normal;
-        gerstnerWave(waterLabel, waveTime, waveScale, footprint, unusedPosition, normal);
+        gerstnerWave(waterLabel, waveScale, footprint, unusedPosition, normal);
         vec3 view = normalize(cameraPosition - waterPosition);
         vec3 reflection = reflect(-view, normal);
         // Same square-root horizon-to-zenith gradient as createSky's current dome.
@@ -180,19 +179,20 @@ export function createWater(
   mesh.frustumCulled = false;
   return {
     mesh,
-    update(x, z, t) {
+    update(origin, t) {
       if (components !== cfg.components) {
         components = cfg.components;
         const shapes = material.uniforms.waveShape!.value as THREE.Vector4[];
-        const motions = material.uniforms.waveMotion!.value as THREE.Vector3[];
         for (let i = 0; i < components.length; i++) {
           const w = components[i]!;
           shapes[i]!.set(w.dx, w.dz, w.k, w.amplitude);
-          motions[i]!.set(w.omega, w.phase, w.choppiness);
         }
       }
-      mesh.position.set(x, 0, z);
-      material.uniforms.waveTime!.value = t;
+      const motions = material.uniforms.waveMotion!.value as THREE.Vector2[];
+      for (let i = 0; i < components.length; i++) {
+        const w = components[i]!;
+        motions[i]!.set(wavePhaseAt(w, origin.x, origin.z, t), w.choppiness);
+      }
       material.uniforms.waveScale!.value = waveAmplitude(cfg);
     },
   };

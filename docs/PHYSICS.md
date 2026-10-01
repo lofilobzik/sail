@@ -118,6 +118,14 @@ from a configurable direction. Do not hardcode wind anywhere else.
   Geometry uses actual adjacent cell dimensions; analytic fragment normals use pixel derivatives.
   The specular lobe broadens with pixel normal variance while preserving its integrated energy.
   These are render-only LOD/antialiasing approximations, not changes to the physical spectrum.
+  Rendering has a continuous floating origin at the interpolated boat's logical x/z position.
+  Boat/cameras/water/debug arrows stay render-local; fixed buoy transforms compose in JS doubles
+  before matrix upload. The flat-water grid subtracts the same origin after its logical-world snap.
+  CPU surface sampling, forces, integration and navigation coordinates are not rebased.
+  `wavePhaseAt` reduces `k D dot origin - omega t + phase0` to [-pi, pi] in double precision.
+  GLSL adds `k D dot localLabel` to that reduced phase. Its `waveMotion` uniform contains
+  `(origin/time phase, choppiness)`, not omega/time; large coordinates and elapsed time never
+  enter shader float32 arithmetic. This is a phase reparameterization, not a second wave field.
   Heave is kinematic only. Hull drag still uses the flat-water resistance model; no wave-added resistance,
   breaking waves, wet/dry foil area, slamming, or capsize is modeled.
 
@@ -148,8 +156,8 @@ from a configurable direction. Do not hardcode wind anywhere else.
   Halving dt in a default 30-second run changes heading about 0.006 degrees, heel 0.033 degrees,
   pitch 0.007 degrees and position 0.014 m.
 - Browser smoke exercised moving water, outside/cockpit views, live controls, zero amplitude and off.
-  No measured Laser wave-response validation, long-distance float-precision validation, or target-laptop
-  GPU performance qualification has been done.
+  These initial checks did not include distant coordinates; see the floating-origin checks below.
+  No measured Laser wave-response validation or target-laptop GPU qualification has been done.
 
 **Rendering repair verification**
 - Isolated water-only scene, fixed camera and time: the original 2 cm crossing of a 5 m snap boundary
@@ -169,7 +177,29 @@ from a configurable direction. Do not hardcode wind anywhere else.
 - Waves-off CSV and SVG again match the pre-wave 6/7/8/9 kn baseline byte-for-byte.
   Existing 73 tests, lint, typechecking and production build pass.
 - Far-field rendering is deliberately band-limited and is not an exact unfiltered surface there.
-  No new empirical Laser calibration, long-session/floating-origin proof or target-GPU qualification.
+  No new empirical Laser calibration or target-GPU qualification.
+
+**Floating-origin verification**
+- Before rebasing, the actual water renderer visibly flattened out at `(1e9, -1e9)` m.
+  After rebasing, the rendered surface remains present; boat x/z is zero and both cameras stay nearby.
+- GPU transform feedback: 7,344 samples over periods 2/default/8 s, directions 0/90/225 degrees,
+  amplitudes 0/1/2, coordinates through +/-1e9 m, and times through 1e7 s. Zero and actual 0.20 m
+  footprints plus phase-wrap transitions exercised. Maximum CPU/GPU position difference 1.36e-6 m,
+  normal-component difference 1.16e-6; no WebGL error.
+- 324 isolated fixed-world image comparisons change only render origin (2 cm, 5 m and larger shifts),
+  preserving logical camera, geometry and time. Worst mean RGB difference 0.000211 on a 0-255 scale;
+  at most six pixels exceed two RGB levels. Not pixel-identical: isolated differences reach 33 levels.
+- Three 120-frame moving-water sequences at +/-1e9 m and elapsed time near 1e7 s cover default chop
+  and both period/amplitude extremes. Nine former grid-snap crossings and 25 reduced-phase wraps
+  show no special spikes: worst crossing/neighbor change ratio 0.9992, wrap/neighbor ratio 1.0007.
+  Distant water was recorded; actual-game outside/cockpit views and live wave controls were exercised.
+- 24 scene-consumer cases check cameras, logical buoy anchors (including a distant marker), true-wind
+  and body-force arrows, wave heave, waves-off grid bounds, and no mutation of state/config/diagnostics.
+- Waves-off CSV/SVG remain byte-identical to the original 6/7/8/9 kn baseline. All 75 tests pass,
+  including new distant/long-time phase and phase-wrap regressions; lint, typechecking and build pass.
+- Coordinates/time were exercised synthetically, not by running a multi-month sailing session.
+  CPU double precision is still finite; this is not an unlimited-distance guarantee or target-GPU
+  performance qualification. Physical wave-response calibration and far-field filtering limits remain.
 
 ## 3. Boat parameters (`data/laser.json`)
 
