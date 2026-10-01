@@ -2,7 +2,8 @@
  * Keyboard + wheel -> normalized, rate-limited Controls (DESIGN.md Controls).
  *   A / D        tiller toward port (-1) / starboard (+1), holds when released
  *   C            centre the tiller (same rate)
- *   W / S, wheel sheet in (toward 0) / ease (toward 1), holds when released
+ *   W / S        ease (toward 1) / sheet in (toward 0), holds when released
+ *   Wheel        up sheets in, down eases
  *   Shift (hold) hike out, release to sit in
  */
 import { clamp, type Controls } from '../sim';
@@ -58,8 +59,8 @@ export class ControlInput {
     if (left !== right) this.tiller = rateLimit(this.tiller, right ? 1 : -1, TILLER_RATE, dt);
     else if (k.has('KeyC')) this.tiller = rateLimit(this.tiller, 0, TILLER_RATE, dt);
 
-    const sheetIn = k.has('KeyW');
-    const ease = k.has('KeyS');
+    const sheetIn = k.has('KeyS');
+    const ease = k.has('KeyW');
     if (sheetIn !== ease) this.sheetTarget = rateLimit(this.sheetTarget, ease ? 1 : 0, SHEET_RATE, dt);
     this.sheet = rateLimit(this.sheet, this.sheetTarget, SHEET_RATE, dt);
 

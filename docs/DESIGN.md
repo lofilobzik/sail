@@ -73,7 +73,8 @@ Rules:
 |---|---|
 | Mouse | Look around (pointer lock) |
 | A / D | Tiller (hold to move, stays where released) |
-| Mouse wheel or W / S | Mainsheet in / out in small steps, holds position |
+| W / S | Ease mainsheet / sheet in, holds position |
+| Mouse wheel up / down | Sheet in / ease mainsheet in small steps, holds position |
 | Shift (hold) | Hike out (lean weight out), release to sit in |
 
 Inputs are **continuous with rate limits**: no snapping. A tiller key ramps the tiller over a
