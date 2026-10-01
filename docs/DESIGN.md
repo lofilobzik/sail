@@ -16,10 +16,14 @@ Keep the boat data-driven so that is possible later.
 
 - Free sandbox in endless open water, with a few buoys to navigate between.
 - Boat: Laser (ILCA 7), procedurally generated to class dimensions.
-- Wind: fixed 6-8 knots, always read through `getWind(position, time)`. Adjustable from a debug menu.
-- Waves: small data-driven Gerstner chop, shared by physics and rendering. Surface slope rocks the
-  boat; orbital water velocity at each foil can deflect the course. Toggle and amplitude/period/direction
-  controls are in the debug menu. Defaults and response tuning are explicitly TUNING GUESS.
+- Wind: default 7 knots, always read through `getWind(position, time)`. Debug range 0-16 kn;
+  6-8 kn remains the intended light-wind sailing range, stronger settings are exploratory.
+- Waves: two data-driven Gerstner bands, broad waves plus fine ripples, shared by physics and rendering.
+  Wind speed controls height and length; seeded strengths/phases produce uneven crest groups without
+  per-frame randomization. The browser chooses a new pattern on reload; headless runs stay deterministic.
+  Surface slope rocks the boat; orbital flow at each foil can deflect the course. Overall amplitude,
+  separate big-wave/ripple multipliers, broad period and direction controls are in the debug menu.
+  Spectrum, wind scaling and response tuning are TUNING GUESS, not a calibrated sea-state model.
 - No planing, no capsizing. Heel clamps at a limit.
 - First-person camera only.
 - Controls: mouse look, keyboard for tiller / sheet / hiking.
@@ -83,7 +87,9 @@ fraction of a second and holds its position. Same idea for the sheet.
 ## Visuals
 
 - **Water:** one Gerstner model in `sim/waves.ts`, with parameters in `data/waves.json`, supplies
-  CPU sampling and shader displacement/analytic normals. A uniform near-boat patch and growing
+  CPU sampling and shader displacement/analytic normals for both broad waves and ripples.
+  Different lengths/directions and seeded random strengths/phases break up uniform wave trains.
+  A uniform near-boat patch and growing
   outer grid follow continuously without moving world-space phase. Mesh-cell filtering prevents
   unresolved displacement; per-pixel normals and footprint/specular filtering prevent distant shimmer.
   Physics responds to slope and foil orbital flow; visual heave follows surface height, without a
@@ -131,6 +137,7 @@ One milestone per session. Commit after each working one.
    is visible: a flat plane that follows the boat on a snapped grid, a plain sky colour, and a few buoys.
 4. **Cloth sail:** visual cloth driven by `luffAmount`, telltales, masthead fly.
 5. **Water and sky:** shared Gerstner waves with physical rocking and orbital foil cross-flow implemented.
+   Wind-responsive broad waves/ripples, separate layer controls and seeded magnitude variation implemented.
    Render-side floating origin and precision-safe world-anchored wave phases implemented.
    Analytic sky and quality setting remain planned, outside the water/waves change.
 6. **Navigation:** compass, chart, buoys, dead reckoning with drift, bearing fixes.

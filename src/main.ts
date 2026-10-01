@@ -6,7 +6,7 @@ import { MouseLook } from './input/mouseLook';
 import { Vector2 } from 'three';
 import { SceneView, type RenderPose } from './render/scene';
 import { ForceVectors } from './render/vectors';
-import { DEG, FixedStep, WAVE_PARAMETERS, buildBoat, clamp, defaultConfig, evaluate, initialState, setWaveParameters, step, wrapPi, type BoatState, type Diagnostics } from './sim';
+import { DEG, FixedStep, WAVE_PARAMETERS, buildBoat, clamp, defaultConfig, evaluate, initialState, setWaveParameters, setWaveWind, step, wrapPi, type BoatState, type Diagnostics } from './sim';
 
 const START_HEADING_DEG = 90; // TUNING GUESS: beam reach for the default wind from 0°
 const START_SPEED = 1; // TUNING GUESS: initial boat speed, m/s
@@ -15,8 +15,10 @@ const BENCH_FRAMES = 200; // ?perf=1: frames rendered back to back, each synchro
 const BENCH_DELAY_MS = 2000;
 
 const boat = buildBoat();
-const cfg = defaultConfig();
+// Choose a sea pattern once. All subsequent sampling remains seeded and world-anchored.
+const cfg = defaultConfig(Math.floor(Math.random() * 0x100000000));
 cfg.waves.enabled = true;
+setWaveWind(cfg.waves, cfg.wind.speedKn);
 const params = new URLSearchParams(location.search);
 if (params.get('waves') === '0') cfg.waves.enabled = false;
 const waveScale = params.get('waveAmplitude');

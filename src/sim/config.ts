@@ -94,7 +94,7 @@ export interface SimConfig {
   substeps: number;
 }
 
-export function defaultConfig(): SimConfig {
+export function defaultConfig(waveSeed?: number): SimConfig {
   return {
     layers: { apparentWind: true, sail: true, foils: true, hull: true, heel: true, yaw: true },
     terms: {
@@ -115,9 +115,9 @@ export function defaultConfig(): SimConfig {
       lambda0Sign: 1,
       uprightResistance: 'delft',
     },
-    // DESIGN.md: fixed 6-8 kn; direction configurable.
+    // DESIGN.md: default 7 kn; light-wind sailing range 6-8 kn, debug 0-16 kn is exploratory.
     wind: { speedKn: 7, fromDeg: 0 },
-    waves: defaultWaves(),
+    waves: defaultWaves(waveSeed),
     env: {
       rhoAir: 1.225, // PHYSICS.md section 3, standard
       rhoWater: 1025, // PHYSICS.md section 3, sea water (1000 fresh)

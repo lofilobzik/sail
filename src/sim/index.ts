@@ -15,6 +15,7 @@ export { initialState, NEUTRAL_CONTROLS, type BoatState, type Controls } from '.
 export { evaluate, step, type Diagnostics, type StepResult } from './step';
 export { getWind } from './wind';
 export {
-  defaultWaves, setWaveParameters, waveAmplitude, createWaveSample, sampleWaveParticle, sampleWaves,
+  defaultWaves, setWaveParameters, setWaveWind, setWaveLayers, waveAmplitude,
+  createWaveSample, sampleWaveParticle, sampleWaves,
   gerstnerGLSL, WAVE_PARAMETERS, type WaveConfig, type WaveSample, type WaveComponent,
 } from './waves';

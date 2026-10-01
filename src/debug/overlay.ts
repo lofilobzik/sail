@@ -3,7 +3,7 @@
  * Text grouped by physics layer L1..L6 (+ Boat), each with its own show/hide checkbox.
  * The Physics section mutates the live SimConfig (layer and term toggles, wind) and can reset the boat.
  */
-import { DEG, KNOT, WAVE_PARAMETERS, setWaveParameters, wrap2Pi, type BoatState, type Diagnostics, type SimConfig } from '../sim';
+import { DEG, KNOT, WAVE_PARAMETERS, setWaveParameters, setWaveWind, setWaveLayers, waveAmplitude, wrap2Pi, type BoatState, type Diagnostics, type SimConfig } from '../sim';
 import type { ArrowVisibility } from '../render/vectors';
 
 const GROUPS = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'Waves', 'Boat'] as const;
@@ -18,8 +18,8 @@ const GROUP_TITLES: Record<GroupId, string> = {
   Waves: 'L7 Waves',
   Boat: 'Boat',
 };
-const WIND_MIN_KN = 6; // DESIGN.md: fixed 6-8 kn
-const WIND_MAX_KN = 8;
+const WIND_MIN_KN = WAVE_PARAMETERS.wind.minSpeedKn;
+const WIND_MAX_KN = WAVE_PARAMETERS.wind.maxSpeedKn;
 
 const OFF = 'off';
 const kn = (ms: number): string => `${(ms / KNOT).toFixed(2)} kn`;
@@ -120,8 +120,12 @@ export class DebugOverlay {
       : OFF;
 
     const w = d.waves;
+    const sea = this.cfg.waves;
+    const primary = sea.components[0]!;
     t.Waves.textContent = w
-      ? `surface ${w.height.toFixed(3)} m  roll target ${deg(w.rollTarget)}  pitch target ${deg(w.pitchTarget)}\n` +
+      ? `big waves ${sea.bigScale.toFixed(2)}×  ripples ${sea.rippleScale.toFixed(2)}×  effective amplitude ${waveAmplitude(sea).toFixed(2)}×\n` +
+        `broad period ${(2 * Math.PI / primary.omega).toFixed(2)} s at ${sea.windSpeedKn.toFixed(1)} kn\n` +
+        `surface ${w.height.toFixed(3)} m  roll target ${deg(w.rollTarget)}  pitch target ${deg(w.pitchTarget)}\n` +
         `pitch ${deg(s.pitch)}  wave roll M ${nm(w.rollMoment)}\n` +
         `board flow ${w.boardU.toFixed(3)} / ${w.boardV.toFixed(3)} m/s (forward / starboard)\n` +
         `rudder flow ${w.rudderU.toFixed(3)} / ${w.rudderV.toFixed(3)} m/s`
@@ -154,6 +158,7 @@ export class DebugOverlay {
 
     this.numberInput(sec, `wind kn (${WIND_MIN_KN}-${WIND_MAX_KN})`, cfg.wind.speedKn, (v, el) => {
       cfg.wind.speedKn = Math.min(WIND_MAX_KN, Math.max(WIND_MIN_KN, v));
+      setWaveWind(cfg.waves, cfg.wind.speedKn);
       el.value = String(cfg.wind.speedKn);
     });
     this.numberInput(sec, 'wind from °', cfg.wind.fromDeg, (v, el) => {
@@ -162,23 +167,16 @@ export class DebugOverlay {
     });
 
     this.checkbox(sec, 'waves', cfg.waves.enabled, (v) => (cfg.waves.enabled = v));
-    const amplitude = document.createElement('label');
-    amplitude.style.display = 'block';
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    slider.min = '0';
-    slider.max = String(WAVE_PARAMETERS.maxAmplitudeScale);
-    slider.step = '0.05'; // TUNING GUESS: amplitude control increment
-    slider.value = String(cfg.waves.amplitudeScale);
-    const value = document.createElement('span');
-    value.textContent = ` ${cfg.waves.amplitudeScale.toFixed(2)}×`;
-    slider.addEventListener('input', () => {
-      cfg.waves.amplitudeScale = Number(slider.value);
-      value.textContent = ` ${cfg.waves.amplitudeScale.toFixed(2)}×`;
+    this.rangeInput(sec, 'wave amplitude', cfg.waves.amplitudeScale, WAVE_PARAMETERS.maxAmplitudeScale, (v) => {
+      cfg.waves.amplitudeScale = v;
     });
-    amplitude.append('wave amplitude ', slider, value);
-    sec.appendChild(amplitude);
-    this.numberInput(sec, 'wave period s (2–8)', cfg.waves.periodSeconds, (v, el) => {
+    this.rangeInput(sec, 'big waves', cfg.waves.bigScale, WAVE_PARAMETERS.maxLayerScale, (v) => {
+      setWaveLayers(cfg.waves, v, cfg.waves.rippleScale);
+    });
+    this.rangeInput(sec, 'ripples', cfg.waves.rippleScale, WAVE_PARAMETERS.maxLayerScale, (v) => {
+      setWaveLayers(cfg.waves, cfg.waves.bigScale, v);
+    });
+    this.numberInput(sec, 'broad period at 7 kn s (2–8)', cfg.waves.periodSeconds, (v, el) => {
       setWaveParameters(cfg.waves, v, cfg.waves.directionDeg);
       el.value = cfg.waves.periodSeconds.toFixed(2);
     });
@@ -209,6 +207,28 @@ export class DebugOverlay {
     el.append(input, ` ${label}`);
     parent.appendChild(el);
     return el;
+  }
+
+  private rangeInput(
+    parent: HTMLElement, label: string, initial: number, max: number, onChange: (v: number) => void,
+  ): void {
+    const el = document.createElement('label');
+    el.style.display = 'block';
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0';
+    slider.max = String(max);
+    slider.step = '0.05'; // TUNING GUESS: sea control increment
+    slider.value = String(initial);
+    const value = document.createElement('span');
+    value.textContent = ` ${initial.toFixed(2)}×`;
+    slider.addEventListener('input', () => {
+      const v = Number(slider.value);
+      onChange(v);
+      value.textContent = ` ${v.toFixed(2)}×`;
+    });
+    el.append(`${label} `, slider, value);
+    parent.appendChild(el);
   }
 
   private numberInput(parent: HTMLElement, label: string, initial: number, onChange: (v: number, el: HTMLInputElement) => void): void {

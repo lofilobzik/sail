@@ -9,6 +9,16 @@ unresolved Opus handoff; see `PHYSICS.md` L7 for detailed model and verification
 Render-side floating origin is also implemented. It preserves logical simulation coordinates and
 world-anchored waves while keeping rendered coordinates and shader phase inputs small.
 
+The current sea now has separate broad-wave and fine-ripple bands, wind-responsive heights/lengths,
+and seeded random component strengths/phases. Browser reloads choose a new pattern; sailing and
+wind/sea adjustments retain it. Debug controls include `big waves`, `ripples`, overall amplitude,
+reference-wind broad period, direction, and wind 0-16 kn.
+
+For this layered-sea change, automated tests/build/polar reruns were intentionally skipped at the
+user's request. A brief browser smoke loaded the surface/controls and exercised 7 -> 12 kn wind;
+the L7 broad-period readout changed from about 3.40 to 4.10 s without reported shader/JS errors.
+The older verification numbers below are historical, not results for the new spectrum.
+
 The investigation browsers have been closed and the preview servers stopped.
 The temporary `window.__probe` hook left by Opus was removed. No unrelated reference PDFs/text
 were included in the repair.
@@ -57,18 +67,19 @@ The repair:
 - `src/render/water.ts`: grid generation, continuous recentering, geometry/pixel footprint filtering,
   per-fragment normals, antialiased sun glint, reduced phase-uniform updates.
 - `src/sim/waves.ts`: unchanged CPU sampling; reduced-origin phase helper and render-local GLSL kernel.
-- `src/data/waves.json`: grid/filter choices plus original wave spectrum and response parameters.
+- `src/data/waves.json`: broad/ripple bands, wind scaling, seeded variation, grid/filter/response tuning.
 - `src/render/scene.ts`: shared render origin, local boat/cameras/water, rebased buoys/debug grid.
 - `src/render/vectors.ts`: true-wind arrow takes the render-local boat position; body arrows follow it.
 - `src/main.ts`: normal fixed-step/interpolated render loop and local arrow updates; no debug exposure.
 - `src/sim/step.ts` and `layers/foils.ts`: original slope-driven rocking and depth-decayed orbital inflow.
-- `src/debug/overlay.ts`: existing waves toggle, amplitude, primary period, and propagation direction.
+- `src/debug/overlay.ts`: wind-to-sea updates, separate band multipliers, overall amplitude,
+  reference-wind broad period, direction and effective amplitude/period readouts.
 
 The user requested physical waves: slope must rock the boat and orbital flow at each foil must
 produce side force/yaw. Do not replace that feature with purely cosmetic water or a second spectrum.
 `sim/` remains pure/headless with no Three.js or DOM imports.
 
-## Verification performed
+## Verification performed before the layered-sea change
 
 - Same isolated camera/environment after repair: default boundary mean RGB difference 0.00562,
   neighboring 2 cm movement 0.00553; 53 pixels exceed 2 levels. Previously the mean was 0.669.
@@ -133,8 +144,10 @@ Laser calibration or target-laptop GPU performance qualification. Distant coordi
 times were exercised synthetically, not through a multi-month session. CPU doubles remain finite;
 the floating origin is not an unlimited-distance guarantee.
 
-Wave defaults remain TUNING GUESS. Primary wave A = 0.12 m, L = 12 m, period about 2.77 s; two smaller
-crossing components. The existing physical response has no measured Laser wave data: local-slope
+Wave defaults and wind scaling remain TUNING GUESS. At 7 kn the primary broad wavelength is 18 m,
+period about 3.40 s, amplitude 0.12 m before seeded variation and control multipliers. Two further
+broad components and four fine ripple components create a varied field. No fetch, duration, remote
+swell or capillary dispersion is modeled. The physical response has no measured Laser wave data: local-slope
 roll approximation, tuned pitch oscillator, kinematic heave, planar force integration, flat-water hull
 resistance, no slamming/breaking-wave/wet-dry foil model. These limits were not expanded by the repair.
 

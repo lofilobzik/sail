@@ -99,7 +99,8 @@ from a configurable direction. Do not hardcode wind anywhere else.
 - Orbital velocity is the particle time derivative:
   `(Q A omega D.x sin(theta), -A omega cos(theta), Q A omega D.z sin(theta))`.
   At depth below the local surface, each component's amplitude decays by `exp(-k depth)`.
-  Q = 1 for defaults, so single-component orbits are circular and speed is `A omega exp(-k depth)`.
+  Q = 1 gives circular single-component orbits with speed `A omega exp(-k depth)`;
+  the current spectrum uses smaller Q for gentler horizontal displacement.
   Superposition and local-surface depth handling are approximations, not an exact nonlinear fluid solution.
 - Roll target is `-atan(slope dot starboard)`; pitch target is `atan(slope dot forward)`.
   Hull-form restoring acts against heel relative to the surface. Crew righting remains gravity-relative:
@@ -131,18 +132,48 @@ from a configurable direction. Do not hardcode wind anywhere else.
 
 **Controls and compatibility**
 - Browser waves default on; `defaultConfig()` and the polar script default off.
-- Backquote / F3 opens the debug panel: waves checkbox, amplitude multiplier 0-2, primary period 2-8 s,
-  and propagation direction TO in degrees. Period changes preserve deep-water dispersion and scale
-  other components' periods proportionally; direction rotates the entire spectrum. Amplitudes stay fixed.
-- Default primary component: amplitude 0.12 m (height 0.24 m), wavelength 12 m, period about 2.77 s;
-  two smaller crossing components give light chop. All sea-state choices are **TUNING GUESS**.
+- Backquote / F3 opens the debug panel: waves checkbox, overall amplitude 0-2, separate `big waves`
+  and `ripples` multipliers 0-2, broad period at reference wind 2-8 s, and direction TO in degrees.
+- Three broad components (reference wavelengths 18/10.7/7.3 m) and four ripple components
+  (1.9/1.13/0.71/0.43 m) have different directions and phases. Both bands use the same Gerstner model.
+  Each component has a seeded strength factor 0.65-1.35 and an additional phase offset.
+  Interference creates uneven crest magnitudes, not an identical wave train or Perlin-noise field.
+  Browser seed changes on reload, not during sailing or when adjusting sea controls.
+- Reference wind is 7 kn. For ratio `r = windKn / 7`, broad amplitudes scale by `r^2`, periods by
+  `max(0.35, r)^0.35`; ripple amplitudes by `r^1.25`, lengths by `max(0.35, r)^0.5`.
+  All these exponents, bands and spreads are **TUNING GUESS**. Dispersion remains `omega^2 = g k`.
+  Broad period changes only the broad band; ripple length remains independently wind-driven.
+  Direction rotates both bands and remains a separate control, permitting crossing seas.
+- Wind controls cover 0-16 kn. Zero wind removes both locally generated bands; this does not model
+  remote swell persisting after wind stops. Fetch, duration, remote weather and capillary dispersion
+  are absent. Strong-wind boat performance is not validated.
+- The overall amplitude is limited when necessary to keep `sum(Q k A) <= 0.6`, preventing horizontal
+  folding and retaining contractive CPU inverse lookup. L7 shows the effective multiplier and actual
+  wind-adjusted broad period. Near calm or with both layer multipliers zero, the flat-water path applies.
+- Wind/period/layer changes recompile the spectrum only on control changes. Wind-setting owners call
+  `setWaveWind` alongside true-wind changes: browser controls and each headless polar wind-speed run
+  do this. CPU physics and GPU uniforms read the same compiled components.
 - Zero amplitude and waves off take the exact pre-wave force path, with pitch/pitch rate zero.
   Switching off does not rewind motion already induced by waves; reset to compare trajectories.
 - Browser checking parameters: `?waves=0`, `waveAmplitude=0..2`, `wavePeriod=2..8`, `waveDirection=degrees`.
 - Polar options: `--waves`, `--wave-amplitude`, `--wave-period`, `--wave-direction`. Periodically forced
-  waves-on runs are not a validated steady-state polar; use the script's default waves-off mode for Day comparisons.
+  waves-on runs are not a validated steady-state polar; `--wave-period` sets the reference-wind broad
+  period. Use the script's default waves-off mode for Day comparisons.
 
-**Verification (water/waves change)**
+**Layered sea status and manual checks**
+- No automated tests, build, or headless polar reruns for this change, at the user's request.
+  A brief browser smoke loaded both bands and the new controls; changing wind from 7 to 12 kn updated
+  the actual broad period from about 3.40 to 4.10 s without reported shader/JS errors.
+- Manual checks: at 7 kn isolate broad waves (`ripples = 0`) and then ripples (`big waves = 0`).
+  Restore both to 1; compare wind 3/7/12 kn, then 0 kn. Overall amplitude 0 and waves off should
+  flatten the water. Reload for a new seeded pattern; simply sailing should not regenerate it.
+- Fine ripples fade with distance according to mesh/pixel filtering. Start tuning near the boat,
+  not at the fog horizon. If overly busy, lower ripples; if overly striped, try big waves 0.7 and
+  ripples 1.5. Global amplitude controls overall roughness; broad period does not resize ripples.
+- The measurements below are historical checks of the earlier three-component spectrum,
+  not verification of the new layered spectrum or wind-response calibration.
+
+**Verification (original water/waves change)**
 - Pre/post waves-off CSV and SVG match byte-for-byte for 6/7/8/9 kn, TWA 30-180 in 5-degree steps.
 - Regression tests cover inverse surface lookup/gradients, particle velocity derivatives, depth decay,
   zero-amplitude equivalence, signed roll/pitch, mirrored side-wave steering, distinct foil sampling and toggles.

@@ -28,6 +28,7 @@ import {
   initialState,
   step,
   setWaveParameters,
+  setWaveWind,
   withDisabledLayers,
   type ModelOptions,
   type SimConfig,
@@ -116,7 +117,8 @@ const curves = [];
 const f = (x: number, d = 2) => x.toFixed(d);
 
 for (const tws of twsList) {
-  const cfg: SimConfig = { ...base, wind: { ...base.wind, speedKn: tws } };
+  const cfg: SimConfig = { ...base, wind: { ...base.wind, speedKn: tws }, waves: { ...base.waves } };
+  setWaveWind(cfg.waves, tws);
   const results: SteadyResult[] = [];
   for (let twa = 30; twa <= 180 + 1e-9; twa += twaStep) {
     const r = bestTrim(boat, cfg, twa);

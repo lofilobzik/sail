@@ -22,47 +22,105 @@ export interface WaveComponent {
 export interface WaveConfig {
   enabled: boolean;
   amplitudeScale: number;
-  /** Period of the primary component, seconds. */
+  bigScale: number;
+  rippleScale: number;
+  /** Fixed seed for strengths/phases; wind and sea controls never re-roll it. */
+  seed: number;
+  /** Wind driving the compiled sea, updated alongside the true wind by its owner. */
+  windSpeedKn: number;
+  /** Cached safe overall amplitude multiplier for the compiled components. */
+  amplitudeLimit: number;
+  /** Primary broad-wave period at reference wind, seconds. */
   periodSeconds: number;
   /** Primary wave propagation TO compass bearing, degrees. */
   directionDeg: number;
   components: readonly WaveComponent[];
 }
 
-const components: readonly WaveComponent[] = parameters.waves.map((w) => {
+const components: readonly WaveComponent[] = [...parameters.bigWaves, ...parameters.ripples].map((w) => {
   const k = 2 * Math.PI / w.wavelength;
   return Object.freeze({
-    dx: Math.sin(w.directionDeg * DEG), dz: -Math.cos(w.directionDeg * DEG),
+    dx: Math.sin(w.directionOffsetDeg * DEG), dz: -Math.cos(w.directionOffsetDeg * DEG),
     k, omega: Math.sqrt(G * k), amplitude: w.amplitude, phase: w.phase, choppiness: w.choppiness,
   });
 });
 
-export function defaultWaves(): WaveConfig {
+export function defaultWaves(seed = parameters.variation.seed): WaveConfig {
   // Headless/flat-water callers retain their existing behavior. main.ts enables browser waves.
-  return {
+  const cfg: WaveConfig = {
     enabled: false, amplitudeScale: parameters.amplitudeScale,
+    bigScale: 1, rippleScale: 1, windSpeedKn: parameters.wind.referenceSpeedKn,
+    seed,
+    amplitudeLimit: parameters.maxAmplitudeScale,
     periodSeconds: 2 * Math.PI / components[0]!.omega,
-    directionDeg: parameters.waves[0]!.directionDeg, components,
+    directionDeg: parameters.directionDeg, components,
   };
+  compileWaves(cfg);
+  return cfg;
 }
 
 export const WAVE_PARAMETERS = parameters;
 
-/** Recompile the spectrum only when a period/direction control changes, not per sample. */
+/** Stateless 32-bit mixing: deterministic variation without per-sample randomness. */
+function randomUnit(seed: number, index: number): number {
+  let value = (seed + Math.imul(index + 1, 0x9e3779b9)) | 0;
+  value = Math.imul(value ^ (value >>> 16), 0x21f0aaad);
+  value = Math.imul(value ^ (value >>> 15), 0x735a2d97);
+  return ((value ^ (value >>> 15)) >>> 0) / 0x100000000;
+}
+
+/** Recompile only when wind or sea controls change, never per frame/sample. */
+function compileWaves(cfg: WaveConfig): void {
+  const ratio = cfg.windSpeedKn / parameters.wind.referenceSpeedKn;
+  const lengthRatio = Math.max(parameters.wind.minLengthRatio, ratio);
+  const periodRatio = cfg.periodSeconds * components[0]!.omega / (2 * Math.PI)
+    * lengthRatio ** parameters.wind.bigPeriodExponent;
+  const rippleLength = lengthRatio ** parameters.wind.rippleLengthExponent;
+  const bigHeight = ratio ** parameters.wind.bigHeightExponent * cfg.bigScale;
+  const rippleHeight = ratio ** parameters.wind.rippleHeightExponent * cfg.rippleScale;
+  const turn = cfg.directionDeg * DEG;
+  const c = Math.cos(turn), s = Math.sin(turn);
+  let steepness = 0;
+  let height = 0;
+  cfg.components = components.map((w, i) => {
+    const big = i < parameters.bigWaves.length;
+    const length = big ? periodRatio * periodRatio : rippleLength;
+    const k = w.k / length;
+    const strength = 1 + parameters.variation.amplitudeSpread * (2 * randomUnit(cfg.seed, i * 2) - 1);
+    const amplitude = w.amplitude * (big ? bigHeight : rippleHeight) * strength;
+    const phase = w.phase + 2 * Math.PI * randomUnit(cfg.seed, i * 2 + 1);
+    steepness += k * amplitude * w.choppiness;
+    height += amplitude;
+    return Object.freeze({
+      ...w, dx: w.dx * c - w.dz * s, dz: w.dx * s + w.dz * c,
+      k, omega: Math.sqrt(G * k), amplitude, phase,
+    });
+  });
+  cfg.amplitudeLimit = height === 0 ? 0
+    : Math.min(parameters.maxAmplitudeScale, parameters.maxSteepness / steepness);
+}
+
 export function setWaveParameters(cfg: WaveConfig, periodSeconds: number, directionDeg: number): void {
   cfg.periodSeconds = clamp(periodSeconds, parameters.minPeriodSeconds, parameters.maxPeriodSeconds);
   cfg.directionDeg = ((directionDeg % 360) + 360) % 360;
-  const periodRatio = cfg.periodSeconds * components[0]!.omega / (2 * Math.PI);
-  const turn = (cfg.directionDeg - parameters.waves[0]!.directionDeg) * DEG;
-  const c = Math.cos(turn), s = Math.sin(turn);
-  cfg.components = components.map((w) => Object.freeze({
-    ...w, dx: w.dx * c - w.dz * s, dz: w.dx * s + w.dz * c,
-    k: w.k / (periodRatio * periodRatio), omega: w.omega / periodRatio,
-  }));
+  compileWaves(cfg);
+}
+
+export function setWaveWind(cfg: WaveConfig, speedKn: number): void {
+  const speed = Math.max(0, speedKn);
+  if (cfg.windSpeedKn === speed) return;
+  cfg.windSpeedKn = speed;
+  compileWaves(cfg);
+}
+
+export function setWaveLayers(cfg: WaveConfig, bigScale: number, rippleScale: number): void {
+  cfg.bigScale = clamp(bigScale, 0, parameters.maxLayerScale);
+  cfg.rippleScale = clamp(rippleScale, 0, parameters.maxLayerScale);
+  compileWaves(cfg);
 }
 
 export function waveAmplitude(cfg: WaveConfig): number {
-  return cfg.enabled ? clamp(cfg.amplitudeScale, 0, parameters.maxAmplitudeScale) : 0;
+  return cfg.enabled ? clamp(cfg.amplitudeScale, 0, cfg.amplitudeLimit) : 0;
 }
 
 export interface WaveSample {
@@ -120,7 +178,7 @@ export function sampleWaveParticle(
 /**
  * Eulerian lookup: invert horizontal Gerstner displacement before sampling at a
  * boat/foil's world position. Fixed-point iteration is contractive for the supplied
- * small waves (maximum sum Q k A < 0.57 over allowed controls). No per-sample allocation.
+ * waves (effective sum Q k A <= 0.6 over sea controls). No per-sample allocation.
  */
 export function sampleWaves(
   cfg: WaveConfig, x: number, z: number, t: number, depth: number, out: WaveSample,
@@ -181,12 +239,14 @@ void gerstnerWave(vec2 label, float scale, vec2 footprint, out vec3 position, ou
       ${(2 * Math.PI / parameters.waterFilterFullSamples).toFixed(10)},
       ${(2 * Math.PI / parameters.waterFilterZeroSamples).toFixed(10)}, phaseStep);
     float a = scale * waveShape[${i}].w * weight;
-    float qa = a * waveMotion[${i}].y;
-    float phase = k * dot(d, label) + waveMotion[${i}].x;
-    float s = sin(phase), c = cos(phase);
-    position += vec3(qa * d.x * c, a * s, qa * d.y * c);
-    tx += vec3(-qa*k*d.x*d.x*s, a*k*d.x*c, -qa*k*d.x*d.y*s);
-    tz += vec3(-qa*k*d.x*d.y*s, a*k*d.y*c, -qa*k*d.y*d.y*s);
+    if (a != 0.0) {
+      float qa = a * waveMotion[${i}].y;
+      float phase = k * dot(d, label) + waveMotion[${i}].x;
+      float s = sin(phase), c = cos(phase);
+      position += vec3(qa * d.x * c, a * s, qa * d.y * c);
+      tx += vec3(-qa*k*d.x*d.x*s, a*k*d.x*c, -qa*k*d.x*d.y*s);
+      tz += vec3(-qa*k*d.x*d.y*s, a*k*d.y*c, -qa*k*d.y*d.y*s);
+    }
   }`).join('\n')}
   normal = normalize(cross(tz, tx));
 }
