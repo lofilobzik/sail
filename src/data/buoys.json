@@ -1,0 +1,12 @@
+{
+  "source": "Test layout for milestone 3 so motion is visible; not a course. Positions are world x (east) and z (south) in metres from the start position; VISUAL ESTIMATE sizes.",
+  "buoys": [
+    { "name": "N", "x": 0, "z": -150, "color": "#ff7a00" },
+    { "name": "NE", "x": 140, "z": -60, "color": "#ffd000" },
+    { "name": "E", "x": 220, "z": 40, "color": "#ff7a00" },
+    { "name": "S", "x": 60, "z": 160, "color": "#ffd000" },
+    { "name": "W", "x": -120, "z": 30, "color": "#ff7a00" }
+  ],
+  "radius": 0.5,
+  "height": 1.2
+}

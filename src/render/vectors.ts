@@ -1,7 +1,7 @@
 /** Debug arrows for wind and forces (THREE.ArrowHelper). Reads diagnostics only. */
 import * as THREE from 'three';
 import type { BoatModel, Diagnostics } from '../sim';
-import { bodyToLocal } from './boatMesh';
+import { bodyToLocal } from './bodyFrame';
 
 const METERS_PER_NEWTON = 1 / 50; // TUNING GUESS: force arrow length, 1 m per 50 N
 const METERS_PER_MPS = 1 / 2; // TUNING GUESS: wind arrow length, 1 m per 2 m/s

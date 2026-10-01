@@ -111,6 +111,69 @@
     "yawDamping": 20,
     "heelLimitDeg": 30
   },
+  "visual": {
+    "hullSections": {
+      "columns": ["xFracFromTransom", "deckHalfBeamFrac", "keelZ", "sheerZ", "bilgeExponent"],
+      "rows": [
+        [0.0, 0.715, 0.0, 0.24, 6.0],
+        [0.12, 0.845, -0.04, 0.25, 4.0],
+        [0.25, 0.94, -0.075, 0.26, 3.2],
+        [0.38, 1.0, -0.092, 0.27, 2.8],
+        [0.5, 0.975, -0.094, 0.28, 2.8],
+        [0.62, 0.86, -0.08, 0.295, 2.6],
+        [0.69, 0.75, -0.07, 0.305, 2.5],
+        [0.8, 0.52, -0.035, 0.31, 2.3],
+        [0.9, 0.27, 0.0, 0.32, 2.1],
+        [0.96, 0.11, 0.1, 0.33, 2.0],
+        [1.0, 0.0, 0.25, 0.335, 2.0]
+      ]
+    },
+    "hullStations": 28,
+    "sectionPoints": 7,
+    "cockpit": { "foreFromTransom": 1.97, "aftFromTransom": 0.7, "halfWidth": 0.27, "depth": 0.22, "cornerRadius": 0.08 },
+    "mast": { "lowerLength": 2.865, "upperLength": 3.6, "upperInsert": 0.305, "upperDiameter": 0.05, "vangTangAboveButt": 0.445 },
+    "boom": { "diameter": 0.05, "endBlockFromAft": 0.071, "midBlockFromAft": 1.653, "vangFromFront": 0.482 },
+    "sail": {
+      "leech": 5.57,
+      "leechFracs": [0.25, 0.5, 0.75],
+      "widths": [2.33, 1.72, 0.965],
+      "headWidth": 0.1,
+      "camberDepthFrac": 0.1,
+      "camberPosFrac": 0.4,
+      "chordSegments": 8,
+      "heightSegments": 12
+    },
+    "daggerboard": { "topAboveDeck": 0.12, "tipRadius": 0.06 },
+    "rudder": {
+      "stockAftOfTransom": 0.03,
+      "leadingEdgeRakeDeg": 12,
+      "tipRadius": 0.06,
+      "headHeight": 0.32,
+      "headLength": 0.22,
+      "headWidth": 0.06,
+      "tillerLength": 0.75,
+      "tillerAboveTransomDeck": 0.1,
+      "extensionLength": 1.0
+    },
+    "traveller": { "halfWidth": 0.4, "aboveDeck": 0.12 },
+    "ratchetBlock": { "aftOfCockpitFore": 0.05, "aboveFloor": 0.12 },
+    "mastheadIndicator": { "length": 0.35 },
+    "sailor": {
+      "eyeFromTransom": 1.2,
+      "eyeInboardOfGunwale": 0.12,
+      "eyeAboveDeckSitting": 0.8,
+      "eyeOutboardHiked": 0.85,
+      "eyeAboveDeckHiked": 0.35,
+      "shoulderBelowEye": 0.25,
+      "shoulderHalfWidth": 0.2,
+      "upperArm": 0.32,
+      "forearm": 0.3,
+      "forearmRadius": 0.035,
+      "handSize": 0.09,
+      "sheetHandInReach": 0.25,
+      "sheetHandOutReach": 0.6
+    }
+  },
   "sources": {
     "hull.loa/lwl/beam/draughtBoardDown": "docs/PHYSICS.md section 3 [sourced] (public class listings).",
     "hull.massWithoutSail": "Day 2017 p8 (PDF page 8): 79.5 kg measured without sail.",
@@ -153,6 +216,23 @@
     "foil.formFactorK": "TUNING GUESS: Larsson & Eliasson p65 (PDF p81) puts viscous pressure resistance at 5-10% of friction for hulls; used for the foils too.",
     "foil.downwashA0": "TUNING GUESS: Day 2017 p6 gives the downwash form Phi = a0 sqrt(CL_k / AR_eff_k) but not a0. 0.18 chosen so that Phi matches the lifting-line far-wake value 2 CL/(pi AR) at CL=0.3, AR=4.",
     "foil.postStallCdMax": "TUNING GUESS: post-stall pressure drag coefficient at 90 deg incidence.",
-    "dynamics.*": "TUNING GUESS: added masses, inertias, damping and heel limit are not given in docs/."
+    "dynamics.*": "TUNING GUESS: added masses, inertias, damping and heel limit are not given in docs/.",
+    "visual": "Render-only geometry (milestone 3). Not used by sim/.",
+    "visual.hullSections.deckHalfBeamFrac": "Deck half-beam as a fraction of beam/2, read off the hull outline in the ILCA hull fittings diagram D.4.3 (docs/ilca-class-rules.pdf p27) at 250 dpi. APPROXIMATE: the diagram is 'only a guide' and its overall width is about 2.5% wider than 1.37 m relative to its length, so values are normalised to its own maximum (at 38% of LOA from the transom).",
+    "visual.hullSections.keelZ/sheerZ": "VISUAL ESTIMATE, constrained to: canoe-body draft Tc 0.094 m (Day Table 2), transom just touching the waterline (Day 2017 p6, level trim), waterline ending at Lwl 3.81 m from the transom (keelZ 0 at xFrac 0.90), hull depth 0.375 m just forward of the mast (web source, see hull.depthDeckToKeel) and freeboard 0.28 m at the deepest section. Checked (milestone 3): the lofted hull gives Bwl 1.116 m (sim 1.109), Cm 0.765 (Day Table 2: 0.757), Cp 0.559 (0.552) and a displaced volume 7% above the sim's.",
+    "visual.hullSections.bilgeExponent": "VISUAL ESTIMATE: superellipse exponent of each half-section (2 = ellipse, larger = boxier). 2.8 at the widest stations makes the lofted waterline beam about 0.81 of the deck beam, close to Bwl/beam = 1.109/1.37 from Day Table 2.",
+    "visual.hullStations/sectionPoints/sail.chordSegments/heightSegments": "Mesh resolution (triangle budget), not dimensions.",
+    "visual.cockpit.foreFromTransom/aftFromTransom/halfWidth": "Read off the ILCA hull fittings diagram D.4.3 (p27), APPROXIMATE (diagram is 'only a guide').",
+    "visual.cockpit.depth/cornerRadius": "VISUAL ESTIMATE.",
+    "visual.mast.lowerLength/upperLength/upperInsert/vangTangAboveButt": "ILCA class rules p33: ILCA 7 lower mast max 2865, upper mast max 3600 with collar 305 +/- 5 from its lower end (taken as the insertion depth), lowest vang tang fitting min 445 from the butt.",
+    "visual.mast.upperDiameter/boom.diameter": "VISUAL ESTIMATE.",
+    "visual.boom.endBlockFromAft/midBlockFromAft/vangFromFront": "ILCA class rules p34, F.6.5: boom end block eye 71 +/- 12 from the aft end, mid boom block 1653 +/- 12 from the aft end, vang fitting aftermost part max 482 from the front.",
+    "visual.sail.leech/leechFracs/widths": "ILCA class rules p36, G.3.3 ILCA 7 MKI: leech max 5570; widths luff-to-leech at 1/4, 1/2 and 3/4 leech max 2330, 1720, 965.",
+    "visual.sail.headWidth/camberDepthFrac/camberPosFrac": "VISUAL ESTIMATE (static placeholder until the cloth sail).",
+    "visual.daggerboard": "VISUAL ESTIMATE for the part above the keel line and the tip radius; ILCA p28 shows R=60 at the tip.",
+    "visual.rudder.tipRadius/leadingEdgeRakeDeg": "ILCA class rules p28: R=60 tip; max 78 deg between leading edge and rudder head bottom (C.8.3.1(b), p12), drawn as a 12 deg rake. The drawing is ambiguous (INDEX.md), so APPROXIMATE.",
+    "visual.rudder.stockAftOfTransom/headHeight/headLength/headWidth/tillerLength/tillerAboveTransomDeck/extensionLength": "VISUAL ESTIMATE: tiller and extension are unrestricted by the class rules (C.8.4).",
+    "visual.traveller/ratchetBlock/mastheadIndicator": "VISUAL ESTIMATE.",
+    "visual.sailor": "VISUAL ESTIMATE: eye position sitting on the side deck at the aft end of the cockpit and when fully hiked, arm segment lengths and hand reach for a 1.83 m sailor."
   }
 }

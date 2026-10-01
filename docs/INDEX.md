@@ -55,6 +55,8 @@ tables, so transcribe any number you use from the **page image**, then copy it i
 | `src/data/laser.json` | Boat parameters from `PHYSICS.md` section 3 plus everything the sim needs; per-parameter sources in its `sources` block (docs page, web source, or TUNING GUESS) | done (milestone 1) |
 | `src/data/delft-residuary.json` | Keuning & Katgert Table 2 residuary coefficients a0-a7 vs Fn | done (milestone 2) |
 | `src/data/laser-polar-target.json` | Day VPP 9 kn, 80 kg: Fig 4 (upwind 40-60) and Fig 6 (downwind 150-180), read off the plots (approximate) | done (milestone 2) |
+| `src/data/laser.json` `visual` block | Render-only boat geometry: hull section table (plan from ILCA p27), cockpit, spars and blocks (p33-34), sail widths (p36), visual estimates marked in `sources` | done (milestone 3) |
+| `src/data/buoys.json` | Test buoy positions (not a course) | done (milestone 3) |
 
 ## Not downloaded
 

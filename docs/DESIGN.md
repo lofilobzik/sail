@@ -113,13 +113,16 @@ One milestone per session. Commit after each working one.
    polar script must run with any layers disabled, so a wrong result can be bisected by layer.
 2. **Tuning and validation:** run the polar, compare against Day (9 kn VPP, Figs 4-7), fix the sail falloff first,
    then foils, then drag, then yaw. Do not add features in this session.
-3. **Boat, water, sky:** procedural Laser, Gerstner water, sky, floating origin, first-person camera.
+3. **Boat graphics and test HUD:** procedural Laser (hull, deck, daggerboard, rudder, tiller and extension, mast, boom, sail,
+   mainsheet), hands on the tiller extension and sheet, an instrument HUD (DOM overlay), and a minimal environment so motion
+   is visible: a flat plane that follows the boat on a snapped grid, a plain sky colour, and a few buoys.
 4. **Cloth sail:** visual cloth driven by `luffAmount`, telltales, masthead fly.
-5. **Navigation:** compass, chart, buoys, dead reckoning with drift, bearing fixes.
-6. **Sailor hands and fittings:** hands, tiller extension, sheet, cleat.
-7. **Polish:** sound, quality settings, tuning against the polar.
+5. **Water and sky:** Gerstner waves, analytic sky, quality setting. Floating origin only if jitter appears.
+6. **Navigation:** compass, chart, buoys, dead reckoning with drift, bearing fixes.
+7. **Sailor body and hiking pose.**
+8. **Polish:** sound, quality settings, tuning against the polar.
 
-Later: full sailor body and hiking pose, waves affecting the boat, gusts and wind shifts,
+Later: waves affecting the boat, gusts and wind shifts,
 capsize, planing and stronger wind, third-person camera, cruising / management layer.
 
 ## Working agreement for the coding agent

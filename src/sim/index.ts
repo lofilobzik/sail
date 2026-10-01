@@ -10,6 +10,7 @@ export {
 } from './config';
 export { FixedStep } from './fixedStep';
 export * from './frames';
+export { CubicSpline } from './spline';
 export { initialState, NEUTRAL_CONTROLS, type BoatState, type Controls } from './state';
 export { evaluate, step, type Diagnostics, type StepResult } from './step';
 export { getWind } from './wind';
