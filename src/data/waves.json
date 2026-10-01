@@ -8,7 +8,10 @@
   "pitchLimitDeg": 15,
   "waterSize": 4000,
   "waterSegments": 256,
-  "waterGridPower": 3,
+  "waterInnerSize": 32,
+  "waterInnerSegments": 160,
+  "waterFilterFullSamples": 8,
+  "waterFilterZeroSamples": 4,
   "waves": [
     { "wavelength": 12, "amplitude": 0.12, "directionDeg": 90, "phase": 0, "choppiness": 1 },
     { "wavelength": 6, "amplitude": 0.045, "directionDeg": 160, "phase": 1.2, "choppiness": 1 },
@@ -20,6 +23,7 @@
     "waves": "TUNING GUESS: deterministic small crossing waves, directions are compass bearings TO; not inferred from wind or measured sea state. Choppiness 1 gives circular single-component particle orbits.",
     "amplitudeScale": "TUNING GUESS: range 0-2; primary period allowed 2-8 s. At minimum period and maximum amplitude sum(k A Q) remains below 1 (no overturning).",
     "pitchResponse": "TUNING GUESS: pitchFrequency in rad/s, pitchDampingRatio dimensionless, pitchLimitDeg; no measured Laser wave response available.",
-    "waterMesh": "TUNING GUESS: waterSize, waterSegments, waterGridPower; dense near boat, coarse at horizon."
+    "waterMesh": "TUNING GUESS: waterSize, waterSegments, waterInnerSize, waterInnerSegments; uniform 0.20 m cells across the inner 32 m, geometrically growing cells outside. The mesh follows continuously; wave phase stays world anchored.",
+    "waterFiltering": "TUNING GUESS: retain full amplitude at 8 samples per projected wavelength; smoothly remove geometry/normal detail below 4 samples per wavelength. Geometry uses actual adjacent cell sizes, fragment normals use pixel derivatives. CPU physics is unfiltered."
   }
 }

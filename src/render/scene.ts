@@ -59,7 +59,7 @@ export class SceneView {
     this.sky = createSky();
     this.scene.add(this.sky);
 
-    this.water = createWater(waves, this.sky, sun, hemisphere, GRID_CELL);
+    this.water = createWater(waves, this.sky, sun, hemisphere);
     this.scene.add(this.water.mesh);
 
     this.grid = new THREE.GridHelper(GRID_CELL * GRID_CELLS, GRID_CELLS, 0x6f9fbf, 0x4a7a9a);
@@ -106,7 +106,7 @@ export class SceneView {
     // An immediate debug toggle can precede the next physics/interpolation frame.
     if (!wavesActive) b.pitch.rotation.x = 0;
 
-    // Both grids snap, while the shader phase stays anchored to world coordinates.
+    // Water follows continuously; only the flat-water debug grid snaps.
     this.water.update(pose.x, pose.z, pose.t);
     this.grid.visible = this.water.mesh.visible && !wavesActive;
     this.grid.position.x = Math.round(pose.x / GRID_CELL) * GRID_CELL;

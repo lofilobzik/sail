@@ -12,20 +12,48 @@ export interface WaterView {
   update(x: number, z: number, t: number): void;
 }
 
-/** Signed-power spacing concentrates vertices near the boat, not at the horizon. */
+/** Uniform near-boat cells; smoothly growing outer cells cover the fog horizon. */
 function createWaterGrid(): THREE.BufferGeometry {
-  const { waterSize, waterSegments: segments, waterGridPower: power } = WAVE_PARAMETERS;
+  const { waterSize, waterSegments: segments, waterInnerSize, waterInnerSegments } = WAVE_PARAMETERS;
   const side = segments + 1;
+  const half = segments / 2;
+  const innerHalf = waterInnerSegments / 2;
+  const cell = waterInnerSize / waterInnerSegments;
+  const outerCells = half - innerHalf;
+  const outerLength = (waterSize - waterInnerSize) / 2;
+  // Solve the geometric progression for the requested extent, keeping the first
+  // outer cell close to the uniform patch's cell size. Setup only, never per frame.
+  let lo = 1, hi = 2;
+  for (let i = 0; i < 40; i++) {
+    const ratio = (lo + hi) / 2;
+    const length = cell * ratio * (ratio ** outerCells - 1) / (ratio - 1);
+    if (length < outerLength) lo = ratio;
+    else hi = ratio;
+  }
+  const ratio = (lo + hi) / 2;
+  const axis = new Float32Array(side);
+  let distance = 0;
+  let spacing = cell;
+  for (let i = 1; i <= half; i++) {
+    if (i > innerHalf) spacing *= ratio;
+    distance += spacing;
+    axis[half + i] = distance;
+    axis[half - i] = -distance;
+  }
   const positions = new Float32Array(side * side * 3);
+  const footprints = new Float32Array(side * side * 2);
   const indices = new Uint32Array(segments * segments * 6);
   for (let row = 0; row <= segments; row++) {
-    const rz = 2 * row / segments - 1;
-    const z = Math.sign(rz) * Math.abs(rz) ** power * waterSize / 2;
+    const z = axis[row]!;
+    const dz = Math.max(z - axis[Math.max(0, row - 1)]!, axis[Math.min(segments, row + 1)]! - z);
     for (let col = 0; col <= segments; col++) {
-      const rx = 2 * col / segments - 1;
+      const x = axis[col]!;
       const offset = (row * side + col) * 3;
-      positions[offset] = Math.sign(rx) * Math.abs(rx) ** power * waterSize / 2;
+      positions[offset] = x;
       positions[offset + 2] = z;
+      const f = (row * side + col) * 2;
+      footprints[f] = Math.max(x - axis[Math.max(0, col - 1)]!, axis[Math.min(segments, col + 1)]! - x);
+      footprints[f + 1] = dz;
     }
   }
   let offset = 0;
@@ -38,6 +66,7 @@ function createWaterGrid(): THREE.BufferGeometry {
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('cellFootprint', new THREE.BufferAttribute(footprints, 2));
   geometry.setIndex(new THREE.BufferAttribute(indices, 1));
   geometry.computeBoundingSphere();
   return geometry;
@@ -60,10 +89,11 @@ function skyColours(sky: THREE.Mesh): { horizon: THREE.Color; zenith: THREE.Colo
 
 export function createWater(
   cfg: WaveConfig, sky: THREE.Mesh, sun: THREE.DirectionalLight,
-  hemisphere: THREE.HemisphereLight, snapSize: number,
+  hemisphere: THREE.HemisphereLight,
 ): WaterView {
   const colours = skyColours(sky);
   let components = cfg.components;
+  const waveCode = gerstnerGLSL(components);
   const material = new THREE.ShaderMaterial({
     fog: true,
     uniforms: THREE.UniformsUtils.merge([
@@ -85,14 +115,16 @@ export function createWater(
     vertexShader: `
       uniform float waveTime;
       uniform float waveScale;
+      attribute vec2 cellFootprint;
       varying vec3 waterPosition;
-      varying vec3 waterNormal;
+      varying vec2 waterLabel;
       #include <fog_pars_vertex>
-      ${gerstnerGLSL(cfg.components)}
+      ${waveCode}
       void main() {
-        // Snapping changes tessellation only. Phase is always evaluated in world x/z.
-        vec2 label = position.xz + modelMatrix[3].xz;
-        gerstnerWave(label, waveTime, waveScale, waterPosition, waterNormal);
+        // Continuous recentering changes sampling smoothly, not the world-space phase.
+        waterLabel = position.xz + modelMatrix[3].xz;
+        vec3 unusedNormal;
+        gerstnerWave(waterLabel, waveTime, waveScale, cellFootprint, waterPosition, unusedNormal);
         vec4 mvPosition = viewMatrix * vec4(waterPosition, 1.0);
         gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
@@ -106,11 +138,18 @@ export function createWater(
       uniform vec3 sunColour;
       uniform vec3 hemisphereSky;
       uniform vec3 hemisphereGround;
+      uniform float waveTime;
+      uniform float waveScale;
       varying vec3 waterPosition;
-      varying vec3 waterNormal;
+      varying vec2 waterLabel;
       #include <fog_pars_fragment>
+      ${waveCode}
       void main() {
-        vec3 normal = normalize(waterNormal);
+        // Fragment normals retain detail that the distant geometry cannot resolve.
+        // Pixel-footprint filtering prevents that detail aliasing at grazing angles.
+        vec2 footprint = max(abs(dFdx(waterLabel)), abs(dFdy(waterLabel)));
+        vec3 unusedPosition, normal;
+        gerstnerWave(waterLabel, waveTime, waveScale, footprint, unusedPosition, normal);
         vec3 view = normalize(cameraPosition - waterPosition);
         vec3 reflection = reflect(-view, normal);
         // Same square-root horizon-to-zenith gradient as createSky's current dome.
@@ -120,7 +159,14 @@ export function createWater(
           * pow(1.0 - max(dot(normal, view), 0.0), 5.0);
         vec3 ambient = mix(hemisphereGround, hemisphereSky, normal.y * 0.5 + 0.5);
         vec3 diffuse = waterColour * (ambient + sunColour * max(dot(normal, sunDirection), 0.0));
-        float glint = pow(max(dot(reflection, sunDirection), 0.0), ${SUN_SHININESS.toFixed(1)});
+        // TUNING GUESS: broaden the specular lobe by the pixel's normal variance;
+        // preserve the cosine-power lobe's integrated energy instead of flashing
+        // a narrow highlight on/off as it crosses a pixel.
+        vec3 normalDx = dFdx(normal), normalDy = dFdy(normal);
+        float variance = dot(normalDx, normalDx) + dot(normalDy, normalDy);
+        float glintPower = ${SUN_SHININESS.toFixed(1)} / (1.0 + ${SUN_SHININESS.toFixed(1)} * variance);
+        float glint = pow(max(dot(reflection, sunDirection), 0.0), glintPower)
+          * (glintPower + 1.0) / ${(SUN_SHININESS + 1).toFixed(1)};
         vec3 colour = mix(diffuse, reflectedSky + sunColour * glint, fresnel);
         gl_FragColor = vec4(colour, 1.0);
         #include <tonemapping_fragment>
@@ -145,7 +191,7 @@ export function createWater(
           motions[i]!.set(w.omega, w.phase, w.choppiness);
         }
       }
-      mesh.position.set(Math.round(x / snapSize) * snapSize, 0, Math.round(z / snapSize) * snapSize);
+      mesh.position.set(x, 0, z);
       material.uniforms.waveTime!.value = t;
       material.uniforms.waveScale!.value = waveAmplitude(cfg);
     },

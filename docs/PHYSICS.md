@@ -112,6 +112,12 @@ from a configurable direction. Do not hardcode wind anywhere else.
   downwash evaluation. Existing foil moments produce course changes: no artificial heading kick.
   Force integration remains the existing planar model; pitch influences geometry/inflow, not full 6-DOF dynamics.
 - Rendering uses interpolated sim time, the same compiled wave components and sampled surface height.
+  The central 32 m patch has 0.20 m cells; outer cells grow toward the horizon. Recentring is continuous,
+  not a 5 m snap. The shared GLSL kernel accepts a sampling footprint: zero reproduces CPU math;
+  nonzero smoothly filters unresolved components (full at 8 samples/wavelength, zero below 4).
+  Geometry uses actual adjacent cell dimensions; analytic fragment normals use pixel derivatives.
+  The specular lobe broadens with pixel normal variance while preserving its integrated energy.
+  These are render-only LOD/antialiasing approximations, not changes to the physical spectrum.
   Heave is kinematic only. Hull drag still uses the flat-water resistance model; no wave-added resistance,
   breaking waves, wet/dry foil area, slamming, or capsize is modeled.
 
@@ -144,6 +150,26 @@ from a configurable direction. Do not hardcode wind anywhere else.
 - Browser smoke exercised moving water, outside/cockpit views, live controls, zero amplitude and off.
   No measured Laser wave-response validation, long-distance float-precision validation, or target-laptop
   GPU performance qualification has been done.
+
+**Rendering repair verification**
+- Isolated water-only scene, fixed camera and time: the original 2 cm crossing of a 5 m snap boundary
+  changed 25,002 pixels by more than 2 RGB levels at default chop (mean RGB difference 0.669 on a
+  0-255 scale). Within-cell motion changed zero pixels. Shortest-period crossing changed 72,581 pixels.
+- With identical isolated camera/environment, the repaired default crossing changes 53 pixels,
+  mean 0.00562; the neighboring 2 cm movement has mean 0.00553. Shortest-period means are
+  0.02829 across the former boundary and 0.02891 next to it. No special discontinuity remains.
+- A 162-case sweep covers three camera poses, periods 2/default/8 s, amplitude 0/1/2, three directions,
+  and x/z crossings. Worst crossing-to-neighbor mean-change ratio is 1.091.
+- Three 240-frame moving-wave/moving-mesh sequences (default and control extremes) cross multiple
+  former boundaries without boundary spikes. A 6-second isolated recording and 10-second actual
+  outside/cockpit recording were captured and inspected. No shader/JS errors were reported.
+- GPU transform feedback: 486 samples match CPU displacement/normals at zero footprint and the
+  actual near-boat 0.20 m footprint across period/direction/amplitude/time/position. Maximum errors:
+  4.33e-6 m position, 3.16e-6 normal component. Filter transition/endpoints also exercised on the GPU.
+- Waves-off CSV and SVG again match the pre-wave 6/7/8/9 kn baseline byte-for-byte.
+  Existing 73 tests, lint, typechecking and production build pass.
+- Far-field rendering is deliberately band-limited and is not an exact unfiltered surface there.
+  No new empirical Laser calibration, long-session/floating-origin proof or target-GPU qualification.
 
 ## 3. Boat parameters (`data/laser.json`)
 

@@ -149,19 +149,26 @@ export function sampleWaves(
  * GLSL specialization of this model, generated from the SAME compiled components.
  * Called once during material creation, never per frame. The shader exposes both
  * displacement and analytic tangents (not mesh finite-difference normals).
+ * Footprint is the x/z sampling interval (mesh cell or pixel). Zero footprint
+ * gives the unfiltered physical model. Nonzero footprints band-limit rendering,
+ * not CPU physics; normals ignore derivatives of the slowly changing LOD weight.
  */
 export function gerstnerGLSL(waves: readonly WaveComponent[]): string {
   return `
 uniform vec4 waveShape[${waves.length}];
 uniform vec3 waveMotion[${waves.length}];
-void gerstnerWave(vec2 label, float time, float scale, out vec3 position, out vec3 normal) {
+void gerstnerWave(vec2 label, float time, float scale, vec2 footprint, out vec3 position, out vec3 normal) {
   position = vec3(label.x, 0.0, label.y);
   vec3 tx = vec3(1.0, 0.0, 0.0);
   vec3 tz = vec3(0.0, 0.0, 1.0);
   ${waves.map((_, i) => `{
     vec2 d = waveShape[${i}].xy;
     float k = waveShape[${i}].z;
-    float a = scale * waveShape[${i}].w;
+    float phaseStep = k * max(abs(d.x) * footprint.x, abs(d.y) * footprint.y);
+    float weight = 1.0 - smoothstep(
+      ${(2 * Math.PI / parameters.waterFilterFullSamples).toFixed(10)},
+      ${(2 * Math.PI / parameters.waterFilterZeroSamples).toFixed(10)}, phaseStep);
+    float a = scale * waveShape[${i}].w * weight;
     float qa = a * waveMotion[${i}].z;
     float phase = k * dot(d, label) - waveMotion[${i}].x * time + waveMotion[${i}].y;
     float s = sin(phase), c = cos(phase);

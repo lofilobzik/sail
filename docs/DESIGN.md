@@ -59,8 +59,9 @@ Rules:
 - Boat parameters live in `data/laser.json`, not in code. A second boat should be a new config file.
 - Every constant is either sourced from `docs/` or marked `// TUNING GUESS`.
   Do not recall coefficient tables from memory.
-- Endless water uses a **floating origin**: recenter the world around the boat when it drifts
-  far from zero. The water mesh follows the boat and snaps to its own grid so it never visibly slides.
+- Water follows the boat continuously, but wave phase stays anchored to world coordinates.
+  Only the flat-water debug grid snaps. Filter rendering detail to mesh/pixel resolution.
+  Add a **floating origin** if long-distance precision jitter appears; it is not implemented yet.
 
 ## Controls
 
@@ -77,9 +78,11 @@ fraction of a second and holds its position. Same idea for the sheet.
 ## Visuals
 
 - **Water:** one Gerstner model in `sim/waves.ts`, with parameters in `data/waves.json`, supplies
-  CPU sampling and shader displacement/analytic normals. A graded, snapped grid follows the boat
-  without moving the world-space phase. Physics responds to slope and foil orbital flow; visual heave
-  follows surface height, without a vertical buoyancy-force simulation.
+  CPU sampling and shader displacement/analytic normals. A uniform near-boat patch and growing
+  outer grid follow continuously without moving world-space phase. Mesh-cell filtering prevents
+  unresolved displacement; per-pixel normals and footprint/specular filtering prevent distant shimmer.
+  Physics responds to slope and foil orbital flow; visual heave follows surface height, without a
+  vertical buoyancy-force simulation.
 - **Sky:** Three.js analytic Sky shader. No screen-space reflections, no heavy post-processing.
 - **Boat:** procedural hull lofted from a few cross-sections using class dimensions,
   plus spars and fittings. Low triangle count.

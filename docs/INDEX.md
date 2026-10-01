@@ -57,7 +57,7 @@ tables, so transcribe any number you use from the **page image**, then copy it i
 | `src/data/laser-polar-target.json` | Day VPP 9 kn, 80 kg: Fig 4 (upwind 40-60) and Fig 6 (downwind 150-180), read off the plots (approximate) | done (milestone 2) |
 | `src/data/laser.json` `visual` block | Render-only boat geometry: hull section table (plan from ILCA p27), cockpit, spars and blocks (p33-34), sail widths (p36), visual estimates marked in `sources` | done (milestone 3) |
 | `src/data/buoys.json` | Test buoy positions (not a course) | done (milestone 3) |
-| `src/data/waves.json` | Shared Gerstner spectrum, amplitude/period bounds, pitch response and graded water grid; sources and TUNING GUESS labels | done (water/waves) |
+| `src/data/waves.json` | Shared Gerstner spectrum, amplitude/period bounds, pitch response, uniform-near/growing-outer water grid and render-only sampling filters; sources and TUNING GUESS labels | done (water/waves; blinking repair verified) |
 
 ## Wave references (web)
 
