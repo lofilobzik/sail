@@ -57,11 +57,24 @@ tables, so transcribe any number you use from the **page image**, then copy it i
 | `src/data/laser-polar-target.json` | Day VPP 9 kn, 80 kg: Fig 4 (upwind 40-60) and Fig 6 (downwind 150-180), read off the plots (approximate) | done (milestone 2) |
 | `src/data/laser.json` `visual` block | Render-only boat geometry: hull section table (plan from ILCA p27), cockpit, spars and blocks (p33-34), sail widths (p36), visual estimates marked in `sources` | done (milestone 3) |
 | `src/data/buoys.json` | Test buoy positions (not a course) | done (milestone 3) |
+| `src/data/waves.json` | Shared Gerstner spectrum, amplitude/period bounds, pitch response and graded water grid; sources and TUNING GUESS labels | done (water/waves) |
+
+## Wave references (web)
+
+- [GPU Gems chapter 1, Effective Water Simulation from Physical Models](https://developer.nvidia.com/gpugems/gpugems/part-i-natural-effects/chapter-1-effective-water-simulation-physical-models),
+  section 1.2.3: Gerstner displacement (Eq. 9), analytic orientation, steepness constraint and deep-water
+  dispersion (Eq. 13). Equation images checked when implementing `sim/waves.ts`.
+- [Airy wave theory](https://en.wikipedia.org/wiki/Airy_wave_theory): supporting reference for orbital
+  motion and exponential deep-water attenuation. The implementation differentiates its Gerstner
+  particle displacement; multiple waves and boat coupling remain approximations.
+- No measured Laser roll/pitch/course response in a known wave field is available here.
+  Spectrum and response defaults are **TUNING GUESS**; sanity checks are recorded in `PHYSICS.md` L7.
 
 ## Not downloaded
 
 Marchaj, *Aero-Hydrodynamics of Sailing* (source of the older sail data), Fossati, *Aero-Hydrodynamics and the
-Performance of Sailing Yachts*, and the NVIDIA *GPU Gems* water chapter for Gerstner waves.
+Performance of Sailing Yachts*. The NVIDIA *GPU Gems* water chapter was consulted online (above);
+no local copy is downloaded.
 
 ## Housekeeping
 

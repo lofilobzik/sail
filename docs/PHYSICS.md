@@ -21,7 +21,9 @@ Status markers used below:
 
 ## 1. State and inputs
 
-State: position (x, z), heading, heel, body velocity (surge u, sway v), yaw rate, heel rate.
+State: position (x, z), heading, heel, pitch, body velocity (surge u, sway v), yaw rate, heel rate, pitch rate.
+Pitch is positive bow up; heel remains absolute/gravity-relative, positive starboard rail down.
+Velocity is relative to mean still water, not the instantaneous orbital flow.
 Inputs, all normalized and rate-limited upstream in `input/`:
 - tiller (-1..1), mapped to rudder angle
 - mainsheet (0..1), mapped to boom angle limit (more sheet out = larger boom angle)
@@ -84,9 +86,64 @@ from a configurable direction. Do not hardcode wind anywhere else.
 - Include added mass in sway and yaw and rotational damping so the boat does not spin like a top.
   Values **[tune]** unless a reference gives them.
 
-### L7. Environment (deferred)
+### L7. Environment and waves
 - v1 wind is fixed. Gusts, shifts, and wind gradient with height are later drop-ins behind `getWind`.
-- Waves are visual only in v1. Later the same Gerstner function is evaluated in `sim/` for pitch and roll.
+- `sim/waves.ts` is the shared Gerstner model for CPU and shader. `data/waves.json` holds the spectrum,
+  controls' bounds, pitch response and water mesh settings, with sources or **TUNING GUESS** labels.
+- Each component uses `k = 2 pi / L`, `omega = sqrt(g k)`, and phase
+  `theta = k D dot q - omega t + phase0`, where D is a compass direction **TO**, not wind FROM.
+  Particle position is `(q.x + Q A D.x cos(theta), A sin(theta), q.z + Q A D.z cos(theta))`.
+  Source: GPU Gems chapter 1, section 1.2.3, Eqs. 9 and 13 (web link in `INDEX.md`).
+- World-position sampling inverts horizontal displacement; surface slopes account for that mapping's
+  Jacobian, rather than evaluating a sine height at an undisplaced world point.
+- Orbital velocity is the particle time derivative:
+  `(Q A omega D.x sin(theta), -A omega cos(theta), Q A omega D.z sin(theta))`.
+  At depth below the local surface, each component's amplitude decays by `exp(-k depth)`.
+  Q = 1 for defaults, so single-component orbits are circular and speed is `A omega exp(-k depth)`.
+  Superposition and local-surface depth handling are approximations, not an exact nonlinear fluid solution.
+- Roll target is `-atan(slope dot starboard)`; pitch target is `atan(slope dot forward)`.
+  Hull-form restoring acts against heel relative to the surface. Crew righting remains gravity-relative:
+  add `mass g GM [sin(heel) - sin(heel - rollTarget)]` to the existing moment.
+  This local-slope buoyancy approximation is **TUNING GUESS**, not a measured response operator.
+- Pitch is a damped oscillator driven by the longitudinal slope, with frequency, damping and limit in
+  `waves.json` (**TUNING GUESS**). Disabling the heel layer disables both roll and pitch response.
+- Board and rudder sample orbital flow separately at their transformed positions and depths.
+  Ambient velocity is projected into foil axes and subtracted from local inflow before lift/drag and
+  downwash evaluation. Existing foil moments produce course changes: no artificial heading kick.
+  Force integration remains the existing planar model; pitch influences geometry/inflow, not full 6-DOF dynamics.
+- Rendering uses interpolated sim time, the same compiled wave components and sampled surface height.
+  Heave is kinematic only. Hull drag still uses the flat-water resistance model; no wave-added resistance,
+  breaking waves, wet/dry foil area, slamming, or capsize is modeled.
+
+**Controls and compatibility**
+- Browser waves default on; `defaultConfig()` and the polar script default off.
+- Backquote / F3 opens the debug panel: waves checkbox, amplitude multiplier 0-2, primary period 2-8 s,
+  and propagation direction TO in degrees. Period changes preserve deep-water dispersion and scale
+  other components' periods proportionally; direction rotates the entire spectrum. Amplitudes stay fixed.
+- Default primary component: amplitude 0.12 m (height 0.24 m), wavelength 12 m, period about 2.77 s;
+  two smaller crossing components give light chop. All sea-state choices are **TUNING GUESS**.
+- Zero amplitude and waves off take the exact pre-wave force path, with pitch/pitch rate zero.
+  Switching off does not rewind motion already induced by waves; reset to compare trajectories.
+- Browser checking parameters: `?waves=0`, `waveAmplitude=0..2`, `wavePeriod=2..8`, `waveDirection=degrees`.
+- Polar options: `--waves`, `--wave-amplitude`, `--wave-period`, `--wave-direction`. Periodically forced
+  waves-on runs are not a validated steady-state polar; use the script's default waves-off mode for Day comparisons.
+
+**Verification (water/waves change)**
+- Pre/post waves-off CSV and SVG match byte-for-byte for 6/7/8/9 kn, TWA 30-180 in 5-degree steps.
+- Regression tests cover inverse surface lookup/gradients, particle velocity derivatives, depth decay,
+  zero-amplitude equivalence, signed roll/pitch, mirrored side-wave steering, distinct foil sampling and toggles.
+- GPU transform-feedback smoke: 243 samples over period/direction/amplitude/time/position;
+  maximum CPU/GPU position difference about 4.33e-6 m and normal-component difference about 3.16e-6.
+- Isolated default single-wave slope `pi H/L = k A = 3.6 degrees`: settled roll amplitude about
+  6.22 degrees and pitch about 2.35 degrees. Board/rudder side-flow peaks 0.22846/0.24154 m/s
+  match `A omega exp(-k depth)` at their respective depths.
+- Eighteen 60-second period/amplitude/direction scenarios remain finite and within angle clamps.
+  Extreme settings can reach the heel clamp; this is not proof of realistic heavy-sea response.
+  Halving dt in a default 30-second run changes heading about 0.006 degrees, heel 0.033 degrees,
+  pitch 0.007 degrees and position 0.014 m.
+- Browser smoke exercised moving water, outside/cockpit views, live controls, zero amplitude and off.
+  No measured Laser wave-response validation, long-distance float-precision validation, or target-laptop
+  GPU performance qualification has been done.
 
 ## 3. Boat parameters (`data/laser.json`)
 
@@ -140,4 +197,5 @@ If the polar shape is wrong, fix the sail curves (L2) first, then the foils (L3)
 ## 6. Debug overlay (always keep current)
 
 Apparent wind vector, true wind vector, sail force components, foil forces, hull drag, boat speed, leeway angle,
-heel, `luffAmount`, current inputs. Toggle with a key. Off by default in normal play.
+heel, `luffAmount`, current inputs. Wave diagnostics include surface height, roll/pitch targets,
+pitch, wave roll moment and separate board/rudder orbital inflows. Toggle with a key. Off by default in normal play.

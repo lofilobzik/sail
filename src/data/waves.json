@@ -1,0 +1,25 @@
+{
+  "amplitudeScale": 1,
+  "maxAmplitudeScale": 2,
+  "minPeriodSeconds": 2,
+  "maxPeriodSeconds": 8,
+  "pitchFrequency": 2.5,
+  "pitchDampingRatio": 0.85,
+  "pitchLimitDeg": 15,
+  "waterSize": 4000,
+  "waterSegments": 256,
+  "waterGridPower": 3,
+  "waves": [
+    { "wavelength": 12, "amplitude": 0.12, "directionDeg": 90, "phase": 0, "choppiness": 1 },
+    { "wavelength": 6, "amplitude": 0.045, "directionDeg": 160, "phase": 1.2, "choppiness": 1 },
+    { "wavelength": 3.5, "amplitude": 0.02, "directionDeg": 210, "phase": 2.4, "choppiness": 1 }
+  ],
+  "sources": {
+    "equations": "GPU Gems chapter 1, section 1.2.3, Eq. 9 and dispersion Eq. 13: https://developer.nvidia.com/gpugems/gpugems/part-i-natural-effects/chapter-1-effective-water-simulation-physical-models",
+    "orbitalDecay": "Deep-water exp(k depth); velocity is the time derivative of the displaced particle position. https://en.wikipedia.org/wiki/Airy_wave_theory",
+    "waves": "TUNING GUESS: deterministic small crossing waves, directions are compass bearings TO; not inferred from wind or measured sea state. Choppiness 1 gives circular single-component particle orbits.",
+    "amplitudeScale": "TUNING GUESS: range 0-2; primary period allowed 2-8 s. At minimum period and maximum amplitude sum(k A Q) remains below 1 (no overturning).",
+    "pitchResponse": "TUNING GUESS: pitchFrequency in rad/s, pitchDampingRatio dimensionless, pitchLimitDeg; no measured Laser wave response available.",
+    "waterMesh": "TUNING GUESS: waterSize, waterSegments, waterGridPower; dense near boat, coarse at horizon."
+  }
+}

@@ -1,10 +1,11 @@
 /**
  * Procedural Laser assembled from render parts, driven by an interpolated sim pose.
  * Reads sim state only. Group structure:
- *   yaw (world x/z, rotation.y = -heading)
- *     heel (rotation.z = -heel): hull, deck, foils, mast, sailor, lines
- *       rudder pivot (rotation.y = -rudderAngle): blade, head, tiller
- *       boom pivot (rotation.y = +boom): boom, blocks, sail
+ *   yaw (world x/y/z, rotation.y = -heading)
+ *     pitch (rotation.x = +pitch): bow up, in the boat's heading frame
+ *       heel (rotation.z = -heel): hull, deck, foils, mast, sailor, lines
+ *         rudder pivot (rotation.y = -rudderAngle): blade, head, tiller
+ *         boom pivot (rotation.y = +boom): boom, blocks, sail
  */
 import * as THREE from 'three';
 import type { BoatModel } from '../sim';
@@ -20,6 +21,8 @@ const TRAVELLER_BLOCK_RADIUS = 0.025; // visual estimate, m
 
 export interface BoatPose {
   heel: number;
+  /** Physical pitch, rad, positive bow up. */
+  pitch: number;
   boom: number;
   /** Rad, + = leading edge / tiller to starboard. */
   rudderAngle: number;
@@ -36,6 +39,7 @@ export interface BoatPose {
 
 export interface BoatMesh {
   yaw: THREE.Group;
+  pitch: THREE.Group;
   heel: THREE.Group;
   sailor: Sailor;
   layout: BoatLayout;
@@ -46,8 +50,10 @@ export function createBoatMesh(model: BoatModel): BoatMesh {
   const layout = new BoatLayout(model);
   const v = model.cfg.visual;
   const yaw = new THREE.Group();
+  const pitch = new THREE.Group();
   const heel = new THREE.Group();
-  yaw.add(heel);
+  yaw.add(pitch);
+  pitch.add(heel);
 
   heel.add(createHull(layout), createDaggerboard(layout));
   const rudder = createRudder(layout);
@@ -82,10 +88,12 @@ export function createBoatMesh(model: BoatModel): BoatMesh {
 
   return {
     yaw,
+    pitch,
     heel,
     sailor,
     layout,
     update(pose) {
+      pitch.rotation.x = pose.pitch;
       heel.rotation.z = -pose.heel;
       rig.boomPivot.rotation.y = pose.boom;
       rudder.pivot.rotation.y = -pose.rudderAngle;

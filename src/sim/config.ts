@@ -3,6 +3,7 @@
  * toggle so a wrong result can be bisected layer by layer. Sub-toggles switch
  * individual terms inside a layer.
  */
+import { defaultWaves, type WaveConfig } from './waves';
 
 export const LAYER_IDS = ['apparentWind', 'sail', 'foils', 'hull', 'heel', 'yaw'] as const;
 export type LayerId = (typeof LAYER_IDS)[number];
@@ -86,6 +87,7 @@ export interface SimConfig {
   models: ModelOptions;
   wind: WindConfig;
   env: EnvironmentConfig;
+  waves: WaveConfig;
   /** Fixed timestep, s. */
   dt: number;
   /** Integration substeps per fixed step. */
@@ -115,6 +117,7 @@ export function defaultConfig(): SimConfig {
     },
     // DESIGN.md: fixed 6-8 kn; direction configurable.
     wind: { speedKn: 7, fromDeg: 0 },
+    waves: defaultWaves(),
     env: {
       rhoAir: 1.225, // PHYSICS.md section 3, standard
       rhoWater: 1025, // PHYSICS.md section 3, sea water (1000 fresh)

@@ -6,7 +6,7 @@ import { MouseLook } from './input/mouseLook';
 import { Vector2 } from 'three';
 import { SceneView, type RenderPose } from './render/scene';
 import { ForceVectors } from './render/vectors';
-import { DEG, FixedStep, buildBoat, defaultConfig, evaluate, initialState, step, wrapPi, type BoatState, type Diagnostics } from './sim';
+import { DEG, FixedStep, WAVE_PARAMETERS, buildBoat, clamp, defaultConfig, evaluate, initialState, setWaveParameters, step, wrapPi, type BoatState, type Diagnostics } from './sim';
 
 const START_HEADING_DEG = 90; // TUNING GUESS: beam reach for the default wind from 0°
 const START_SPEED = 1; // TUNING GUESS: initial boat speed, m/s
@@ -16,9 +16,23 @@ const BENCH_DELAY_MS = 2000;
 
 const boat = buildBoat();
 const cfg = defaultConfig();
+cfg.waves.enabled = true;
+const params = new URLSearchParams(location.search);
+if (params.get('waves') === '0') cfg.waves.enabled = false;
+const waveScale = params.get('waveAmplitude');
+if (waveScale !== null && Number.isFinite(Number(waveScale))) {
+  cfg.waves.amplitudeScale = clamp(Number(waveScale), 0, WAVE_PARAMETERS.maxAmplitudeScale);
+}
+const wavePeriod = params.get('wavePeriod');
+const waveDirection = params.get('waveDirection');
+setWaveParameters(
+  cfg.waves,
+  wavePeriod !== null && Number.isFinite(Number(wavePeriod)) ? Number(wavePeriod) : cfg.waves.periodSeconds,
+  waveDirection !== null && Number.isFinite(Number(waveDirection)) ? Number(waveDirection) : cfg.waves.directionDeg,
+);
 const fixed = new FixedStep(cfg.dt);
 
-const view = new SceneView(boat);
+const view = new SceneView(boat, cfg.waves);
 const input = new ControlInput(view.renderer.domElement);
 const look = new MouseLook(view.renderer.domElement);
 const vectors = new ForceVectors(boat, view.scene, view.boat.yaw, view.boat.heel);
@@ -45,7 +59,6 @@ window.addEventListener('keydown', (e) => {
 
 // Checking aids: ?view=outside&look=<yawDeg>,<pitchDeg> sets the initial view without pointer lock;
 // ?water=0 hides the water and grid to show the foils.
-const params = new URLSearchParams(location.search);
 if (params.get('view') === 'outside') view.mode = 'outside';
 if (params.get('water') === '0') view.setWaterVisible(false);
 const lookParam = params.get('look')?.split(',').map(Number);
@@ -79,10 +92,12 @@ function frame(now: number): void {
   const z = lerp(prev.z, curr.z, a);
   const c = diagnostics.controls;
   lastPose = {
+    t: lerp(prev.t, curr.t, a),
     x,
     z,
     heading: prev.heading + wrapPi(curr.heading - prev.heading) * a,
     heel: lerp(prev.heel, curr.heel, a),
+    pitch: lerp(prev.pitch, curr.pitch, a),
     boom: lerp(prev.boom, curr.boom, a),
     crewY: lerp(prev.crewY, curr.crewY, a),
     rudderAngle: c.tiller * boat.cfg.rudder.maxAngleDeg * DEG,

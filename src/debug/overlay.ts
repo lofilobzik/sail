@@ -3,10 +3,10 @@
  * Text grouped by physics layer L1..L6 (+ Boat), each with its own show/hide checkbox.
  * The Physics section mutates the live SimConfig (layer and term toggles, wind) and can reset the boat.
  */
-import { DEG, KNOT, wrap2Pi, type BoatState, type Diagnostics, type SimConfig } from '../sim';
+import { DEG, KNOT, WAVE_PARAMETERS, setWaveParameters, wrap2Pi, type BoatState, type Diagnostics, type SimConfig } from '../sim';
 import type { ArrowVisibility } from '../render/vectors';
 
-const GROUPS = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'Boat'] as const;
+const GROUPS = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'Waves', 'Boat'] as const;
 type GroupId = (typeof GROUPS)[number];
 const GROUP_TITLES: Record<GroupId, string> = {
   L1: 'L1 Apparent wind',
@@ -15,6 +15,7 @@ const GROUP_TITLES: Record<GroupId, string> = {
   L4: 'L4 Hull',
   L5: 'L5 Heel',
   L6: 'L6 Yaw',
+  Waves: 'L7 Waves',
   Boat: 'Boat',
 };
 const WIND_MIN_KN = 6; // DESIGN.md: fixed 6-8 kn
@@ -29,7 +30,7 @@ const f3 = (v: number): string => v.toFixed(3);
 
 export class DebugOverlay {
   visible = false;
-  readonly show: Record<GroupId, boolean> = { L1: true, L2: true, L3: true, L4: true, L5: true, L6: true, Boat: true };
+  readonly show: Record<GroupId, boolean> = { L1: true, L2: true, L3: true, L4: true, L5: true, L6: true, Waves: true, Boat: true };
   private readonly root = document.createElement('div');
   private readonly text = {} as Record<GroupId, HTMLPreElement>;
 
@@ -118,6 +119,14 @@ export class DebugOverlay {
       ? `sail ${nm(y.sail)}  foils ${nm(y.foils)}  hull ${nm(y.hull)}\nmunk ${nm(y.munk)}  damping ${nm(y.damping)}  total ${nm(y.total)}`
       : OFF;
 
+    const w = d.waves;
+    t.Waves.textContent = w
+      ? `surface ${w.height.toFixed(3)} m  roll target ${deg(w.rollTarget)}  pitch target ${deg(w.pitchTarget)}\n` +
+        `pitch ${deg(s.pitch)}  wave roll M ${nm(w.rollMoment)}\n` +
+        `board flow ${w.boardU.toFixed(3)} / ${w.boardV.toFixed(3)} m/s (forward / starboard)\n` +
+        `rudder flow ${w.rudderU.toFixed(3)} / ${w.rudderV.toFixed(3)} m/s`
+      : `${OFF} (flat water)`;
+
     const c = d.controls;
     t.Boat.textContent =
       `speed ${kn(d.speed)}  leeway ${deg(d.leeway)}  VMG ${kn(d.vmg)}  heading ${deg(wrap2Pi(s.heading))}\n` +
@@ -152,6 +161,32 @@ export class DebugOverlay {
       el.value = String(cfg.wind.fromDeg);
     });
 
+    this.checkbox(sec, 'waves', cfg.waves.enabled, (v) => (cfg.waves.enabled = v));
+    const amplitude = document.createElement('label');
+    amplitude.style.display = 'block';
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '0';
+    slider.max = String(WAVE_PARAMETERS.maxAmplitudeScale);
+    slider.step = '0.05'; // TUNING GUESS: amplitude control increment
+    slider.value = String(cfg.waves.amplitudeScale);
+    const value = document.createElement('span');
+    value.textContent = ` ${cfg.waves.amplitudeScale.toFixed(2)}×`;
+    slider.addEventListener('input', () => {
+      cfg.waves.amplitudeScale = Number(slider.value);
+      value.textContent = ` ${cfg.waves.amplitudeScale.toFixed(2)}×`;
+    });
+    amplitude.append('wave amplitude ', slider, value);
+    sec.appendChild(amplitude);
+    this.numberInput(sec, 'wave period s (2–8)', cfg.waves.periodSeconds, (v, el) => {
+      setWaveParameters(cfg.waves, v, cfg.waves.directionDeg);
+      el.value = cfg.waves.periodSeconds.toFixed(2);
+    });
+    this.numberInput(sec, 'wave direction TO °', cfg.waves.directionDeg, (v, el) => {
+      setWaveParameters(cfg.waves, cfg.waves.periodSeconds, v);
+      el.value = String(cfg.waves.directionDeg);
+    });
+
     const btn = document.createElement('button');
     btn.textContent = 'Reset boat';
     btn.addEventListener('click', () => {
@@ -181,6 +216,7 @@ export class DebugOverlay {
     el.style.display = 'block';
     const input = document.createElement('input');
     input.type = 'number';
+    input.step = 'any';
     input.value = String(initial);
     input.style.width = '5em';
     input.addEventListener('change', () => {

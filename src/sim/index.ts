@@ -14,3 +14,7 @@ export { CubicSpline } from './spline';
 export { initialState, NEUTRAL_CONTROLS, type BoatState, type Controls } from './state';
 export { evaluate, step, type Diagnostics, type StepResult } from './step';
 export { getWind } from './wind';
+export {
+  defaultWaves, setWaveParameters, waveAmplitude, createWaveSample, sampleWaveParticle, sampleWaves,
+  gerstnerGLSL, WAVE_PARAMETERS, type WaveConfig, type WaveSample, type WaveComponent,
+} from './waves';

@@ -16,7 +16,7 @@ export interface BoatState {
   z: number;
   /** Compass heading, rad. */
   heading: number;
-  /** Body velocity through the water, m/s (+u forward, +v starboard). */
+  /** Body velocity relative to mean still water, m/s (+u forward, +v starboard). */
   u: number;
   v: number;
   /** Yaw rate, rad/s (+ = bow to starboard). */
@@ -24,6 +24,9 @@ export interface BoatState {
   /** Heel, rad (+ = starboard rail down), and heel rate. */
   heel: number;
   p: number;
+  /** Wave-driven pitch, rad (+ = bow up), and pitch rate, rad/s. */
+  pitch: number;
+  pitchRate: number;
   /** Boom angle from the centreline, rad (+ = boom to starboard). */
   boom: number;
   /** Side the boom is on: +1 starboard, -1 port. Changes on tacks and gybes. */
@@ -43,6 +46,8 @@ export function initialState(heading = 0, speed = 0): BoatState {
     r: 0,
     heel: 0,
     p: 0,
+    pitch: 0,
+    pitchRate: 0,
     boom: 0,
     boomSide: 1,
     crewY: 0,

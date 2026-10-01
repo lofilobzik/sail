@@ -1,14 +1,14 @@
 /**
- * Three.js scene: lights, sky, flat water and snapped grid, buoys, procedural boat and
+ * Three.js scene: lights, sky, shared Gerstner water and snapped grid, buoys, boat and
  * cameras (first-person, plus an outside view for checking). Reads state only.
  */
 import * as THREE from 'three';
 import type { BoatModel } from '../sim';
+import { createWaveSample, sampleWaves, waveAmplitude, type WaveConfig } from '../sim/waves';
 import { createBoatMesh, type BoatMesh, type BoatPose } from './boatMesh';
 import { SKY_HORIZON, createBuoys, createSky } from './environment';
+import { createWater, type WaterView } from './water';
 
-const WATER_COLOR = 0x1f4f6e; // TUNING GUESS
-const WATER_SIZE = 4000; // TUNING GUESS: water plane edge length, m
 const GRID_CELL = 5; // TUNING GUESS: grid cell size, m (grid snaps to multiples of this)
 const GRID_CELLS = 80; // TUNING GUESS: grid cells per side
 const FOV_DEG = 75; // TUNING GUESS
@@ -22,6 +22,8 @@ export type CameraMode = 'cockpit' | 'outside';
 
 /** Interpolated pose for one rendered frame. */
 export interface RenderPose extends BoatPose {
+  /** Interpolated simulation time; matches the water sampled by physics. */
+  t: number;
   x: number;
   z: number;
   heading: number;
@@ -36,18 +38,20 @@ export class SceneView {
   readonly outsideCamera: THREE.PerspectiveCamera;
   readonly boat: BoatMesh;
   mode: CameraMode = 'cockpit';
-  private readonly water: THREE.Mesh;
+  private readonly water: WaterView;
   private readonly grid: THREE.GridHelper;
   private readonly sky: THREE.Mesh;
+  private readonly surface = createWaveSample();
 
-  constructor(model: BoatModel) {
+  constructor(model: BoatModel, private readonly waves: WaveConfig) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     document.body.appendChild(this.renderer.domElement);
     this.scene.background = new THREE.Color(SKY_HORIZON);
     this.scene.fog = new THREE.Fog(SKY_HORIZON, FOG_NEAR, FOG_FAR);
 
-    this.scene.add(new THREE.HemisphereLight(0xdfefff, 0x203040, 1.2)); // TUNING GUESS intensities
+    const hemisphere = new THREE.HemisphereLight(0xdfefff, 0x203040, 1.2); // TUNING GUESS
+    this.scene.add(hemisphere);
     const sun = new THREE.DirectionalLight(0xffffff, 1.5); // TUNING GUESS
     sun.position.set(30, 60, 20);
     this.scene.add(sun);
@@ -55,12 +59,8 @@ export class SceneView {
     this.sky = createSky();
     this.scene.add(this.sky);
 
-    this.water = new THREE.Mesh(
-      new THREE.PlaneGeometry(WATER_SIZE, WATER_SIZE),
-      new THREE.MeshStandardMaterial({ color: WATER_COLOR }),
-    );
-    this.water.rotation.x = -Math.PI / 2;
-    this.scene.add(this.water);
+    this.water = createWater(waves, this.sky, sun, hemisphere, GRID_CELL);
+    this.scene.add(this.water.mesh);
 
     this.grid = new THREE.GridHelper(GRID_CELL * GRID_CELLS, GRID_CELLS, 0x6f9fbf, 0x4a7a9a);
     this.grid.position.y = 0.01;
@@ -92,18 +92,23 @@ export class SceneView {
 
   /** Checking aid: hide water and grid to see the underwater parts. */
   setWaterVisible(on: boolean): void {
-    this.water.visible = on;
-    this.grid.visible = on;
+    this.water.mesh.visible = on;
+    this.grid.visible = on && waveAmplitude(this.waves) === 0;
   }
 
   render(pose: RenderPose): void {
     const b = this.boat;
-    b.yaw.position.set(pose.x, 0, pose.z);
+    const wavesActive = waveAmplitude(this.waves) !== 0;
+    sampleWaves(this.waves, pose.x, pose.z, pose.t, 0, this.surface);
+    b.yaw.position.set(pose.x, this.surface.y, pose.z);
     b.yaw.rotation.y = -pose.heading;
     b.update(pose);
+    // An immediate debug toggle can precede the next physics/interpolation frame.
+    if (!wavesActive) b.pitch.rotation.x = 0;
 
-    // Water follows the boat; the grid snaps to whole cells so it never slides with it.
-    this.water.position.set(pose.x, 0, pose.z);
+    // Both grids snap, while the shader phase stays anchored to world coordinates.
+    this.water.update(pose.x, pose.z, pose.t);
+    this.grid.visible = this.water.mesh.visible && !wavesActive;
     this.grid.position.x = Math.round(pose.x / GRID_CELL) * GRID_CELL;
     this.grid.position.z = Math.round(pose.z / GRID_CELL) * GRID_CELL;
 
@@ -118,10 +123,10 @@ export class SceneView {
       const c = this.outsideCamera;
       c.position.set(
         pose.x + OUTSIDE_DISTANCE * Math.cos(el) * Math.sin(az),
-        OUTSIDE_TARGET_HEIGHT + OUTSIDE_DISTANCE * Math.sin(el),
+        this.surface.y + OUTSIDE_TARGET_HEIGHT + OUTSIDE_DISTANCE * Math.sin(el),
         pose.z - OUTSIDE_DISTANCE * Math.cos(el) * Math.cos(az),
       );
-      c.lookAt(pose.x, OUTSIDE_TARGET_HEIGHT, pose.z);
+      c.lookAt(pose.x, this.surface.y + OUTSIDE_TARGET_HEIGHT, pose.z);
       cam = c;
     }
     cam.getWorldPosition(this.sky.position);

@@ -62,6 +62,14 @@ export interface FoilsResult {
   downwash: number;
 }
 
+/** Local orbital flow projected onto each pitched/heeled foil's axes. */
+export interface FoilAmbientFlow {
+  boardU: number;
+  boardV: number;
+  rudderU: number;
+  rudderV: number;
+}
+
 /** Incidence of a flow line on the foil's centreline, folded into [-pi/2, pi/2]. */
 function lineAngle(u: number, v: number): number {
   let a = Math.atan2(v, u);
@@ -140,6 +148,7 @@ export function foilForces(
   env: EnvironmentConfig,
   terms: TermToggles,
   models: ModelOptions,
+  ambient?: FoilAmbientFlow,
 ): FoilsResult {
   const heel = state.heel;
   const cHeel = 1 - 0.382 * Math.abs(heel);
@@ -148,19 +157,29 @@ export function foilForces(
     : 0;
 
   const b = boat.board;
-  const vBoard = state.v + state.r * b.x + state.p * b.z;
-  const board = foilForce(b, effectiveSlope(b, cHeel, models), state.u, vBoard, 1, lambda0, heel, boat, env);
+  let uBoard = state.u;
+  let vBoard = state.v + state.r * b.x + state.p * b.z;
+  if (ambient) {
+    uBoard -= state.pitchRate * b.z * Math.cos(heel) + ambient.boardU;
+    vBoard -= ambient.boardV;
+  }
+  const board = foilForce(b, effectiveSlope(b, cHeel, models), uBoard, vBoard, 1, lambda0, heel, boat, env);
 
   const downwash = terms.downwash
     ? Math.sign(board.cl) * boat.cfg.foil.downwashA0 * Math.sqrt(Math.abs(board.cl) / (b.aspectRatioImage * b.efficiency))
     : 0;
   const rd = boat.rudder;
   const rudderAngle = controls.tiller * boat.cfg.rudder.maxAngleDeg * DEG;
-  const vRudder = state.v + state.r * rd.x + state.p * rd.z;
+  let uRudder = state.u;
+  let vRudder = state.v + state.r * rd.x + state.p * rd.z;
+  if (ambient) {
+    uRudder -= state.pitchRate * rd.z * Math.cos(heel) + ambient.rudderU;
+    vRudder -= ambient.rudderV;
+  }
   const rudder = foilForce(
     rd,
     effectiveSlope(rd, cHeel, models),
-    state.u,
+    uRudder,
     vRudder,
     boat.cfg.rudder.inflowFactor,
     lambda0 + rudderAngle + downwash,

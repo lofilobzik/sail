@@ -17,6 +17,9 @@ Keep the boat data-driven so that is possible later.
 - Free sandbox in endless open water, with a few buoys to navigate between.
 - Boat: Laser (ILCA 7), procedurally generated to class dimensions.
 - Wind: fixed 6-8 knots, always read through `getWind(position, time)`. Adjustable from a debug menu.
+- Waves: small data-driven Gerstner chop, shared by physics and rendering. Surface slope rocks the
+  boat; orbital water velocity at each foil can deflect the course. Toggle and amplitude/period/direction
+  controls are in the debug menu. Defaults and response tuning are explicitly TUNING GUESS.
 - No planing, no capsizing. Heel clamps at a limit.
 - First-person camera only.
 - Controls: mouse look, keyboard for tiller / sheet / hiking.
@@ -26,7 +29,7 @@ Keep the boat data-driven so that is possible later.
 
 ## Non-goals for v1
 
-Waves affecting the boat, gusts and shifts, capsize and recovery, racing and AI boats,
+Full wave/buoyancy dynamics, gusts and shifts, capsize and recovery, racing and AI boats,
 multiplayer, planing, other boats, a cruising or management layer, mobile and touch input,
 full sailor body and hiking pose (hands, tiller extension and mainsheet only in v1).
 
@@ -73,8 +76,10 @@ fraction of a second and holds its position. Same idea for the sheet.
 
 ## Visuals
 
-- **Water:** Gerstner waves in the vertex shader on a modest grid. The same wave function is
-  evaluated in `sim/` later so the boat can respond to waves. In v1 waves are visual only.
+- **Water:** one Gerstner model in `sim/waves.ts`, with parameters in `data/waves.json`, supplies
+  CPU sampling and shader displacement/analytic normals. A graded, snapped grid follows the boat
+  without moving the world-space phase. Physics responds to slope and foil orbital flow; visual heave
+  follows surface height, without a vertical buoyancy-force simulation.
 - **Sky:** Three.js analytic Sky shader. No screen-space reflections, no heavy post-processing.
 - **Boat:** procedural hull lofted from a few cross-sections using class dimensions,
   plus spars and fittings. Low triangle count.
@@ -117,12 +122,14 @@ One milestone per session. Commit after each working one.
    mainsheet), hands on the tiller extension and sheet, an instrument HUD (DOM overlay), and a minimal environment so motion
    is visible: a flat plane that follows the boat on a snapped grid, a plain sky colour, and a few buoys.
 4. **Cloth sail:** visual cloth driven by `luffAmount`, telltales, masthead fly.
-5. **Water and sky:** Gerstner waves, analytic sky, quality setting. Floating origin only if jitter appears.
+5. **Water and sky:** shared Gerstner waves with physical rocking and orbital foil cross-flow implemented.
+   Analytic sky and quality setting remain planned, outside the water/waves change.
+   Floating origin only if jitter appears.
 6. **Navigation:** compass, chart, buoys, dead reckoning with drift, bearing fixes.
 7. **Sailor body and hiking pose.**
 8. **Polish:** sound, quality settings, tuning against the polar.
 
-Later: waves affecting the boat, gusts and wind shifts,
+Later: full wave/buoyancy response, gusts and wind shifts,
 capsize, planing and stronger wind, third-person camera, cruising / management layer.
 
 ## Working agreement for the coding agent
@@ -139,4 +146,5 @@ capsize, planing and stronger wind, third-person camera, cruising / management l
 
 - Exact chart fix mechanic (plot a line, snap DR to it, or free placement).
 - Heel clamp value and what the clamp feels like at the limit.
-- Whether to add simple wave response to the boat before gusts and shifts.
+- Wave response magnitudes are sanity-checked, not calibrated against measured Laser wave data.
+  Tune by feel for now; measured response would be needed for calibration.

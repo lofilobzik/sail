@@ -9,6 +9,7 @@
  *                    [--model liftSlope=printed,lambda0Unit=rad,lambda0Sign=-1,uprightResistance=tank]
  *                    [--set rig.luffStartBetaEffDeg=20,crew.sitInOffset=0.3] [--quiet]
  *                    [--out polar-out]
+ *                    [--waves] [--wave-amplitude 0..2]
  * Layers: apparentWind, sail, foils, hull, heel, yaw.
  * --set overrides numeric values of the boat config (data/laser.json) for tuning experiments.
  * When 9 kn is in --tws, the 9 kn result is compared with Day 2017 Figs 4 and 6 (data/laser-polar-target.json).
@@ -26,6 +27,7 @@ import {
   defaultConfig,
   initialState,
   step,
+  setWaveParameters,
   withDisabledLayers,
   type ModelOptions,
   type SimConfig,
@@ -44,6 +46,10 @@ const { values } = parseArgs({
     model: { type: 'string', default: '' },
     set: { type: 'string', default: '' },
     quiet: { type: 'boolean', default: false },
+    waves: { type: 'boolean', default: false },
+    'wave-amplitude': { type: 'string', default: '1' },
+    'wave-period': { type: 'string' },
+    'wave-direction': { type: 'string' },
     out: { type: 'string', default: 'polar-out' },
   },
 });
@@ -60,6 +66,13 @@ function setTerms(cfg: SimConfig, names: string[], on: boolean): SimConfig {
 }
 
 let base = withDisabledLayers(defaultConfig(), list(values.disable));
+base.waves.enabled = values.waves ?? false;
+base.waves.amplitudeScale = Number(values['wave-amplitude']);
+if (!Number.isFinite(base.waves.amplitudeScale)) throw new Error('--wave-amplitude must be finite');
+const period = values['wave-period'] === undefined ? base.waves.periodSeconds : Number(values['wave-period']);
+const direction = values['wave-direction'] === undefined ? base.waves.directionDeg : Number(values['wave-direction']);
+if (!Number.isFinite(period) || !Number.isFinite(direction)) throw new Error('wave period and direction must be finite');
+setWaveParameters(base.waves, period, direction);
 base = setTerms(base, list(values['disable-terms']), false);
 base = setTerms(base, list(values['enable-terms']), true);
 
@@ -91,6 +104,10 @@ const offLayers = Object.entries(base.layers).filter(([, on]) => !on).map(([k]) 
 const offTerms = Object.entries(base.terms).filter(([, on]) => !on).map(([k]) => k);
 console.log(`Disabled layers: ${offLayers.join(', ') || 'none'}; disabled terms: ${offTerms.join(', ') || 'none'}`);
 console.log(`Models: ${JSON.stringify(base.models)}${values.set ? `; boat overrides: ${values.set}` : ''}`);
+console.log(`Waves: ${base.waves.enabled ? 'on' : 'off'}; amplitude scale ${base.waves.amplitudeScale}`);
+if (base.waves.enabled && base.waves.amplitudeScale > 0) {
+  console.log('Warning: waves are periodic forcing; this steady-state polar is not a validated wave-performance prediction.');
+}
 
 const rows: string[] = [
   'tws_kn,twa_deg,boat_speed_kn,vmg_kn,leeway_deg,heel_deg,sheet,hike,rudder_deg,aws_kn,awa_deg,luff,stall,converged,sim_s',
