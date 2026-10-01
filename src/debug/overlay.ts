@@ -101,7 +101,11 @@ export class DebugOverlay {
       : OFF;
 
     const h = d.hull;
-    t.L4.textContent = h ? `upright ${n(h.upright)}  heel res ${n(h.heelResistance)}  crossflow ${n(h.crossflow)}` : OFF;
+    t.L4.textContent = h
+      ? `upright ${n(h.upright)} (${this.cfg.models.uprightResistance}` +
+        (this.cfg.models.uprightResistance === 'delft' ? `: friction ${n(h.friction)}  residuary ${n(h.residuary)})` : ')') +
+        `\nheel res ${n(h.heelResistance)}  crossflow ${n(h.crossflow)}`
+      : OFF;
 
     const he = d.heel;
     t.L5.textContent = L.heel
@@ -133,6 +137,11 @@ export class DebugOverlay {
     for (const key of Object.keys(cfg.terms) as (keyof SimConfig['terms'])[]) {
       this.checkbox(sec, `term ${key}`, cfg.terms[key], (v) => (cfg.terms[key] = v));
     }
+    const m = cfg.models;
+    this.select(sec, 'lift slope', ['standard', 'printed'], m.liftSlope, (v) => (m.liftSlope = v as typeof m.liftSlope));
+    this.select(sec, 'lambda0 unit', ['deg', 'rad'], m.lambda0Unit, (v) => (m.lambda0Unit = v as typeof m.lambda0Unit));
+    this.select(sec, 'lambda0 sign', ['1', '-1'], String(m.lambda0Sign), (v) => (m.lambda0Sign = v === '1' ? 1 : -1));
+    this.select(sec, 'upright hull', ['delft', 'tank'], m.uprightResistance, (v) => (m.uprightResistance = v as typeof m.uprightResistance));
 
     this.numberInput(sec, `wind kn (${WIND_MIN_KN}-${WIND_MAX_KN})`, cfg.wind.speedKn, (v, el) => {
       cfg.wind.speedKn = Math.min(WIND_MAX_KN, Math.max(WIND_MIN_KN, v));
@@ -177,6 +186,19 @@ export class DebugOverlay {
     input.addEventListener('change', () => {
       const v = Number(input.value);
       if (Number.isFinite(v)) onChange(v, input);
+    });
+    el.append(`${label} `, input);
+    parent.appendChild(el);
+  }
+
+  private select(parent: HTMLElement, label: string, options: string[], initial: string, onChange: (v: string) => void): void {
+    const el = document.createElement('label');
+    el.style.display = 'block';
+    const input = document.createElement('select');
+    for (const o of options) input.add(new Option(o, o, o === initial, o === initial));
+    input.addEventListener('change', () => {
+      onChange(input.value);
+      input.blur(); // hand the keyboard back to the boat
     });
     el.append(`${label} `, input);
     parent.appendChild(el);

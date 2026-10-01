@@ -24,13 +24,24 @@ describe('L2 sail coefficients (best-trim envelope over Day 2017 Table 1)', () =
     }
   });
 
-  it('reproduces Table 1 upwind with the boom sheeted hard in', () => {
-    for (const beta of [12, 28]) {
+  it('reproduces Table 1 upwind with the boom sheeted hard in, above the luffing band', () => {
+    for (const beta of [28]) {
       const i = table.betaDeg.indexOf(beta);
       const c = sailCoefficients(boat, beta * DEG, rig.boomMinDeg * DEG);
       expect(c.cl).toBeCloseTo(table.cl[i]!, 9);
       expect(c.cdv).toBeCloseTo(table.cdv[i]!, 9);
     }
+  });
+
+  it('pinching through the luffing band collapses lift even with the sheet in', () => {
+    const sheetedIn = (betaDeg: number) => sailCoefficients(boat, betaDeg * DEG, rig.boomMinDeg * DEG);
+    expect(sheetedIn(rig.luffStartBetaEffDeg).luffAmount).toBe(0);
+    expect(sheetedIn(rig.luffStartBetaEffDeg).cl).toBeCloseTo(boat.clTable.at(rig.luffStartBetaEffDeg), 9);
+    const mid = (rig.luffStartBetaEffDeg + rig.luffFullBetaEffDeg) / 2;
+    expect(sheetedIn(mid).luffAmount).toBeCloseTo(0.5, 9);
+    expect(sheetedIn(mid).cl).toBeCloseTo(0.5 * boat.clTable.at(mid), 9);
+    expect(sheetedIn(rig.luffFullBetaEffDeg).cl).toBe(0);
+    expect(sheetedIn(rig.luffFullBetaEffDeg).cdv).toBeCloseTo(table.cdv[0]!, 9);
   });
 
   it('puts maximum lift between the 28 and 60 degree table points (Day p5: around 34)', () => {

@@ -25,7 +25,14 @@
     "uprightDragArea": {
       "speedKn": [2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0],
       "dragAreaM2": [0.01252, 0.01267, 0.01322, 0.01449, 0.01566, 0.01775, 0.02069, 0.02293, 0.02408, 0.02455, 0.02433, 0.02326, 0.02201, 0.02122, 0.02062]
-    }
+    },
+    "uprightDragAreaDayDelft": {
+      "speedKn": [2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5],
+      "dragAreaM2": [0.01232, 0.01248, 0.01305, 0.01352, 0.01437, 0.01655, 0.01978, 0.02268, 0.02412, 0.02414, 0.02387, 0.02312, 0.02238, 0.02156]
+    },
+    "frictionLengthFrac": 0.7,
+    "residuaryBlendFn": 0.15,
+    "residuaryBlendExponent": 2
   },
   "rig": {
     "sailArea": 7.06,
@@ -46,7 +53,8 @@
     "boomMaxDeg": 90,
     "boomTimeConstant": 0.25,
     "gybeByTheLeeDeg": 15,
-    "luffStartBetaEffDeg": 12,
+    "luffStartBetaEffDeg": 24,
+    "luffFullBetaEffDeg": 16,
     "stallWidthDeg": 15
   },
   "crew": {
@@ -54,7 +62,7 @@
     "height": 1.83,
     "cgHeightFrac": 0.55,
     "hikeReachFrac": 0.95,
-    "sitInOffset": 0.55,
+    "sitInOffset": 0.35,
     "sitInZAboveHullCg": 0.18,
     "hikedZAboveHullCg": -0.12,
     "dubois": { "coef": 0.0769, "weightExp": 0.425, "heightExp": 0.725 },
@@ -113,6 +121,9 @@
     "hull.crossflowCd": "TUNING GUESS: hull drag coefficient for pure sideways motion on the lateral area Lwl x Tc.",
     "hull.topsidesCd": "TUNING GUESS: Day 2017 Eq. 7 (p5) gives topsides areas but no drag coefficient was found in docs/.",
     "hull.uprightDragArea": "Day 2017 p7, Fig. 2, 'Level Trim 80kg' tank data (160 kg all-up, bare hull, upright). APPROXIMATE: read off the plot at 300 dpi, about +/-0.0002 m^2.",
+    "hull.uprightDragAreaDayDelft": "Day 2017 p7, Fig. 2, 'Delft level Trim 80kg' (Day's own Delft prediction). Cross-check only, not used by the sim. APPROXIMATE, read off the plot.",
+    "hull.frictionLengthFrac": "Larsson & Eliasson p64 (PDF p80), Fig 5.8: hull Reynolds number on 0.7 Lwl.",
+    "hull.residuaryBlendFn/residuaryBlendExponent": "TUNING GUESS: below Fn 0.15 (the lowest Fn in the Keuning & Katgert table) the residuary resistance is R(0.15) (Fn/0.15)^2, so it goes to zero with speed.",
     "rig.sailArea": "docs/PHYSICS.md section 3 [sourced].",
     "rig.luff/foot": "ILCA class rules p36, G.3.3 ILCA 7 MKI sail: luff max 5130 mm, foot max 2740 mm.",
     "rig.ceHeightFracOfLuff/ceAftFracOfFoot/mastRakeAtCeDeg": "Day 2017 p4, section 2.1: CE 36.4% of luff above boom, 33% of foot aft of luff, 11 deg equivalent rake at CE height (Day applies the rake upwind only).",
@@ -124,11 +135,11 @@
     "rig.effectiveSpanFactor": "TUNING GUESS: form heff = cheff * (mainsail head height above sheer + freeboard) from ORC VPP Documentation 2023 Eq. 5.43-5.45 (https://orc.org/uploads/files/ORC-VPP-Documentation-2023.pdf, p54); cheff for a una rig is not given there.",
     "rig.separationDragCds": "Day 2017 p4, section 2.3: CDs = 0.005.",
     "rig.boomMinDeg/boomMaxDeg/boomTimeConstant/gybeByTheLeeDeg": "TUNING GUESS.",
-    "rig.luffStartBetaEffDeg/stallWidthDeg": "TUNING GUESS: best-trim envelope falloff (PHYSICS.md L2 design decision).",
+    "rig.luffStartBetaEffDeg/luffFullBetaEffDeg/stallWidthDeg": "TUNING GUESS: best-trim envelope falloff (PHYSICS.md L2 design decision). luffAmount ramps from 0 at an equivalent apparent wind angle of luffStart to 1 at luffFull. Milestone 2: luffStart 12 -> 24 (luffing below about AWA 24; Day 2017 p11 reports VPP upwind AWA of 27-33 deg), luffFull 0 -> 16 (luffing band 8 deg wide). stallWidth 15 unchanged: 8 and 25 give an identical polar because the sheet search never over-sheets.",
     "crew.mass/height": "Day 2017 p7 '80 kg/1.83 m sailor'. A parameter, not a constant (PHYSICS.md [tune]).",
     "crew.cgHeightFrac": "Day 2017 p7, section 4: crew CG at 55% of standing height.",
     "crew.hikeReachFrac": "Day 2017 p8: crew CG at most 95% of its standing CG height out from the centreline when hiking.",
-    "crew.sitInOffset/sitInZAboveHullCg/hikedZAboveHullCg": "TUNING GUESS: Day 2017 p8 says the hiked crew CG is 'the lowest value possible' relative to the boat CG but gives no number.",
+    "crew.sitInOffset/sitInZAboveHullCg/hikedZAboveHullCg": "TUNING GUESS: Day 2017 p8 says the hiked crew CG is 'the lowest value possible' relative to the boat CG but gives no number. Milestone 2: sitInOffset 0.55 -> 0.35 m (sailor can sit inboard of the side deck); 0.55 forced 18-20 deg of windward heel downwind and 4 deg upwind at 6 kn.",
     "crew.dubois/frontalAreaFrac/sideAreaFrac/cd*/clothingReduction/shielding": "Day 2017 p5, section 2.5, Eqs. 8-9 and text (W in newtons, H in metres).",
     "daggerboard.span/chord/thickness": "ILCA class rules p28, E.3: board max 680 (leading edge, keel line to tip) x 341 chord, max thickness 33 mm. Rectangular planform with R=60 tip ignored.",
     "daggerboard.sweepDeg/taperRatio": "TUNING GUESS: drawing on p28 is rotated; board treated as unswept and untapered.",

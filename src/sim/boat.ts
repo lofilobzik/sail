@@ -6,6 +6,7 @@
  * system CG sits above it.
  */
 import laserJson from '../data/laser.json';
+import residuaryJson from '../data/delft-residuary.json';
 import coefficientsJson from '../data/sail-coefficients.json';
 import { DEG } from './frames';
 import { CubicSpline } from './spline';
@@ -21,8 +22,10 @@ export interface FoilModel {
   aspectRatioImage: number;
   /** Day 2017 Eq. 17 planform efficiency e. */
   efficiency: number;
-  /** dCL/dalpha per radian (Day 2017 p6, below Eq. 11). */
+  /** dCL/dalpha per radian (Day 2017 p6, below Eq. 11), standard form (no outer square). */
   liftSlope: number;
+  /** Same with the outer square as printed on Day p6 (models.liftSlope = 'printed'). */
+  liftSlopePrinted: number;
   /** Day 2017 p6: c_hull = 1 + 1.80 (Tc / b). */
   cHull: number;
   /** Centre of pressure, body frame. */
@@ -60,6 +63,8 @@ export interface BoatModel {
   /** Sail coefficient splines vs apparent wind angle in degrees. */
   clTable: CubicSpline;
   cdvTable: CubicSpline;
+  /** Keuning & Katgert residuary resistance Rrh / (Vc rho g) vs Froude number, Fn 0.15-0.75. */
+  residuaryRatio: CubicSpline;
   /** Apparent wind angle of maximum tabulated lift, rad. */
   betaPeak: number;
   board: FoilModel;
@@ -71,11 +76,15 @@ export interface BoatModel {
 
 /**
  * Lift slope of a low aspect ratio foil, Day 2017 p6 (PDF p6), text below Eq. 11:
- *   dCL/dalpha = 5.7 AR_E / (1.8 + cos(Lambda) sqrt(AR_E^2 / cos^4(Lambda) + 4))
+ *   printed:  dCL/dalpha = 5.7 AR_E / (1.8 + cos(Lambda) sqrt((AR_E^2 / cos^4(Lambda))^2 + 4))
+ *   standard: the same without the outer square on AR_E^2/cos^4(Lambda).
+ * The outer square is treated as a probable misprint (docs/DAY-EQUATIONS.md): at AR_E = 4 the
+ * printed form gives 1.27/rad against about 4.2/rad from lifting-line theory; the standard form 3.6/rad.
  */
-function liftSlope(arE: number, sweep: number): number {
+function liftSlope(arE: number, sweep: number, printed: boolean): number {
   const c = Math.cos(sweep);
-  return (5.7 * arE) / (1.8 + c * Math.sqrt((arE * arE) / c ** 4 + 4));
+  const x = (arE * arE) / c ** 4;
+  return (5.7 * arE) / (1.8 + c * Math.sqrt((printed ? x * x : x) + 4));
 }
 
 /**
@@ -113,7 +122,8 @@ function buildFoil(f: FoilJson, tc: number, topDepth: number, xRefFromTransom: n
     area: f.span * f.chord,
     aspectRatioImage: ar,
     efficiency: planformEfficiency(ar, f.taperRatio, f.sweepDeg),
-    liftSlope: liftSlope(ar, f.sweepDeg * DEG),
+    liftSlope: liftSlope(ar, f.sweepDeg * DEG, false),
+    liftSlopePrinted: liftSlope(ar, f.sweepDeg * DEG, true),
     cHull: 1 + 1.8 * (tc / f.span),
     x: f.leadingEdgeXFromTransom - f.cpChordFrac * f.chord - xRefFromTransom,
     z: -f.cpDepthFrac * lowerExtent,
@@ -189,6 +199,22 @@ export function buildBoat(cfg: BoatConfig = laserJson, table: SailCoefficientTab
   }
 
   const board = buildFoil(cfg.daggerboard, tc, tc, xRefFromTransom);
+
+  // Keuning & Katgert Eq. 1.7 (docs/bare_hull_resistance.pdf p6), = Day 2017 Eq. 10, evaluated for
+  // this hull at each tabulated Fn, then splined in Fn (Day p3 uses splines for tabulated data).
+  const r = residuaryJson;
+  const ratios = r.fn.map((_, i) => {
+    const form =
+      r.a1[i]! * t2.lcbOverLwl +
+      r.a2[i]! * t2.cp +
+      r.a3[i]! * t2.vol23OverAw +
+      r.a4[i]! * t2.bwlOverLwl +
+      r.a5[i]! * t2.lcbOverLcf +
+      r.a6[i]! * t2.bwlOverTc +
+      r.a7[i]! * t2.cm;
+    return r.a0[i]! + form * t2.vol13OverLwl;
+  });
+  const residuaryRatio = new CubicSpline(r.fn, ratios);
   // The rudder hangs off the transom from (about) the waterline.
   const rudder = buildFoil(cfg.rudder, tc, 0, xRefFromTransom);
 
@@ -221,6 +247,7 @@ export function buildBoat(cfg: BoatConfig = laserJson, table: SailCoefficientTab
     boomAboveDeck,
     clTable,
     cdvTable,
+    residuaryRatio,
     betaPeak: betaPeak * DEG,
     board,
     rudder,

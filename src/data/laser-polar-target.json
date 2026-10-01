@@ -1,0 +1,7 @@
+{
+  "source": "Day 2017 (docs/day-2017-performance-prediction-sailing-dinghies.pdf), 'VPP 9.0 knots 80 kg' series. Upwind: Fig. 4, PDF p9. Downwind: Fig. 6, PDF p10. APPROXIMATE: read off the plots at 300 dpi by marker pixel position, about +/-0.05 kn.",
+  "twsKn": 9,
+  "crewKg": 80,
+  "upwind": { "twaDeg": [40, 45, 50, 55, 60], "speedKn": [4.55, 4.91, 5.15, 5.41, 5.54] },
+  "downwind": { "twaDeg": [150, 160, 170, 180], "speedKn": [4.41, 4.28, 4.23, 4.19] }
+}

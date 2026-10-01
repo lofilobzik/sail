@@ -11,6 +11,8 @@ tables, so transcribe any number you use from the **page image**, then copy it i
 | `day-2017-...dinghies.pdf` | A. H. Day, "Performance prediction for sailing dinghies", Ocean Engineering 136 (2017). Published version, 13 pages (journal pp. 67-79). PDF page = journal page minus 66. | Text has minor glitches. Equations are mangled in the text layer, so read them from page images. Table 1 and Figs 3-4 render fine. | L2-L6, validation |
 | `ilca-class-rules.pdf` | ILCA class rules, 42 pages | Text is clean. Diagram dimensions are only in images. Some rule tables have merged rows (D.4.1, F.5.1). | Boat geometry (rig, boom, board, rudder, sail edges) |
 | `PrinciplesYachtDesign.pdf` | Larsson and Eliasson, 350 pages | Scanned, no text layer. Readable only as page images (book page = PDF page minus 16). Run OCR to make it searchable. | L4 resistance, L5 stability |
+| `bare_hull_resistance.pdf` | Keuning & Katgert, bare hull residuary resistance from the DSYHS, 9 pages | Eq. 1.7 and Table 2 on PDF p6 (verified from the page image), fitted hull ranges in Table 1, PDF p5 | L4 residuary resistance |
+| `DAY-EQUATIONS.md` | Day 2017 equations transcribed from page images; overrides the PDF text layer | | L3, L4 |
 
 ## Where things are
 
@@ -41,7 +43,9 @@ tables, so transcribe any number you use from the **page image**, then copy it i
 | Polar target at 6-8 kn | None in Day. Use VPP results at 9 kn for shape and upwind speed. | extrapolate |
 | Hull depth (freeboard), mast diameter | Web forum measurements, URLs in `src/data/laser.json` `sources` | not in docs/, verify |
 | Sail effective span form | ORC VPP Documentation 2023 p54, Eqs. 5.43-5.45 (web PDF, URL in `laser.json`) | factor for a una rig is a TUNING GUESS |
-| Delft induced-resistance coefficients (Day Eq. 15), downwash constant a0 (Day p6) | Not in docs/. Eq. 16 used for the board as well; a0 is a TUNING GUESS | missing |
+| Delft induced-resistance coefficients (Day Eq. 15: A1-A4, B0, B1 per heel angle) | Not in Day, not in `bare_hull_resistance.pdf`. Eq. 16 used for the board as well | **known gap** |
+| Downwash constant a0, AR_eff,k (Day p6) | Not printed. a0 TUNING GUESS, AR_eff,k = AR_E e (interpretation) | missing |
+| Units and sign of λ0 (Day p6) | Not printed. Result read in degrees, applied with sign(φ) (`models.lambda0Unit/lambda0Sign`) | assumption |
 
 ## Data files to create
 
@@ -49,7 +53,8 @@ tables, so transcribe any number you use from the **page image**, then copy it i
 |---|---|---|
 | `src/data/sail-coefficients.json` | CL and CDv vs apparent wind angle beta, transcribed from Day Table 1 (p3), read from the 300 dpi page image | done (milestone 1) |
 | `src/data/laser.json` | Boat parameters from `PHYSICS.md` section 3 plus everything the sim needs; per-parameter sources in its `sources` block (docs page, web source, or TUNING GUESS) | done (milestone 1) |
-| `data/laser-polar-target.csv` | Day VPP results at 9 kn, read from Figs 4-7 (approximate, from plots) | todo, optional |
+| `src/data/delft-residuary.json` | Keuning & Katgert Table 2 residuary coefficients a0-a7 vs Fn | done (milestone 2) |
+| `src/data/laser-polar-target.json` | Day VPP 9 kn, 80 kg: Fig 4 (upwind 40-60) and Fig 6 (downwind 150-180), read off the plots (approximate) | done (milestone 2) |
 
 ## Not downloaded
 

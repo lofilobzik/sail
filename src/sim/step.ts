@@ -65,8 +65,8 @@ export function evaluate(state: BoatState, controls: Controls, boat: BoatModel, 
   const crew = crewPosition(state, controls, boat);
 
   const sail = L.sail ? sailForces(state, apparent, crew.z, boat, cfg.env, cfg.terms) : null;
-  const foils = L.foils ? foilForces(state, controls, boat, cfg.env, cfg.terms) : null;
-  const hull = L.hull ? hullForces(state, boat, cfg.env, cfg.terms) : null;
+  const foils = L.foils ? foilForces(state, controls, boat, cfg.env, cfg.terms, cfg.models) : null;
+  const hull = L.hull ? hullForces(state, boat, cfg.env, cfg.terms, cfg.models) : null;
   const s = sail ?? ZERO_SAIL_LIKE;
   const f = foils ?? ZERO_SAIL_LIKE;
   const h = hull ?? ZERO_SAIL_LIKE;

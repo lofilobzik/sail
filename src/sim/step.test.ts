@@ -24,7 +24,8 @@ describe('sim integration', () => {
     const speed = (s: BoatState) => Math.hypot(s.u, s.v);
     expect(speed(settled)).toBeLessThan(5e-3);
     expect(speed(later)).toBeLessThan(speed(settled));
-    expect(Math.abs(later.r)).toBeLessThan(Math.abs(settled.r));
+    // Heeled by the sailor's weight, the hull's zero-lift drift turns the creeping boat very slowly.
+    expect(Math.abs(later.r)).toBeLessThan(1e-4);
     expect(Math.abs(later.p)).toBeLessThan(1e-6);
     expect(Math.abs(later.heel - settled.heel)).toBeLessThan(1e-5);
   });

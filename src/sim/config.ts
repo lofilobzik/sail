@@ -39,6 +39,34 @@ export interface TermToggles {
   munkMoment: boolean;
 }
 
+/**
+ * Model choices where the source is ambiguous. Not layers: each picks between two
+ * readings of the same equation so they can be compared in the polar.
+ */
+export interface ModelOptions {
+  /**
+   * Day 2017 p6 lift slope dCL/da = 5.7 AR_E / (1.8 + cos(L) sqrt(X + 4)).
+   * 'standard': X = AR_E^2 / cos^4(L) (default; matches lifting-line magnitude).
+   * 'printed':  X = (AR_E^2 / cos^4(L))^2, the outer square as printed (probable misprint).
+   */
+  liftSlope: 'standard' | 'printed';
+  /**
+   * Unit of the result of Day p6 lambda0 = (0.405 (Bwl/Tc) phi)^2, phi in radians.
+   * The page states no unit. 'deg': hypothesis in docs/DAY-EQUATIONS.md (default). 'rad': literal reading.
+   */
+  lambda0Unit: 'deg' | 'rad';
+  /**
+   * The printed lambda0 is a square and carries no sign. ASSUMPTION: +1 applies it with sign(phi),
+   * i.e. the heeled hull needs extra leeway toward the side it is heeled to. -1 is the opposite.
+   */
+  lambda0Sign: 1 | -1;
+  /**
+   * Upright bare-hull resistance. 'delft': ITTC-1957 friction + Keuning & Katgert residuary
+   * polynomial (default). 'tank': Day 2017 Fig. 2 tank drag area.
+   */
+  uprightResistance: 'delft' | 'tank';
+}
+
 export interface WindConfig {
   speedKn: number;
   /** Compass direction the wind blows FROM, degrees. */
@@ -55,6 +83,7 @@ export interface EnvironmentConfig {
 export interface SimConfig {
   layers: LayerToggles;
   terms: TermToggles;
+  models: ModelOptions;
   wind: WindConfig;
   env: EnvironmentConfig;
   /** Fixed timestep, s. */
@@ -69,14 +98,20 @@ export function defaultConfig(): SimConfig {
     terms: {
       windage: true,
       sailInducedDrag: true,
-      // Off by default: Day 2017 p6 as printed, lambda0 = (0.405 (Bwl/Tc) phi)^2 with the
-      // Laser's Bwl/Tc = 11.755 gives 13 deg of zero-lift drift at 5 deg heel and more than
-      // 90 deg at 20 deg heel, which is not physical. Kept switchable for comparison.
-      zeroLiftDrift: false,
+      // Day 2017 p6 lambda0, read with the result in degrees (models.lambda0Unit). Read in
+      // radians it gives 9.9 deg at 5 deg heel and 158 deg at 20 deg heel and collapses the
+      // polar; in degrees the polar no longer collapses (milestone 2), so it is on.
+      zeroLiftDrift: true,
       downwash: true,
       heelResistance: true,
       crossflowDrag: true,
       munkMoment: true,
+    },
+    models: {
+      liftSlope: 'standard',
+      lambda0Unit: 'deg',
+      lambda0Sign: 1,
+      uprightResistance: 'delft',
     },
     // DESIGN.md: fixed 6-8 kn; direction configurable.
     wind: { speedKn: 7, fromDeg: 0 },

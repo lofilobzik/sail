@@ -7,12 +7,14 @@
  * Best-trim envelope (design decision in PHYSICS.md L2, not from the paper):
  * the table value at the current apparent wind angle is what a well-trimmed sail
  * produces. Trim error costs force:
- *  - Under-sheeted (boom eased past best trim): luffing. Following Day 2017 p5
- *    (SPILL): easing the sail reduces its angle of attack, which acts like a smaller
+ *  - Under-sheeted (boom eased past best trim) or pinching: luffing. Following Day 2017
+ *    p5 (SPILL): easing the sail reduces its angle of attack, which acts like a smaller
  *    apparent wind angle on the upwind branch of Table 1. The equivalent table angle
  *    shrinks in proportion to the angle of attack, so lift follows the table's own
- *    0..beta_peak shape down to zero, and viscous drag blends to the beta = 0 value
- *    (a flagging sail).
+ *    0..beta_peak shape. On top of that, luffAmount (PHYSICS.md L2: "It also collapses
+ *    lift in the model") ramps from 0 at an equivalent angle of luffStartBetaEffDeg to 1
+ *    at luffFullBetaEffDeg and scales lift by (1 - luffAmount). TUNING GUESS. Viscous drag
+ *    blends to the beta = 0 value (a flagging sail) with the same factor.
  *  - Over-sheeted (boom tighter than best trim): stall. TUNING GUESS shape:
  *    k = 1 / (1 + (over / stallWidth)^2); lift and drag blend from the table toward a
  *    flat plate with the Table 1 beta = 180 drag (ORC 2023 VPP doc p36: beta = 180
@@ -128,10 +130,11 @@ export function sailCoefficients(boat: BoatModel, betaW: number, delta: number):
   const equivDeg = (ratio * branch) / DEG;
   const branchCl = boat.clTable.at(branch / DEG);
   const kLuff = branchCl > 0 ? clamp(boat.clTable.at(equivDeg) / branchCl, 0, 1) : 0;
-  const luffAmount = clamp(1 - equivDeg / rig.luffStartBetaEffDeg, 0, 1);
+  const luffAmount = clamp((rig.luffStartBetaEffDeg - equivDeg) / (rig.luffStartBetaEffDeg - rig.luffFullBetaEffDeg), 0, 1);
+  const kFill = kLuff * (1 - luffAmount);
 
-  let cl = clEnv * kLuff;
-  let cdv = kLuff * cdvEnv + (1 - kLuff) * boat.cdvTable.at(0);
+  let cl = clEnv * kFill;
+  let cdv = kFill * cdvEnv + (1 - kFill) * boat.cdvTable.at(0);
 
   // Stall: over-sheeted.
   if (trimError < 0 && alpha > 0) {
