@@ -2,3 +2,8 @@ node_modules/
 dist/
 polar-out/
 .DS_Store
+
+# Reference PDFs/OCR text and browser recordings
+docs/*.pdf
+docs/PrinciplesYachtDesign.txt
+omp-browser-recording-*/
