@@ -223,13 +223,14 @@ float wakeFoamAmount(
   float turbulent = (1.0 - smoothstep(0.5 * width, width, abs(sn.y)))
     * smoothstep(-0.2, 0.4, behindTransom) * exp(-age / ${f(wake.foamFadeTime)}) * props.w * wakeHullMask(p);
   float noise = wakeNoise(p, footprint);
-  // Preserve the stern's existing coverage boost and patch breakup.
+  // Stern and bow share one patch breakup (same noise, same threshold softness), so grain matches.
   float boosted = min(speedFactor * turbulent * 1.8, 1.0);
   float sternFoam = smoothstep(1.0 - boosted, 1.0 - boosted + 0.3, noise) * boosted;
-  // TUNING GUESS (wake.json): continuous crest foam; noise varies opacity, never gates it off.
+  // TUNING GUESS (wake.json): crest coverage sets the patch density; the world-anchored noise is
+  // continuous in coverage, so crest foam thins into patches smoothly rather than switching on/off.
   float crest = smoothstep(${f(wake.foamBowThreshold)}, ${f(wake.foamBowFull)}, bow / max(bowReference, 1e-4));
   float bowCoverage = min(${f(wake.foamBowGain)} * bowSpeed * crest, 1.0);
-  float bowFoam = bowCoverage * mix(${f(1 - wake.foamBowNoiseContrast)}, 1.0, noise);
+  float bowFoam = smoothstep(1.0 - bowCoverage, 1.0 - bowCoverage + 0.3, noise) * bowCoverage;
   return max(sternFoam, bowFoam);
 }
 `;

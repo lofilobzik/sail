@@ -220,7 +220,7 @@ from a configurable direction. Do not hardcode wind anywhere else.
   arms at the 19.47 degree half-angle. Decay exponents s^-1/3 (divergent) and s^-1/2 (transverse),
   envelope widths and age decay are TUNING GUESS. Footprint filtering matches the water grid (full at 8
   samples per wavelength, none below 4).
-- Bow wave height is `bowHeadFrac V^2/2g` (`bowHeadFrac = 0.16`, TUNING GUESS fraction of stagnation
+- Bow wave height is `bowHeadFrac V^2/2g` (`bowHeadFrac = 0.30`, TUNING GUESS fraction of stagnation
   head). The existing sampled hull/sea contact calculation is unchanged: cached loft sections
   transform in the boat mesh's heel/pitch/yaw order, intersecting the local Gerstner surface including
   heave. Contact moves aft on bow lift, forward on drop and sideways under heel; no clearance fade.
@@ -247,8 +247,10 @@ from a configurable direction. Do not hardcode wind anywhere else.
 - Bow foam follows emitted height/reference height and stored birth-speed coverage, preserving
   its history through dry/stop transitions. Birth coverage starts at the bow emission `minSpeed`,
   using `foamSpeedRange`, independently of stern foam's higher `foamMinSpeed`. Crest coverage
-  rises smoothly from 0.18 to 0.65 of source height, with gain 1.4 (TUNING GUESS). World-space noise
-  only modulates opacity by at most 25%; it cannot gate an eligible crest off. Stern foam's existing
+  rises smoothly from 0.18 to 0.65 of source height, with gain 1.4 (TUNING GUESS). Bow foam now uses
+  the same world-space noise patch breakup as stern foam (smoothstep over 0.3 of the noise range, with
+  coverage setting the threshold), so both share one grain scale. Coverage varies continuously, so
+  crest foam thins into patches rather than switching off. Stern foam's existing
   noise threshold/boost/colour and all Kelvin trail/math/settings are unchanged. The upright
   hull mask still applies only to stern foam/Kelvin, not to emitted bow fronts. No sim forces or foil
   orbital flow are added; packets follow the shared water surface but do not model fluid interaction.

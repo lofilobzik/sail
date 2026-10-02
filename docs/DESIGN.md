@@ -104,14 +104,14 @@ fraction of a second and holds its position. Same idea for the sheet.
   pitch and heel. Each emitted front retains its birth contact in logical-world doubles, propagates
   outward and fades independently; lifting/dropping the bow cannot relocate the older V. Smooth
   birth/expiry and bounded overlap blend successive contributions without a live-anchored V fallback.
-  Kelvin stays subdued at `visualGain = 0.4`; bow height uses `bowHeadFrac = 0.16` for more prominent
-  crests (2.67x the previous 0.06 height). Both are visual TUNING GUESS values; no sim forces change.
+  Kelvin stays subdued at `visualGain = 0.4`; bow height uses `bowHeadFrac = 0.30` and `bowLength = 5` for a more prominent
+  bow V (1.875x the previous 0.16 height, arms attenuate more slowly). Both are visual TUNING GUESS values; no sim forces change.
   Bow fronts are circular crest/trough packets whose steady-motion envelope forms a V. This is a
   nondispersive visual approximation, not calibrated pressure-wave physics or shoreline breaking.
   `render/wake/bowField.ts` rasterizes a bounded world-grid cache to a reusable float texture; water
   samples it at constant cost, with screen-derivative normals and no per-pixel history search.
-  Bow foam uses its emitted front's source height/speed, with continuous crest coverage and up to
-  25% noise modulation of opacity instead of on/off breakup. It starts at the bow emission speed
+  Bow foam uses its emitted front's source height/speed, with continuous crest coverage and the same
+  noise patch breakup as stern foam, so both foams share one grain scale. It starts at the bow emission speed
   threshold independently of stern turbulence. Stern foam appearance remains unchanged.
   Height, foam and lifetime/resolution parameters are explicit TUNING GUESS values in `wake.json`.
   Parameters in `data/wake.json`; math in `render/wake/` (no Three.js, tested);
@@ -157,7 +157,7 @@ One milestone per session. Commit after each working one.
 3. **Boat graphics and test HUD:** procedural Laser (hull, deck, daggerboard, rudder, tiller and extension, mast, boom, sail,
    mainsheet), hands on the tiller extension and sheet, an instrument HUD (DOM overlay), and a minimal environment so motion
    is visible: a flat plane that follows the boat on a snapped grid, a plain sky colour, and a few buoys.
-4. **Cloth sail:** visual cloth driven by `luffAmount`, telltales, masthead fly.
+4. **Cloth sail:** visual cloth driven by `luffAmount`, telltales, masthead fly. Done.
 5. **Water and sky:** shared Gerstner waves with physical rocking and orbital foil cross-flow implemented.
    Wind-responsive broad waves/ripples, separate layer controls and seeded magnitude variation implemented.
    Render-side floating origin and precision-safe world-anchored wave phases implemented.
