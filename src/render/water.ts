@@ -136,10 +136,13 @@ export function createWater(
         vec3 unusedNormal;
         gerstnerWave(waterLabel, waveScale, cellFootprint, waterPosition, unusedNormal);
         // Boat wake and bow wave add height on top of the shared Gerstner sea (visual only).
-        wakeFrame(waterLabel, wakeSN, wakeProps);
+        // Evaluate the wake at the displaced surface point (where the boat really is), not the
+        // undisplaced label: big waves move water horizontally and would detach the bow wave.
+        vec2 wakePos = waterPosition.xz;
+        wakeFrame(wakePos, wakeSN, wakeProps);
         float cell = max(cellFootprint.x, cellFootprint.y);
-        waterPosition.y += kelvinWake(wakeSN, wakeProps, cell).x * wakeHullMask(waterLabel)
-          + wakeBow(waterLabel) * wakeBowFilter(cell);
+        waterPosition.y += kelvinWake(wakeSN, wakeProps, cell).x * wakeHullMask(wakePos)
+          + wakeBow(wakePos) * wakeBowFilter(cell);
         vec4 mvPosition = viewMatrix * vec4(waterPosition, 1.0);
         gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
@@ -165,22 +168,23 @@ export function createWater(
         // Fragment normals retain detail that the distant geometry cannot resolve.
         // Pixel-footprint filtering prevents that detail aliasing at grazing angles.
         vec2 footprint = max(abs(dFdx(waterLabel)), abs(dFdy(waterLabel)));
-        vec3 unusedPosition, normal;
-        gerstnerWave(waterLabel, waveScale, footprint, unusedPosition, normal);
+        vec3 surfacePosition, normal;
+        gerstnerWave(waterLabel, waveScale, footprint, surfacePosition, normal);
+        vec2 wakePos = surfacePosition.xz;
 
         // Wake: add its height gradient to the sea's surface gradient.
         float pixel = max(footprint.x, footprint.y);
-        float hullMask = wakeHullMask(waterLabel);
+        float hullMask = wakeHullMask(wakePos);
         vec3 kelvin = kelvinWake(wakeSN, wakeProps, pixel) * hullMask;
         vec2 tangent = wakeSN.zw / max(length(wakeSN.zw), 1e-6);
         vec2 slope = -normal.xz / normal.y
           + kelvin.y * tangent + kelvin.z * vec2(-tangent.y, tangent.x);
-        float bow = wakeBow(waterLabel);
+        float bow = wakeBow(wakePos);
         float bowFilter = wakeBowFilter(pixel);
         const float bowStep = ${BOW_SLOPE_STEP.toFixed(4)};
         slope += bowFilter / (2.0 * bowStep) * vec2(
-          wakeBow(waterLabel + vec2(bowStep, 0.0)) - wakeBow(waterLabel - vec2(bowStep, 0.0)),
-          wakeBow(waterLabel + vec2(0.0, bowStep)) - wakeBow(waterLabel - vec2(0.0, bowStep)));
+          wakeBow(wakePos + vec2(bowStep, 0.0)) - wakeBow(wakePos - vec2(bowStep, 0.0)),
+          wakeBow(wakePos + vec2(0.0, bowStep)) - wakeBow(wakePos - vec2(0.0, bowStep)));
         normal = normalize(vec3(-slope.x, 1.0, -slope.y));
 
         vec3 view = normalize(cameraPosition - waterPosition);
@@ -202,7 +206,7 @@ export function createWater(
           * (glintPower + 1.0) / ${(SUN_SHININESS + 1).toFixed(1)};
         vec3 colour = mix(diffuse, reflectedSky + sunColour * glint, fresnel);
         // Whitewater: diffuse, unpolished, so it replaces the reflective water colour.
-        float foam = wakeFoamAmount(waterLabel, wakeSN, wakeProps, bow * bowFilter, pixel) * hullMask;
+        float foam = wakeFoamAmount(wakePos, wakeSN, wakeProps, bow * bowFilter, pixel) * hullMask;
         vec3 foamColour = ${FOAM_ALBEDO.toFixed(3)} * (ambient + sunColour * max(dot(normal, sunDirection), 0.0));
         colour = mix(colour, foamColour, foam * ${WAKE.foamOpacity.toFixed(3)});
         gl_FragColor = vec4(colour, 1.0);
