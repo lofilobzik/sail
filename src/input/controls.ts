@@ -13,7 +13,7 @@ const TILLER_RATE = 2.0; // TUNING GUESS: tiller travel per second while A/D hel
 const SHEET_RATE = 0.4; // TUNING GUESS: sheet travel per second while W/S held (and follow rate)
 const SHEET_WHEEL_STEP = 0.03; // TUNING GUESS: sheet target change per wheel notch
 const HIKE_RATE = 1.5; // TUNING GUESS: hike travel per second
-const INITIAL_SHEET = 0.5;
+const INITIAL_SHEET = 0.25; // best trim on the default beam reach: polar sheet 0.25-0.27 at TWA 90, 6-9 kn (milestone 2)
 
 /** True when a key event comes from a form field (overlay inputs must not drive the boat). */
 export function isTypingTarget(target: EventTarget | null): boolean {
