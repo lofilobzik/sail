@@ -105,7 +105,10 @@ fraction of a second and holds its position. Same idea for the sheet.
   variation bends and strengthens the two crest arms differently; it fades in aft of contact to keep
   the attachment pinned. This is visual only and never changes the sim.
   Subdued height tuning uses Kelvin `visualGain = 0.4` and `bowHeadFrac = 0.06`; both are render-only
-  TUNING GUESS values, not measured wake data. This changes no shader algorithms or sampling cost.
+  TUNING GUESS values, not measured wake data. Bow arms spread in a V with a crest and flanking
+  troughs, widening with distance and fading as `1/sqrt(1 + aft/3m)` instead of disappearing beside
+  the hull. Sampling filters use the local arm width. This is a boat-relative visual approximation,
+  not independently propagated waves or shore breaking; no per-pixel wake-trail search is added.
   Parameters in `data/wake.json`; math in `render/wake/` (no Three.js, tested);
   debug toggle "wake (visual)" and `?wake=0`.
 - **Sky:** Three.js analytic Sky shader. No screen-space reflections, no heavy post-processing.

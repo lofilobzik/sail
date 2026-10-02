@@ -233,6 +233,15 @@ from a configurable direction. Do not hardcode wind anywhere else.
   fading in over 0.45 m aft of contact. Port/starboard sample different world locations, rather than
   mirroring the same perturbation. All are TUNING GUESS in `wake.json`, not pressure-wave measurements.
   The existing finite-difference bow normal includes these changes; bow foam follows the same height.
+- Spreading bow V: replace the short positive Gaussian ridge with a crest/trough profile
+  `(1 - 2 u^2) exp(-u^2)` across each arm, where `u` is distance from its crest divided by local width.
+  Arms retain the existing 30-degree visual angle, contact pinning and smooth irregularity, widen
+  as `bowWidth + bowWidthGrowth * aft`, and fade as `1/sqrt(1 + aft/bowLength)`, with `bowLength = 3 m`
+  (half amplitude at 9 m). Profile, angle and fade are TUNING GUESS, not measured pressure-wave data.
+  This extends the existing bow wave, not an extra amplified wave layer. `bowHeadFrac` stays 0.06.
+  Vertex and pixel filters use local spreading width; the nearest-trail search remains vertex-only.
+  The arms are a boat-relative approximation: they do not detach on stopping, persist independently
+  after manoeuvres, or propagate to/break on a shoreline. No sim forces or foil orbital flow are added.
 - The trail is a 30 m world-anchored polyline of the stem (a point per 0.75 m). The wake is straight
   segments between points, so it follows turns but is not a fluid simulation; it cannot interact with waves.
 - Status: unit tests cover the trail, the pattern geometry and the source balance. A browser pass (outside
@@ -244,8 +253,9 @@ from a configurable direction. Do not hardcode wind anywhere else.
   other speeds, frame cost.
 - Current render gain is 0.4 and bowHeadFrac is 0.06. The isolated boat-wake screenshot still looked
   oversized at 1.5/0.2, so Kelvin heights are reduced by about 73% and bow heights by 70%. These are
-  visual TUNING GUESS choices, not measured Laser wake calibration. Wave lengths, decay, foam settings,
-  hull-contact attachment, sailing physics and shader algorithms are unchanged.
+  visual TUNING GUESS choices, not measured Laser wake calibration. That height-only reduction left
+  wavelengths, decay, foam settings, hull-contact attachment, sailing physics and shaders unchanged;
+  the subsequent bow V profile/filtering change is described above.
 - Contact repair verification: actual `WakeView.update` exercised headlessly; at 2 m/s, 10 degrees
   bow-up moves the contact about 1.5 m aft with bow height unchanged at 0.0408 m. A deterministic
   240-frame 16-kn sea sweep retains wet contact throughout. Contact regressions cover lift/drop,
@@ -264,6 +274,13 @@ from a configurable direction. Do not hardcode wind anywhere else.
   1.37 cm (previously 5.16 cm); this is source amplitude before spatial envelope/decay, not every crest's
   height. Sampled Kelvin heights scale by 0.4/1.5. Contact lift, dry/re-entry and wake-disable paths pass.
   Build, lint and all 95 tests pass. No browser checks were run; final visual appearance is unverified.
+- Spreading bow verification: inspected headless before/after height maps over 24 m aft by 28 m
+  across; the bow-connected V persists instead of fading in the first few metres. At 2 m/s, unperturbed
+  arm crests measure 12.23 mm at contact, 5.47 mm at 12 m aft and 4.08 mm at 24 m aft. The adaptive filter
+  retains wider resolved arms at a 0.2 m footprint; contact height is unchanged through bow lift.
+  Dry/re-entry and rest paths pass. Regressions cover both spreading arms, flanking troughs, height
+  bounds, contact pinning and adaptive-filter resolution. Build, lint and all 97 tests pass.
+  No browser checks were run; CPU maps do not verify actual lighting, shader compilation or GPU cost.
 
 **Rendering repair verification**
 - Isolated water-only scene, fixed camera and time: the original 2 cm crossing of a 5 m snap boundary

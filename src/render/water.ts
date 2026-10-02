@@ -142,7 +142,7 @@ export function createWater(
         wakeFrame(wakePos, wakeSN, wakeProps);
         float cell = max(cellFootprint.x, cellFootprint.y);
         waterPosition.y += kelvinWake(wakeSN, wakeProps, cell).x * wakeHullMask(wakePos)
-          + wakeBow(wakePos) * wakeBowFilter(cell);
+          + wakeBow(wakePos) * wakeBowFilter(wakePos, cell);
         vec4 mvPosition = viewMatrix * vec4(waterPosition, 1.0);
         gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
@@ -180,7 +180,7 @@ export function createWater(
         vec2 slope = -normal.xz / normal.y
           + kelvin.y * tangent + kelvin.z * vec2(-tangent.y, tangent.x);
         float bow = wakeBow(wakePos);
-        float bowFilter = wakeBowFilter(pixel);
+        float bowFilter = wakeBowFilter(wakePos, pixel);
         const float bowStep = ${BOW_SLOPE_STEP.toFixed(4)};
         slope += bowFilter / (2.0 * bowStep) * vec2(
           wakeBow(wakePos + vec2(bowStep, 0.0)) - wakeBow(wakePos - vec2(bowStep, 0.0)),

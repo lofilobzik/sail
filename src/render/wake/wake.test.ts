@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WAKE, bowWave, bowWaveHeight, kelvinWake, wakeSourceAmplitude, type WakeSample } from './kelvin';
+import { WAKE, bowWave, bowWaveFilter, bowWaveHeight, kelvinWake, wakeSourceAmplitude, type WakeSample } from './kelvin';
 import { WakeTrail, type TrailPoint } from './trail';
 
 const G = 9.81;
@@ -78,17 +78,39 @@ describe('irregular bow crest', () => {
     }
   });
 
-  it('stays positive and bounded, decays aft, and adds no displacement ahead of the bow or while disabled', () => {
+  it('bounds crests and troughs, decays aft, and adds no displacement ahead of the bow or while disabled', () => {
     for (const aft of [0, 0.2, 0.7, 2, 5]) {
-      const bound = height * (1 + WAKE.bowHeightVariation) * Math.exp(-aft / WAKE.bowLength);
+      const bound = height * (1 + WAKE.bowHeightVariation) / Math.sqrt(1 + aft / WAKE.bowLength);
       for (let side = -3; side <= 3; side += 0.07) {
         const h = bowWave(aft, side, height, side + 11, aft - 3, 1.7, 0.4);
-        expect(h).toBeGreaterThanOrEqual(0);
-        expect(h).toBeLessThanOrEqual(bound);
+        expect(Math.abs(h)).toBeLessThanOrEqual(bound);
       }
     }
-    expect(bowWave(-WAKE.bowAhead, 0.2, height, 12, -4, 1, 2)).toBe(0);
+    expect(Math.abs(bowWave(-WAKE.bowAhead, 0.2, height, 12, -4, 1, 2))).toBe(0);
     expect(bowWave(0.7, 0.3, 0, 12, -4, 1, 2)).toBe(0);
+  });
+
+  it('spreads both crest arms beyond the near hull and includes flanking troughs', () => {
+    const aft = 12;
+    const crest = WAKE.bowOffset + aft * Math.tan(WAKE.bowAngleDeg * Math.PI / 180);
+    const width = WAKE.bowWidth + WAKE.bowWidthGrowth * aft;
+    for (const sign of [-1, 1]) {
+      const peak = bowWave(aft, sign * crest, height, 0, 0, 0, 0);
+      expect(peak).toBeGreaterThan(height * 0.25);
+      expect(peak).toBeLessThan(height);
+      expect(bowWave(aft, sign * (crest + width), height, 0, 0, 0, 0)).toBeLessThan(0);
+      expect(bowWave(aft, sign * (crest - width), height, 0, 0, 0, 0)).toBeLessThan(0);
+      expect(Math.abs(bowWave(aft, sign * (crest + 4 * width), height, 0, 0, 0, 0))).toBeLessThan(peak * 1e-4);
+    }
+  });
+
+  it('retains resolved distant arms when the same footprint cannot resolve the narrow bow crest', () => {
+    const footprint = 2 * WAKE.bowWidth;
+    expect(bowWaveFilter(0, footprint)).toBe(0);
+    expect(bowWaveFilter(12, footprint)).toBe(1);
+    const width = WAKE.bowWidth + 12 * WAKE.bowWidthGrowth;
+    expect(bowWaveFilter(12, 1.5 * width)).toBeCloseTo(0.5, 12);
+    expect(bowWaveFilter(12, 2 * width)).toBe(0);
   });
 
   it('preserves the crest when floating-origin and time phases wrap', () => {
