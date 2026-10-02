@@ -134,10 +134,14 @@ from a configurable direction. Do not hardcode wind anywhere else.
 - Browser waves default on; `defaultConfig()` and the polar script default off.
 - Backquote / F3 opens the debug panel: waves checkbox, overall amplitude 0-2, separate `big waves`
   and `ripples` multipliers 0-2, broad period at reference wind 2-8 s, and direction TO in degrees.
-- Three broad components (reference wavelengths 18/10.7/7.3 m) and four ripple components
-  (1.9/1.13/0.71/0.43 m) have different directions and phases. Both bands use the same Gerstner model.
+- Three broad components (reference wavelengths 18/10.7/7.3 m) and eight ripple components
+  (reference wavelengths 2.17/1.9/1.29/1.13/0.81/0.71/0.49/0.43 m) share the Gerstner model.
   Each component has a seeded strength factor 0.65-1.35 and an additional phase offset.
-  Interference creates uneven crest magnitudes, not an identical wave train or Perlin-noise field.
+  Ripple wavelengths additionally vary by +/-18% and directions by +/-9 degrees at compilation.
+  The ripple band is downwind-biased rather than widely crossing, to avoid square crosshatching;
+  nearby unequal wavelengths create beat groups. Unseeded ripple height variance is approximately
+  preserved by splitting each prior component's amplitude between two weaker waves. These values
+  are TUNING GUESS, not a measured directional spectrum; broad components are unchanged.
   Browser seed changes on reload, not during sailing or when adjusting sea controls.
 - Reference wind is 7 kn. For ratio `r = windKn / 7`, broad amplitudes scale by `r^2`, periods by
   `max(0.35, r)^0.35`; ripple amplitudes by `r^1.25`, lengths by `max(0.35, r)^0.5`.
@@ -161,9 +165,9 @@ from a configurable direction. Do not hardcode wind anywhere else.
   period. Use the script's default waves-off mode for Day comparisons.
 
 **Layered sea status and manual checks**
-- No automated tests, build, or headless polar reruns for this change, at the user's request.
-  A brief browser smoke loaded both bands and the new controls; changing wind from 7 to 12 kn updated
-  the actual broad period from about 3.40 to 4.10 s without reported shader/JS errors.
+- The initial layered-sea change did not run automated tests, build or headless polars, at the user's
+  request at that time. A brief browser smoke loaded both bands and the new controls; changing wind
+  from 7 to 12 kn updated the actual broad period from about 3.40 to 4.10 s without reported errors.
 - Manual checks: at 7 kn isolate broad waves (`ripples = 0`) and then ripples (`big waves = 0`).
   Restore both to 1; compare wind 3/7/12 kn, then 0 kn. Overall amplitude 0 and waves off should
   flatten the water. Reload for a new seeded pattern; simply sailing should not regenerate it.
@@ -172,6 +176,20 @@ from a configurable direction. Do not hardcode wind anywhere else.
   ripples 1.5. Global amplitude controls overall roughness; broad period does not resize ripples.
 - The measurements below are historical checks of the earlier three-component spectrum,
   not verification of the new layered spectrum or wind-response calibration.
+
+**Ripple-pattern repair verification**
+- Headless 16 m ripple-only slope maps were generated from the actual CPU surface and inspected at
+  equal contrast: eight weaker, mostly downwind components reduce the former crossing lattice and
+  form unequal crest groups. This is a CPU field preview, not a browser/GPU image; no browser checks
+  were run at the user's request. Final lighting, filtering and target-GPU performance remain unchecked.
+- At seed 1987 and 7 kn, ripple RMS height changes from 6.93 to 6.79 mm; transverse-to-downwind slope
+  energy ratio drops from 0.509 to 0.0675. These are diagnostic field measurements, not realism targets.
+- A 36-case seed/wind/direction smoke at maximum layer/overall controls keeps samples finite and
+  sum(Q k A) <= 0.6 to floating-point precision. New regression verifies that control round-trips
+  preserve the seeded ripple field and that rotating sea direction rotates its slopes and orbital flow.
+- Build, lint and all 92 tests pass. Default waves-off 6/7/8-kn polars (TWA 30-180, 5-degree steps)
+  have byte-identical CSV and SVG before/after. Wave-enabled motion can change because the shared
+  fine-ripple spectrum changed; this is not a new empirical calibration of wave response.
 
 **Verification (original water/waves change)**
 - Pre/post waves-off CSV and SVG match byte-for-byte for 6/7/8/9 kn, TWA 30-180 in 5-degree steps.

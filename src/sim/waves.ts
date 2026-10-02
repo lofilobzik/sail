@@ -84,7 +84,16 @@ function compileWaves(cfg: WaveConfig): void {
   let height = 0;
   cfg.components = components.map((w, i) => {
     const big = i < parameters.bigWaves.length;
-    const length = big ? periodRatio * periodRatio : rippleLength;
+    // TUNING GUESS (waves.json variation): jitter ripple spacing/direction at compilation only.
+    // Extra random indices are disjoint from strength/phase, preserving the broad-wave spectrum.
+    const extra = 2 * (components.length + i);
+    const lengthVariation = big ? 1 : 1 + parameters.variation.rippleLengthSpread
+      * (2 * randomUnit(cfg.seed, extra) - 1);
+    const angleVariation = big ? 0 : parameters.variation.rippleDirectionSpreadDeg * DEG
+      * (2 * randomUnit(cfg.seed, extra + 1) - 1);
+    const direction = turn + angleVariation;
+    const dc = big ? c : Math.cos(direction), ds = big ? s : Math.sin(direction);
+    const length = (big ? periodRatio * periodRatio : rippleLength) * lengthVariation;
     const k = w.k / length;
     const strength = 1 + parameters.variation.amplitudeSpread * (2 * randomUnit(cfg.seed, i * 2) - 1);
     const amplitude = w.amplitude * (big ? bigHeight : rippleHeight) * strength;
@@ -92,7 +101,7 @@ function compileWaves(cfg: WaveConfig): void {
     steepness += k * amplitude * w.choppiness;
     height += amplitude;
     return Object.freeze({
-      ...w, dx: w.dx * c - w.dz * s, dz: w.dx * s + w.dz * c,
+      ...w, dx: w.dx * dc - w.dz * ds, dz: w.dx * ds + w.dz * dc,
       k, omega: Math.sqrt(G * k), amplitude, phase,
     });
   });

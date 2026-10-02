@@ -8,7 +8,9 @@
   "directionDeg": 180,
   "variation": {
     "seed": 1987,
-    "amplitudeSpread": 0.35
+    "amplitudeSpread": 0.35,
+    "rippleLengthSpread": 0.18,
+    "rippleDirectionSpreadDeg": 9
   },
   "wind": {
     "referenceSpeedKn": 7,
@@ -35,16 +37,20 @@
     { "wavelength": 7.3, "amplitude": 0.025, "directionOffsetDeg": 43, "phase": 5.12, "choppiness": 0.45 }
   ],
   "ripples": [
-    { "wavelength": 1.9, "amplitude": 0.007, "directionOffsetDeg": -40, "phase": 1.6, "choppiness": 0.35 },
-    { "wavelength": 1.13, "amplitude": 0.0045, "directionOffsetDeg": 17, "phase": 4.8, "choppiness": 0.28 },
-    { "wavelength": 0.71, "amplitude": 0.0027, "directionOffsetDeg": 62, "phase": 2.9, "choppiness": 0.22 },
-    { "wavelength": 0.43, "amplitude": 0.0015, "directionOffsetDeg": -12, "phase": 0.7, "choppiness": 0.18 }
+    { "wavelength": 2.17, "amplitude": 0.00495, "directionOffsetDeg": -16, "phase": 1.6, "choppiness": 0.35 },
+    { "wavelength": 1.9, "amplitude": 0.00495, "directionOffsetDeg": 3, "phase": 5.3, "choppiness": 0.35 },
+    { "wavelength": 1.29, "amplitude": 0.00318, "directionOffsetDeg": -6, "phase": 4.8, "choppiness": 0.28 },
+    { "wavelength": 1.13, "amplitude": 0.00318, "directionOffsetDeg": 19, "phase": 0.4, "choppiness": 0.28 },
+    { "wavelength": 0.81, "amplitude": 0.00191, "directionOffsetDeg": 11, "phase": 2.9, "choppiness": 0.22 },
+    { "wavelength": 0.71, "amplitude": 0.00191, "directionOffsetDeg": -21, "phase": 5.9, "choppiness": 0.22 },
+    { "wavelength": 0.49, "amplitude": 0.00106, "directionOffsetDeg": -10, "phase": 0.7, "choppiness": 0.18 },
+    { "wavelength": 0.43, "amplitude": 0.00106, "directionOffsetDeg": 23, "phase": 3.7, "choppiness": 0.18 }
   ],
   "sources": {
     "equations": "GPU Gems chapter 1, section 1.2.3, Eq. 9 and dispersion Eq. 13: https://developer.nvidia.com/gpugems/gpugems/part-i-natural-effects/chapter-1-effective-water-simulation-physical-models",
     "orbitalDecay": "Deep-water exp(k depth); velocity is the time derivative of the displaced particle position. https://en.wikipedia.org/wiki/Airy_wave_theory",
-    "bigWaves/ripples": "TUNING GUESS: separate broad-wave and fine-ripple bands at reference wind 7 kn, with unequal lengths, phases and direction offsets to break up regular crests. Direction offsets rotate around the primary compass bearing TO, default 180 degrees (downwind for the default north wind). Not a measured sea spectrum. Choppiness below 1 gives elliptical single-component particle orbits.",
-    "variation": "TUNING GUESS: each component gets a seeded strength multiplier in 0.65-1.35 and a random phase offset. Browser chooses a new seed on reload; headless default seed 1987 stays deterministic. Wind/sea controls preserve the seed, so the field is not re-randomized each frame. Interference produces uneven crest magnitudes; no Perlin noise or evolving weather model.",
+    "bigWaves/ripples": "TUNING GUESS: separate broad-wave and fine-ripple bands at reference wind 7 kn. Eight downwind-biased ripple components replace four widely crossing wave trains: nearby unequal wavelengths make beat groups, and reduced angular spread avoids square crosshatching. Each old amplitude is divided approximately by sqrt(2) between two components to preserve the unseeded band variance. Direction offsets rotate around the primary compass bearing TO, default 180 degrees. Not a measured sea spectrum. Choppiness below 1 gives elliptical single-component particle orbits.",
+    "variation": "TUNING GUESS: each component gets a seeded strength multiplier in 0.65-1.35 and a random phase offset. Ripples additionally vary wavelength by +/-18% and direction by +/-9 degrees, so seeds do not reuse the same rigid spatial lattice. Broad components retain their prior wavelengths/directions. Browser chooses a new seed on reload; headless default seed 1987 stays deterministic. Wind/sea controls preserve the seed; no per-frame randomness, Perlin noise or evolving weather model.",
     "wind": "TUNING GUESS: broad height scales with wind ratio squared, broad period with ratio^0.35; ripple height with ratio^1.25, length with ratio^0.5. Minimum length ratio 0.35 avoids degenerate wavelengths near calm. Zero wind removes both locally generated bands. Debug wind range 0-16 kn is exploratory, not a calibrated strong-wind boat model. No fetch, duration, remote swell, or capillary dispersion is modeled.",
     "amplitudeScale/maxLayerScale/maxSteepness": "TUNING GUESS: overall and individual layer multipliers range 0-2; reference-wind broad period allowed 2-8 s. Limit effective overall multiplier so sum(k A Q) <= 0.6: no Gerstner folding and contractive CPU inverse lookup. Fine ripples retain independent wavelengths when broad period changes.",
     "pitchResponse": "TUNING GUESS: pitchFrequency in rad/s, pitchDampingRatio dimensionless, pitchLimitDeg; no measured Laser wave response available.",

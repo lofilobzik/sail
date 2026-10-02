@@ -20,7 +20,9 @@ Keep the boat data-driven so that is possible later.
   6-8 kn remains the intended light-wind sailing range, stronger settings are exploratory.
 - Waves: two data-driven Gerstner bands, broad waves plus fine ripples, shared by physics and rendering.
   Wind speed controls height and length; seeded strengths/phases produce uneven crest groups without
-  per-frame randomization. The browser chooses a new pattern on reload; headless runs stay deterministic.
+  per-frame randomization. Ripples use eight weaker, downwind-biased components with seeded wavelength
+  and direction variation rather than four widely crossing wave trains that formed a regular lattice.
+  The browser chooses a new pattern on reload; headless runs stay deterministic.
   Surface slope rocks the boat; orbital flow at each foil can deflect the course. Overall amplitude,
   separate big-wave/ripple multipliers, broad period and direction controls are in the debug menu.
   Spectrum, wind scaling and response tuning are TUNING GUESS, not a calibrated sea-state model.
@@ -89,7 +91,8 @@ fraction of a second and holds its position. Same idea for the sheet.
 
 - **Water:** one Gerstner model in `sim/waves.ts`, with parameters in `data/waves.json`, supplies
   CPU sampling and shader displacement/analytic normals for both broad waves and ripples.
-  Different lengths/directions and seeded random strengths/phases break up uniform wave trains.
+  Unequal lengths/directions and seeded strengths/phases break up wave trains; ripple spacing and
+  angles also vary by seed, with nearby wavelengths producing uneven beat groups.
   A uniform near-boat patch and growing
   outer grid follow continuously without moving world-space phase. Mesh-cell filtering prevents
   unresolved displacement; per-pixel normals and footprint/specular filtering prevent distant shimmer.

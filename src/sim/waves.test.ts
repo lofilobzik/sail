@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createWaveSample, defaultWaves, sampleWaveParticle, sampleWaves, setWaveParameters, waveAmplitude, wavePhaseAt, WAVE_PARAMETERS } from './waves';
+import { createWaveSample, defaultWaves, sampleWaveParticle, sampleWaves, setWaveLayers, setWaveWind, setWaveParameters, waveAmplitude, wavePhaseAt, WAVE_PARAMETERS } from './waves';
 
 describe('shared Gerstner wave field', () => {
   const cfg = { ...defaultWaves(), enabled: true };
@@ -75,6 +75,30 @@ describe('shared Gerstner wave field', () => {
     setWaveParameters(tuned, 100, -90);
     expect(tuned.periodSeconds).toBe(WAVE_PARAMETERS.maxPeriodSeconds);
     expect(tuned.directionDeg).toBe(270);
+  });
+
+  it('keeps a seeded ripple realization through sea-control changes and rotates it with the sea direction', () => {
+    const ripples = defaultWaves(7123);
+    ripples.enabled = true;
+    setWaveLayers(ripples, 0, 1);
+    setWaveParameters(ripples, 4, 0);
+    const before = sampleWaveParticle(ripples, 2.3, -1.7, 0.8, 0, createWaveSample());
+    setWaveParameters(ripples, 8, 0); // broad period must not change ripple spacing or phase
+    expect(sampleWaveParticle(ripples, 2.3, -1.7, 0.8, 0, createWaveSample())).toEqual(before);
+    setWaveWind(ripples, 16);
+    setWaveLayers(ripples, 2, 0);
+    setWaveWind(ripples, 7);
+    setWaveLayers(ripples, 0, 1);
+    expect(sampleWaveParticle(ripples, 2.3, -1.7, 0.8, 0, createWaveSample())).toEqual(before);
+
+    const angle = 37 * Math.PI / 180, c = Math.cos(angle), s = Math.sin(angle);
+    setWaveParameters(ripples, 8, 37);
+    const rotated = sampleWaveParticle(ripples, c * 2.3 - s * -1.7, s * 2.3 + c * -1.7, 0.8, 0, createWaveSample());
+    expect(rotated.y).toBeCloseTo(before.y, 12);
+    expect(rotated.slopeX).toBeCloseTo(c * before.slopeX - s * before.slopeZ, 12);
+    expect(rotated.slopeZ).toBeCloseTo(s * before.slopeX + c * before.slopeZ, 12);
+    expect(rotated.velocityX).toBeCloseTo(c * before.velocityX - s * before.velocityZ, 12);
+    expect(rotated.velocityZ).toBeCloseTo(s * before.velocityX + c * before.velocityZ, 12);
   });
 
   it('preserves the physical surface after distant origins and long elapsed times enter float32', () => {
