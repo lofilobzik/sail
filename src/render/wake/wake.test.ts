@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WAKE, bowWaveHeight, kelvinWake, wakeSourceAmplitude, type WakeSample } from './kelvin';
+import { WAKE, bowWave, bowWaveHeight, kelvinWake, wakeSourceAmplitude, type WakeSample } from './kelvin';
 import { WakeTrail, type TrailPoint } from './trail';
 
 const G = 9.81;
@@ -64,6 +64,37 @@ describe('wake source', () => {
   it('bow wave is a fraction of the stagnation head and vanishes at rest', () => {
     expect(bowWaveHeight(2)).toBeCloseTo((WAKE.bowHeadFrac * 4) / (2 * G), 12);
     expect(bowWaveHeight(0)).toBe(0);
+  });
+});
+
+describe('irregular bow crest', () => {
+  const height = 0.04;
+
+  it('pins both arms at hull contact despite changing world position and time', () => {
+    for (const side of [-WAKE.bowOffset, WAKE.bowOffset]) {
+      for (const [x, z, p1, p2] of [[0, 0, 0, 0], [18, -7, 2, 3], [-5, 41, 5, 1]]) {
+        expect(bowWave(0, side, height, x!, z!, p1!, p2!)).toBeCloseTo(height, 12);
+      }
+    }
+  });
+
+  it('stays positive and bounded, decays aft, and adds no displacement ahead of the bow or while disabled', () => {
+    for (const aft of [0, 0.2, 0.7, 2, 5]) {
+      const bound = height * (1 + WAKE.bowHeightVariation) * Math.exp(-aft / WAKE.bowLength);
+      for (let side = -3; side <= 3; side += 0.07) {
+        const h = bowWave(aft, side, height, side + 11, aft - 3, 1.7, 0.4);
+        expect(h).toBeGreaterThanOrEqual(0);
+        expect(h).toBeLessThanOrEqual(bound);
+      }
+    }
+    expect(bowWave(-WAKE.bowAhead, 0.2, height, 12, -4, 1, 2)).toBe(0);
+    expect(bowWave(0.7, 0.3, 0, 12, -4, 1, 2)).toBe(0);
+  });
+
+  it('preserves the crest when floating-origin and time phases wrap', () => {
+    const h = bowWave(0.9, 0.6, height, 3.2, -7.1, 0.4, 1.7);
+    expect(bowWave(0.9, 0.6, height, 3.2 + WAKE.foamNoisePeriod, -7.1, 0.4, 1.7)).toBeCloseTo(h, 12);
+    expect(bowWave(0.9, 0.6, height, 3.2, -7.1 - WAKE.foamNoisePeriod, 0.4 + 2 * Math.PI, 1.7 - 2 * Math.PI)).toBeCloseTo(h, 12);
   });
 });
 

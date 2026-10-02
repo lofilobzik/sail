@@ -228,6 +228,11 @@ from a configurable direction. Do not hardcode wind anywhere else.
   no bow wave; a submerged stem still produces one. The stern/Kelvin trail is unchanged.
   Foam = noisy world-anchored pattern behind the transom and on the bow crest; the upright hull mask
   applies to stern foam, not the moving bow crest.
+- Bow crest irregularity is render-only: two smooth world-anchored spatial modes reuse the periodic
+  foam origin and slow foam phases. They vary crest position by up to 0.10 m and strength by +/-35%,
+  fading in over 0.45 m aft of contact. Port/starboard sample different world locations, rather than
+  mirroring the same perturbation. All are TUNING GUESS in `wake.json`, not pressure-wave measurements.
+  The existing finite-difference bow normal includes these changes; bow foam follows the same height.
 - The trail is a 30 m world-anchored polyline of the stem (a point per 0.75 m). The wake is straight
   segments between points, so it follows turns but is not a fluid simulation; it cannot interact with waves.
 - Status: unit tests cover the trail, the pattern geometry and the source balance. A browser pass (outside
@@ -243,8 +248,14 @@ from a configurable direction. Do not hardcode wind anywhere else.
   240-frame 16-kn sea sweep retains wet contact throughout. Contact regressions cover lift/drop,
   mirrored heel, dry/submerged/re-entry transitions and world-position wave intersection. Build,
   lint and all 91 tests pass. No browser checks for this continuation, at the user's request.
-  This is a sampled geometric attachment, not fluid/slamming physics; the bow chevron remains
-  symmetric about a single foremost contact and its appearance has not been revalidated.
+  This is a sampled geometric attachment, not fluid/slamming physics. At that stage the chevron was
+  symmetric about a single foremost contact; the irregularity change below preserves that attachment.
+- Bow irregularity verification: headless reference height maps inspected before/after at two times
+  show unequal, gently curved arms instead of the exact mirrored chevron. At 2 m/s the smoke's maximum
+  opposite-side height difference is 0.0102 m, while the contact height remains 0.0408 m. Regression
+  covers the pinned attachment, positive/bounded aft-decaying displacement and spatial/time wrap
+  continuity. Build, lint and all 95 tests pass. No browser checks were run at the user's request;
+  these CPU maps do not verify final in-game lighting, foam appearance or GPU frame cost.
 
 **Rendering repair verification**
 - Isolated water-only scene, fixed camera and time: the original 2 cm crossing of a 5 m snap boundary

@@ -43,6 +43,32 @@ function smoothstep(e0: number, e1: number, x: number): number {
 
 const filterWeight = (phaseStep: number) => 1 - smoothstep(FILTER_FULL, FILTER_ZERO, phaseStep);
 
+const BOW_K = 2 * Math.PI / wake.foamNoisePeriod;
+const BOW_MODE_A = wake.bowVariationModes[0]!;
+const BOW_MODE_B = wake.bowVariationModes[1]!;
+
+/**
+ * Headless reference for wakeBow's height: aft/side are relative to the current hull contact.
+ * noiseX/Z are world coordinates reduced modulo foamNoisePeriod, phases are the slow foam phases.
+ * TUNING GUESS (wake.json): irregular crest/strength fade in aft, leaving the attachment pinned.
+ */
+export function bowWave(
+  aft: number, side: number, height: number,
+  noiseX: number, noiseZ: number, phaseA: number, phaseB: number,
+): number {
+  if (height <= 0) return 0;
+  const a = Math.max(aft, 0);
+  const blend = smoothstep(0, wake.bowVariationStart, a);
+  const n1 = Math.sin(BOW_K * (BOW_MODE_A[0]! * noiseX + BOW_MODE_A[1]! * noiseZ) + phaseA);
+  const n2 = Math.sin(BOW_K * (BOW_MODE_B[0]! * noiseX + BOW_MODE_B[1]! * noiseZ) + phaseB);
+  const crest = wake.bowOffset + a * Math.tan(wake.bowAngleDeg * DEG)
+    + blend * wake.bowCrestWander * 0.5 * (n1 + n2);
+  const u = (Math.abs(side) - crest) / (wake.bowWidth + wake.bowWidthGrowth * a);
+  const strength = 1 + blend * wake.bowHeightVariation * 0.5 * (n1 - n2);
+  const along = smoothstep(-wake.bowAhead, 0, aft) * Math.exp(-a / wake.bowLength);
+  return height * strength * along * Math.exp(-u * u);
+}
+
 export interface WakeSample {
   h: number;
   dhds: number;
@@ -168,8 +194,8 @@ float wakeHullMask(vec2 p) {
   return smoothstep(c - 0.03, c + 0.03, ab.y);
 }
 
-// Bow wave: a > shaped chevron leaving the foremost wetted hull point.
-// wakeWet is its horizontal heading-frame offset, including pitch and heel.
+// The chevron leaves the foremost wetted hull point. World-anchored low-frequency variation
+// bends and strengthens its two arms independently; the fade-in pins the hull attachment.
 float wakeBow(vec2 p) {
   float height = wakeHull.x;
   if (height <= 0.0) return 0.0;
@@ -179,9 +205,15 @@ float wakeBow(vec2 p) {
   float b = abs(fwd.x * d.y - fwd.y * d.x - wakeWet.y);
   float a = max(x, 0.0);
   float along = smoothstep(-${f(wake.bowAhead)}, 0.0, x) * exp(-a / ${f(wake.bowLength)});
-  float crest = ${f(wake.bowOffset)} + a * ${f(Math.tan(wake.bowAngleDeg * DEG))};
+  vec2 q = p + wakeFoam.xy;
+  float n1 = sin(dot(q, vec2(${f(BOW_K * BOW_MODE_A[0]!)}, ${f(BOW_K * BOW_MODE_A[1]!)})) + wakeFoamPhase.x);
+  float n2 = sin(dot(q, vec2(${f(BOW_K * BOW_MODE_B[0]!)}, ${f(BOW_K * BOW_MODE_B[1]!)})) + wakeFoamPhase.y);
+  float blend = smoothstep(0.0, ${f(wake.bowVariationStart)}, a);
+  float crest = ${f(wake.bowOffset)} + a * ${f(Math.tan(wake.bowAngleDeg * DEG))}
+    + blend * ${f(wake.bowCrestWander)} * 0.5 * (n1 + n2);
   float u = (b - crest) / (${f(wake.bowWidth)} + ${f(wake.bowWidthGrowth)} * a);
-  return height * along * exp(-u * u);
+  float strength = 1.0 + blend * ${f(wake.bowHeightVariation)} * 0.5 * (n1 - n2);
+  return height * strength * along * exp(-u * u);
 }
 
 // The bow crest is a Gaussian of width bowWidth: resolved while the sampling cell is
