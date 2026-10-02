@@ -202,8 +202,14 @@ from a configurable direction. Do not hardcode wind anywhere else.
   arms at the 19.47 degree half-angle. Decay exponents s^-1/3 (divergent) and s^-1/2 (transverse),
   envelope widths and age decay are TUNING GUESS. Footprint filtering matches the water grid (full at 8
   samples per wavelength, none below 4).
-- Bow wave height is `0.25 V^2/2g` (TUNING GUESS fraction of the stagnation head), following the lofted
-  waterline half-beam. Foam = noisy world-anchored pattern behind the transom and on the bow crest.
+- Bow wave height is `bowHeadFrac V^2/2g` (`bowHeadFrac = 0.2`, TUNING GUESS fraction of stagnation
+  head). The chevron and bow foam start at the foremost sampled hull/sea contact. Cached loft sections
+  transform in the boat mesh's heel/pitch/yaw order; the search samples the local Gerstner surface at
+  those transformed horizontal positions, including heave. The contact moves aft when the bow lifts,
+  forward when it drops and sideways under heel; no clearance fade. Entirely dry sampled hulls produce
+  no bow wave; a submerged stem still produces one. The stern/Kelvin trail is unchanged.
+  Foam = noisy world-anchored pattern behind the transom and on the bow crest; the upright hull mask
+  applies to stern foam, not the moving bow crest.
 - The trail is a 30 m world-anchored polyline of the stem (a point per 0.75 m). The wake is straight
   segments between points, so it follows turns but is not a fluid simulation; it cannot interact with waves.
 - Status: unit tests cover the trail, the pattern geometry and the source balance. A browser pass (outside
@@ -213,6 +219,14 @@ from a configurable direction. Do not hardcode wind anywhere else.
   sea, so `wake.json` has a render-only `visualGain` (3) on the Kelvin amplitude and `bowHeadFrac` is 0.5.
   Both are TUNING GUESS, chosen for readability, not realism. Not yet checked: cockpit view, turns/tacks,
   other speeds, frame cost.
+- Current render gain is 1.5 and bowHeadFrac is 0.2, reduced after the original pass described above.
+- Contact repair verification: actual `WakeView.update` exercised headlessly; at 2 m/s, 10 degrees
+  bow-up moves the contact about 1.5 m aft with bow height unchanged at 0.0408 m. A deterministic
+  240-frame 16-kn sea sweep retains wet contact throughout. Contact regressions cover lift/drop,
+  mirrored heel, dry/submerged/re-entry transitions and world-position wave intersection. Build,
+  lint and all 91 tests pass. No browser checks for this continuation, at the user's request.
+  This is a sampled geometric attachment, not fluid/slamming physics; the bow chevron remains
+  symmetric about a single foremost contact and its appearance has not been revalidated.
 
 **Rendering repair verification**
 - Isolated water-only scene, fixed camera and time: the original 2 cm crossing of a 5 m snap boundary

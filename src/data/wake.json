@@ -23,8 +23,7 @@
   "bowWidth": 0.14,
   "bowAngleDeg": 30,
   "bowWidthGrowth": 0.06,
-  "bowLiftFadeStart": 0.03,
-  "bowLiftFadeEnd": 0.15,
+  "contactSamples": 64,
   "hullProfileSamples": 8,
   "foamMinSpeed": 1.0,
   "foamSpeedRange": 2.0,
@@ -44,7 +43,7 @@
     "visualGain": "TUNING GUESS, render only: multiplies the Kelvin source amplitude (1 = the energy-balance value, 1-3 cm). Was 3, reduced to 1.5 after the wake looked too big for a dinghy.",
     "bowHeadFrac": "TUNING GUESS: bow wave height as a fraction of the stagnation head V^2 / (2 g) (Bernoulli). 0.2 gives about 5 cm at 4.4 kn; was 0.5 (13 cm), which looked too big for a Laser.",
     "bowLength/bowAhead/bowOffset/bowWidth/bowAngleDeg/bowWidthGrowth": "VISUAL ESTIMATE: bow wave is a > chevron, two crests from the stem at bowAngleDeg to the centreline, decaying aft over bowLength; widths in metres.",
-    "bowLiftFadeStart/bowLiftFadeEnd": "VISUAL ESTIMATE: the bow wave and bow foam fade out as the pitched stem rises above the local water surface, from 3 cm to 15 cm of clearance, so a bow thrown clear of the water in big waves does not leave a wave floating beside it.",
+    "contactSamples": "Render-only longitudinal contact-search resolution: 64 bow-to-transom intervals; transverse samples reuse laser.json visual.sectionPoints. The cached loft is transformed in the same heel/pitch/yaw order as the boat mesh. Hull/sea crossings are refined along sampled edges; the bow chevron and its foam originate at the foremost wet contact, not at the lifted design stem. No clearance fade.",
     "trailSpacing/trailPoints/maxAge/teleportDistance/minSpeed/hullProfileSamples": "Render resolution and bookkeeping: 40 points x 0.75 m = 30 m of world-anchored trail; a jump above teleportDistance or time going back (reset) clears it.",
     "foam*": "VISUAL ESTIMATE: turbulent wake foam behind the transom (width, spread, fade, speed threshold), whitewater on the bow-wave crest, world-anchored periodic noise (period 64 m, slow drift rates in rad/s)."
   }

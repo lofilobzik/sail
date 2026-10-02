@@ -206,7 +206,7 @@ export function createWater(
           * (glintPower + 1.0) / ${(SUN_SHININESS + 1).toFixed(1)};
         vec3 colour = mix(diffuse, reflectedSky + sunColour * glint, fresnel);
         // Whitewater: diffuse, unpolished, so it replaces the reflective water colour.
-        float foam = wakeFoamAmount(wakePos, wakeSN, wakeProps, bow * bowFilter, pixel) * hullMask;
+        float foam = wakeFoamAmount(wakePos, wakeSN, wakeProps, bow * bowFilter, pixel);
         vec3 foamColour = ${FOAM_ALBEDO.toFixed(3)} * (ambient + sunColour * max(dot(normal, sunDirection), 0.0));
         colour = mix(colour, foamColour, foam * ${WAKE.foamOpacity.toFixed(3)});
         gl_FragColor = vec4(colour, 1.0);

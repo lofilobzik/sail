@@ -98,6 +98,7 @@ const f = (v: number) => v.toFixed(10);
  *   wakeA[N] (local x, local z, s, speed), wakeB[N] (amplitude, age, 0, 0), wakeCount,
  *   wakeStem (local x, z of the waterline stem, forward unit x, z),
  *   wakeHull (bow wave height, waterline length, foam speed factor, beam),
+ *   wakeWet (metres aft of the design stem, signed starboard offset of the current hull/sea contact),
  *   wakeProfile[P] waterline half-beam from stem (a = 0) to transom (a = Lwl),
  *   wakeFoam (noise origin offset x, z mod period, 0, 0), wakeFoamPhase (drift phases).
  * `wakeFrameGLSL` is vertex-only (trail search); `wakeShadeGLSL` is shared.
@@ -108,6 +109,7 @@ export function wakeShadeGLSL(): string {
   return `
 uniform vec4 wakeStem;
 uniform vec4 wakeHull;
+uniform vec2 wakeWet;
 uniform float wakeProfile[${P}];
 uniform vec4 wakeFoam;
 uniform vec3 wakeFoamPhase;
@@ -166,16 +168,19 @@ float wakeHullMask(vec2 p) {
   return smoothstep(c - 0.03, c + 0.03, ab.y);
 }
 
-// Bow wave: a > shaped chevron. Two crests leave the stem and sweep aft and outward at
-// bowAngleDeg to the centreline, widening and decaying along their length.
+// Bow wave: a > shaped chevron leaving the foremost wetted hull point.
+// wakeWet is its horizontal heading-frame offset, including pitch and heel.
 float wakeBow(vec2 p) {
   float height = wakeHull.x;
   if (height <= 0.0) return 0.0;
-  vec2 ab = wakeHullCoords(p);
-  float a = max(ab.x, 0.0);
-  float along = smoothstep(-${f(wake.bowAhead)}, 0.0, ab.x) * exp(-a / ${f(wake.bowLength)});
+  vec2 d = p - wakeStem.xy;
+  vec2 fwd = wakeStem.zw;
+  float x = -dot(d, fwd) - wakeWet.x;
+  float b = abs(fwd.x * d.y - fwd.y * d.x - wakeWet.y);
+  float a = max(x, 0.0);
+  float along = smoothstep(-${f(wake.bowAhead)}, 0.0, x) * exp(-a / ${f(wake.bowLength)});
   float crest = ${f(wake.bowOffset)} + a * ${f(Math.tan(wake.bowAngleDeg * DEG))};
-  float u = (ab.y - crest) / (${f(wake.bowWidth)} + ${f(wake.bowWidthGrowth)} * a);
+  float u = (b - crest) / (${f(wake.bowWidth)} + ${f(wake.bowWidthGrowth)} * a);
   return height * along * exp(-u * u);
 }
 
@@ -204,7 +209,7 @@ float wakeFoamAmount(vec2 p, vec4 sn, vec4 props, float bow, float footprint) {
   float behindTransom = sn.x - wakeHull.y;
   float width = ${f(wake.foamWidthFracBeam)} * wakeHull.w + ${f(wake.foamSpreadRate)} * age;
   float turbulent = (1.0 - smoothstep(0.5 * width, width, abs(sn.y)))
-    * smoothstep(-0.2, 0.4, behindTransom) * exp(-age / ${f(wake.foamFadeTime)}) * props.w;
+    * smoothstep(-0.2, 0.4, behindTransom) * exp(-age / ${f(wake.foamFadeTime)}) * props.w * wakeHullMask(p);
   float crest = smoothstep(${f(wake.foamBowThreshold)}, 1.0, bow / max(wakeHull.x, 1e-4));
   float coverage = speedFactor * max(turbulent, crest);
   float noise = wakeNoise(p, footprint);

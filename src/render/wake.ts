@@ -5,28 +5,19 @@
  */
 import * as THREE from 'three';
 import { delftUpright, type BoatModel, type EnvironmentConfig, type Vec2 } from '../sim';
-import { createWaveSample, sampleWaves, type WaveConfig } from '../sim/waves';
+import type { WaveConfig } from '../sim/waves';
 import type { BoatLayout } from './boatLayout';
 import { WAKE, bowWaveHeight, wakeSourceAmplitude } from './wake/kelvin';
+import { BowContact, type ContactPose } from './wake/contact';
 import { WakeTrail } from './wake/trail';
 
-export interface WakePose {
-  /** Logical world position of the sim reference point, m. */
-  x: number;
-  z: number;
-  heading: number;
+export interface WakePose extends ContactPose {
   /** Surge speed through the water, m/s. */
   surge: number;
-  /** Simulation time, s. */
-  t: number;
 }
 
 const TWO_PI = 2 * Math.PI;
 const mod = (v: number, m: number) => ((v % m) + m) % m;
-const smoothstep = (e0: number, e1: number, x: number) => {
-  const t = Math.min(Math.max((x - e0) / (e1 - e0), 0), 1);
-  return t * t * (3 - 2 * t);
-};
 
 export class WakeView {
   enabled = true;
@@ -36,12 +27,13 @@ export class WakeView {
     wakeCount: { value: 0 },
     wakeStem: { value: new THREE.Vector4(0, 0, 0, -1) },
     wakeHull: { value: new THREE.Vector4() },
+    wakeWet: { value: new THREE.Vector2() },
     wakeProfile: { value: new Float32Array(WAKE.hullProfileSamples) },
     wakeFoam: { value: new THREE.Vector4() },
     wakeFoamPhase: { value: new THREE.Vector3() },
   };
   private readonly trail = new WakeTrail(WAKE);
-  private readonly stemSurface = createWaveSample();
+  private readonly contact: BowContact;
   /** Body x of the waterline stem, m. */
   private readonly stemX: number;
 
@@ -50,6 +42,7 @@ export class WakeView {
     layout: BoatLayout,
     private readonly env: EnvironmentConfig,
   ) {
+    this.contact = new BowContact(layout, WAKE.contactSamples);
     // Waterline stem: first station from the bow whose keel is below the waterline.
     let stem = layout.bowX;
     const step = layout.loa / 400;
@@ -63,11 +56,7 @@ export class WakeView {
     this.uniforms.wakeHull.value.set(0, length, 0, model.cfg.hull.beam);
   }
 
-  /**
-   * `hullY` is the rendered height of the boat's reference point (wave heave). If the pitched bow
-   * rises above the local water surface at the stem, the bow wave and bow foam fade out with the gap.
-   */
-  update(pose: WakePose & { pitch: number }, origin: Readonly<Vec2>, waves: WaveConfig, hullY: number): void {
+  update(pose: WakePose, origin: Readonly<Vec2>, waves: WaveConfig, hullY: number, pitch = pose.pitch): void {
     const u = this.uniforms;
     const fx = Math.sin(pose.heading);
     const fz = -Math.cos(pose.heading);
@@ -85,11 +74,13 @@ export class WakeView {
       u.wakeCount.value = 0;
     }
     u.wakeStem.value.set(stemX - origin.x, stemZ - origin.z, fx, fz);
-    sampleWaves(waves, stemX, stemZ, pose.t, 0, this.stemSurface);
-    const gap = hullY + Math.sin(pose.pitch) * this.stemX - this.stemSurface.y;
-    const inWater = 1 - smoothstep(WAKE.bowLiftFadeStart, WAKE.bowLiftFadeEnd, gap);
+
+    // The bow wave sits where the hull actually meets the water: it slides aft when the bow lifts
+    // and forward when the bow plunges, and is absent only if the whole hull is clear of the water.
+    const inWater = speed > 0 && this.contact.update(pose, waves, hullY, pitch);
     const hull = u.wakeHull.value;
-    hull.x = bowWaveHeight(speed) * inWater;
+    hull.x = inWater ? bowWaveHeight(speed) : 0;
+    if (inWater) u.wakeWet.value.set(this.stemX - this.contact.forward, this.contact.starboard);
     hull.z = Math.min(Math.max((speed - WAKE.foamMinSpeed) / WAKE.foamSpeedRange, 0), 1);
 
     // Foam noise stays world-anchored: reduce the origin modulo its period in doubles.

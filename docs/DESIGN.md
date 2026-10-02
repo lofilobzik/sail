@@ -97,8 +97,10 @@ fraction of a second and holds its position. Same idea for the sheet.
   vertical buoyancy-force simulation.
 - **Wake and bow wave (visual only):** the water shader adds a Kelvin wake (transverse and divergent
   waves, 19.47 degree cusp), a bow wave hugging the waterline, and turbulent foam behind the transom
-  and on the bow crest. It reads speed and heading, never changes the sim. Parameters in `data/wake.json`;
-  math in `render/wake/` (no Three.js, tested); debug toggle "wake (visual)" and `?wake=0`.
+  and on the bow crest. The bow chevron follows the foremost hull/sea contact using heave, pitch and
+  heel: it moves aft when the bow lifts instead of fading at the design stem. It never changes the sim.
+  Parameters in `data/wake.json`; math in `render/wake/` (no Three.js, tested);
+  debug toggle "wake (visual)" and `?wake=0`.
 - **Sky:** Three.js analytic Sky shader. No screen-space reflections, no heavy post-processing.
 - **Boat:** procedural hull lofted from a few cross-sections using class dimensions,
   plus spars and fittings. Low triangle count.

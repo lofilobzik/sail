@@ -120,7 +120,7 @@ export class SceneView {
 
     // Fixed buoy transforms compose in JS doubles before GPU matrix upload/culling.
     this.buoys.position.set(-this.origin.x, 0, -this.origin.z);
-    this.wake.update(pose, this.origin, this.waves, this.surface.y);
+    this.wake.update(pose, this.origin, this.waves, this.surface.y, b.pitch.rotation.x);
     this.water.update(this.origin, pose.t);
     this.grid.visible = this.water.mesh.visible && !wavesActive;
     this.grid.position.x = Math.round(pose.x / GRID_CELL) * GRID_CELL - this.origin.x;
