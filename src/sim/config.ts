@@ -73,10 +73,23 @@ export interface ModelOptions {
   uprightResistance: 'delft' | 'tank';
 }
 
+/** Seeded gusts and slow direction shifts layered on the mean wind (data/wind.json). */
+export interface GustConfig {
+  enabled: boolean;
+  seed: number;
+  /** Multiplier on gust speed variation and veer; 0 removes gusts. */
+  gustScale: number;
+  /** Multiplier on the slow direction oscillation; 0 removes shifts. */
+  shiftScale: number;
+}
+
 export interface WindConfig {
+  /** Mean wind speed, knots. */
   speedKn: number;
-  /** Compass direction the wind blows FROM, degrees. */
+  /** Mean compass direction the wind blows FROM, degrees. */
   fromDeg: number;
+  /** Absent or disabled: constant wind. */
+  gusts?: GustConfig;
 }
 
 export interface EnvironmentConfig {
@@ -122,7 +135,8 @@ export function defaultConfig(waveSeed?: number): SimConfig {
       uprightResistance: 'delft',
     },
     // DESIGN.md: default 7 kn; light-wind sailing range 6-8 kn, debug 0-16 kn is exploratory.
-    wind: { speedKn: 7, fromDeg: 0 },
+    // Gusts are off here so headless runs and the polar stay constant-wind; the browser enables them.
+    wind: { speedKn: 7, fromDeg: 0, gusts: { enabled: false, seed: waveSeed ?? 1, gustScale: 1, shiftScale: 1 } },
     waves: defaultWaves(waveSeed),
     env: {
       rhoAir: 1.225, // PHYSICS.md section 3, standard

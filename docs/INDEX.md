@@ -59,6 +59,7 @@ tables, so transcribe any number you use from the **page image**, then copy it i
 | `src/data/buoys.json` | Test buoy positions (not a course) | done (milestone 3) |
 | `src/data/waves.json` | Shared broad-wave/ripple bands, wind scaling, seeded strength/phase variation plus ripple wavelength/direction variation, amplitude/period bounds, pitch response, water grid and sampling filters; sources and TUNING GUESS labels | implemented; layered-sea and ripple repair checks in `PHYSICS.md` |
 | `src/data/sky.json` | Sun direction, Preetham scattering and cloud parameters, tone exposure, cloud drift and water-reflection cost controls, light strengths; per-parameter sources and TUNING GUESS labels in its `sources` block | implemented (milestone 5) |
+| `src/data/wind.json` | Gust amplitude and length scales, gust veer, slow direction-shift components, gust-patch map size and visual strength; sources and TUNING GUESS labels | implemented |
 
 ## Wave references (web)
 

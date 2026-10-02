@@ -36,8 +36,9 @@ Inputs, all normalized and rate-limited upstream in `input/`:
 recomputed every step. Then express it in the body frame: apparent wind speed (AWS) and
 apparent wind angle (AWA). Everything downstream depends on this.
 
-`trueWind` must come from `getWind(position, time)`. In v1 it returns a constant 6-8 kn vector
-from a configurable direction. Do not hardcode wind anywhere else.
+`trueWind` must come from `getWind(position, time, cfg.wind)` (`sim/wind.ts`). With gusts disabled, which
+is the `defaultConfig()` and polar setting, it returns the constant mean wind from the configured speed
+and direction exactly. Do not hardcode wind anywhere else. See L7 for gusts and shifts.
 
 ### L2. Sail as a foil
 - Angle of attack alpha = AWA minus boom angle (mind the sign on each tack).
@@ -87,7 +88,21 @@ from a configurable direction. Do not hardcode wind anywhere else.
   Values **[tune]** unless a reference gives them.
 
 ### L7. Environment and waves
-- v1 wind is fixed. Gusts, shifts, and wind gradient with height are later drop-ins behind `getWind`.
+- Gusts and shifts (`sim/wind.ts`, `data/wind.json`, all **TUNING GUESS**, no measured Laser gust data):
+  `cfg.wind.gusts = { enabled, seed, gustScale, shiftScale }`, off in `defaultConfig()`, on in the browser
+  (`?gusts=0` off). The speed factor `windSpeedFactor` is `1 + 0.5 * gustScale * n`, floored at 0.25, where `n`
+  (about -1 to 1, standard deviation about 0.35) is smoothed value noise at 90 m and 35 m scales. The noise
+  is sampled at `position - meanWind * time` (frozen turbulence carried downwind), so the factor at `p` now
+  appears at `p + meanWind * dt` a time `dt` later. Direction is `fromDeg` plus a slow time-only oscillation
+  (two sines, 5 deg / 280 s and 3 deg / 97 s, seeded phases, scaled by `shiftScale`) plus a gust veer of
+  8 deg * `gustScale` * `n` (stronger gusts veer clockwise). Zero scale removes the corresponding part.
+  Waves (`setWaveWind`) and cloud drift use the mean wind (`meanWind`), not the gusts; the debug readout shows the
+  actual instantaneous direction and speed. `vmg` is still relative to the mean direction.
+  Changing the mean wind speed or direction at run time re-bases the carried pattern (it can jump), because
+  `getWind` is a pure function of position and time. Wind gradient with height remains a later drop-in.
+- Render: `render/gustMap.ts` samples `windSpeedFactor` into a 64 x 64 world-anchored texture (10 m cells,
+  about 640 m across) each frame; the water darkens up to 30% in gusts and brightens 8% in lulls. It is the
+  same function the sim uses, so the patches on the water are the gusts that will reach the boat.
 - `sim/waves.ts` is the shared Gerstner model for CPU and shader. `data/waves.json` holds the spectrum,
   controls' bounds, pitch response and water mesh settings, with sources or **TUNING GUESS** labels.
 - Each component uses `k = 2 pi / L`, `omega = sqrt(g k)`, and phase

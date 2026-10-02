@@ -5,7 +5,7 @@ Read this file at the start of every session. Read `PHYSICS.md` before touching 
 ## What this is
 
 A first-person, realistic sailing simulator that runs in the browser as a static site.
-One sailor, one boat (Laser / ILCA 7), open water, light fixed wind.
+One sailor, one boat (Laser / ILCA 7), open water, light gusty wind.
 Failure is the teacher: there is no auto-trim and no auto-hiking. The world gives honest
 cues (telltales, luffing, heel, water), and the player learns to read them.
 
@@ -16,8 +16,13 @@ Keep the boat data-driven so that is possible later.
 
 - Free sandbox in endless open water, with a few buoys to navigate between.
 - Boat: Laser (ILCA 7), procedurally generated to class dimensions.
-- Wind: default 7 knots, always read through `getWind(position, time)`. Debug range 0-16 kn;
+- Wind: default 7 knots mean, always read through `getWind(position, time)`. Debug range 0-16 kn;
   6-8 kn remains the intended light-wind sailing range, stronger settings are exploratory.
+  In the browser the wind has seeded gusts and slow direction shifts (`?gusts=0` for a constant wind):
+  gusts are patches carried downwind by the mean wind, so a patch seen darkening the water arrives at
+  the boat later, and the wind direction oscillates a few degrees over minutes. Gusts veer slightly.
+  Headless runs and the polar keep the constant wind. Waves and clouds follow the mean wind only.
+  All gust and shift numbers are TUNING GUESS values in `data/wind.json`.
 - Waves: two data-driven Gerstner bands, broad waves plus fine ripples, shared by physics and rendering.
   Wind speed controls height and length; seeded strengths/phases produce uneven crest groups without
   per-frame randomization. Ripples use eight weaker, downwind-biased components with seeded wavelength
@@ -36,7 +41,7 @@ Keep the boat data-driven so that is possible later.
 
 ## Non-goals for v1
 
-Full wave/buoyancy dynamics, gusts and shifts, capsize and recovery, racing and AI boats,
+Full wave/buoyancy dynamics, capsize and recovery, racing and AI boats,
 multiplayer, planing, other boats, a cruising or management layer, mobile and touch input,
 full sailor body and hiking pose (hands, tiller extension and mainsheet only in v1).
 
@@ -177,7 +182,7 @@ One milestone per session. Commit after each working one.
 7. **Sailor body and hiking pose.**
 8. **Polish:** sound, tuning against the polar.
 
-Later: full wave/buoyancy response, gusts and wind shifts,
+Later: full wave/buoyancy response, wind gradient with height and gusts that build the sea,
 capsize, planing and stronger wind, third-person camera, cruising / management layer.
 
 ## Working agreement for the coding agent

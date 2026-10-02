@@ -3,7 +3,7 @@
  * Text grouped by physics layer L1..L6 (+ Boat), each with its own show/hide checkbox.
  * The Physics section mutates the live SimConfig (layer and term toggles, wind) and can reset the boat.
  */
-import { DEG, KNOT, WAVE_PARAMETERS, setWaveParameters, setWaveWind, setWaveLayers, waveAmplitude, wrap2Pi, type BoatState, type Diagnostics, type SimConfig } from '../sim';
+import { DEG, KNOT, WAVE_PARAMETERS, setWaveParameters, setWaveWind, setWaveLayers, waveAmplitude, worldToBearing, wrap2Pi, type BoatState, type Diagnostics, type SimConfig } from '../sim';
 import type { ArrowVisibility } from '../render/vectors';
 
 const GROUPS = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'Waves', 'Boat'] as const;
@@ -80,7 +80,7 @@ export class DebugOverlay {
 
     t.L1.textContent =
       `${L.apparentWind ? '' : '(layer off: sail sees true wind)\n'}` +
-      `true wind  ${kn(tws)} from ${this.cfg.wind.fromDeg.toFixed(0)}°\n` +
+      `true wind  ${kn(tws)} from ${(worldToBearing(-d.trueWind.x, -d.trueWind.z) / DEG).toFixed(0)}° (mean ${this.cfg.wind.fromDeg.toFixed(0)}°)\n` +
       `AWS ${kn(d.apparent.speed)}  AWA ${deg(d.apparent.angle)}  AWA heeled ${d.sail ? deg(d.sail.awaHeeled) : OFF}`;
 
     const sl = d.sail;
@@ -165,6 +165,12 @@ export class DebugOverlay {
       cfg.wind.fromDeg = ((v % 360) + 360) % 360;
       el.value = String(cfg.wind.fromDeg);
     });
+    const gusts = cfg.wind.gusts;
+    if (gusts) {
+      this.checkbox(sec, 'gusts and shifts', gusts.enabled, (v) => (gusts.enabled = v));
+      this.rangeInput(sec, 'gust strength', gusts.gustScale, 2, (v) => (gusts.gustScale = v));
+      this.rangeInput(sec, 'wind shifts', gusts.shiftScale, 2, (v) => (gusts.shiftScale = v));
+    }
 
     this.checkbox(sec, 'waves', cfg.waves.enabled, (v) => (cfg.waves.enabled = v));
     this.rangeInput(sec, 'wave amplitude', cfg.waves.amplitudeScale, WAVE_PARAMETERS.maxAmplitudeScale, (v) => {

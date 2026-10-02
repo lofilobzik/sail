@@ -5,6 +5,7 @@ import type { Vec2 } from '../sim/frames';
 import type { WakeView } from './wake';
 import { WAKE, wakeFrameGLSL, wakeShadeGLSL } from './wake/kelvin';
 import { skyGLSL, type SkyView } from './sky';
+import { gustGLSL, type GustMap } from './gustMap';
 import { SKY } from './skyModel';
 
 const WATER_COLOR = 0x1f4f6e; // TUNING GUESS: deep-water body colour
@@ -80,7 +81,7 @@ function createWaterGrid(): THREE.BufferGeometry {
 }
 
 export function createWater(
-  cfg: WaveConfig, sky: SkyView, sun: THREE.DirectionalLight,
+  cfg: WaveConfig, sky: SkyView, gusts: GustMap, sun: THREE.DirectionalLight,
   hemisphere: THREE.HemisphereLight, wake: WakeView,
 ): WaterView {
   let components = cfg.components;
@@ -101,7 +102,7 @@ export function createWater(
         hemisphereSky: { value: hemisphere.color.clone().multiplyScalar(hemisphere.intensity) },
         hemisphereGround: { value: hemisphere.groundColor.clone().multiplyScalar(hemisphere.intensity) },
       },
-    ]), wake.uniforms, sky.uniforms),
+    ]), wake.uniforms, sky.uniforms, gusts.uniforms),
     vertexShader: `
       uniform float waveScale;
       attribute vec2 cellFootprint;
@@ -147,6 +148,7 @@ export function createWater(
       ${waveCode}
       ${wakeShade}
       ${skyGLSL()}
+      ${gustGLSL()}
       void main() {
         // Fragment normals retain detail that the distant geometry cannot resolve.
         // Pixel-footprint filtering prevents that detail aliasing at grazing angles.
@@ -198,6 +200,10 @@ export function createWater(
         float glint = pow(max(dot(reflection, sunDirection), 0.0), glintPower)
           * (glintPower + 1.0) / ${(SUN_SHININESS + 1).toFixed(1)};
         vec3 colour = mix(diffuse, reflectedSky + sunColour * glint, fresnel);
+        // Gust patches (cat's paws): wind ruffles the surface, which scatters light, so the water
+        // darkens where the sim's wind is stronger; lulls are slightly smoother and brighter.
+        float gust = gustAmount(waterPosition.xz);
+        colour *= 1.0 - gustMapInfo.z * max(gust, 0.0) + gustMapInfo.w * max(-gust, 0.0);
         // Whitewater: diffuse, unpolished, so it replaces the reflective water colour.
         float foam = wakeFoamAmount(wakePos, wakeSN, wakeProps, bow, bowSample.g, bowSample.b, pixel);
         vec3 foamColour = ${FOAM_ALBEDO.toFixed(3)} * (ambient + sunColour * max(dot(normal, sunDirection), 0.0));

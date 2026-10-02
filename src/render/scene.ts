@@ -3,11 +3,12 @@
  * cameras (first-person, plus an outside view for checking). Reads state only.
  */
 import * as THREE from 'three';
-import type { BoatModel, EnvironmentConfig, Vec2 } from '../sim';
+import { meanWind, type BoatModel, type EnvironmentConfig, type Vec2, type WindConfig } from '../sim';
 import { createWaveSample, sampleWaves, waveAmplitude, type WaveConfig } from '../sim/waves';
 import { createBoatMesh, type BoatMesh, type BoatPose } from './boatMesh';
 import { createBuoys } from './environment';
 import { SkyView } from './sky';
+import { GustMap } from './gustMap';
 import { WakeView } from './wake';
 import { createWater, type WaterView } from './water';
 
@@ -44,8 +45,8 @@ export class SceneView {
   readonly boat: BoatMesh;
   readonly wake: WakeView;
   readonly sky: SkyView;
-  /** True wind velocity, m/s world x/z; drives cloud drift. Set by the caller each frame. */
-  readonly wind: Vec2 = { x: 0, z: 0 };
+  /** Gust patches sampled from the sim's wind field. */
+  readonly gusts = new GustMap();
   /** Logical position of render-local zero, continuously following the interpolated boat. */
   readonly origin: Vec2 = { x: 0, z: 0 };
   mode: CameraMode = 'cockpit';
@@ -54,7 +55,10 @@ export class SceneView {
   private readonly buoys = createBuoys();
   private readonly surface = createWaveSample();
 
-  constructor(model: BoatModel, private readonly waves: WaveConfig, env: EnvironmentConfig) {
+  constructor(
+    model: BoatModel, private readonly waves: WaveConfig, env: EnvironmentConfig,
+    private readonly wind: WindConfig,
+  ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     document.body.appendChild(this.renderer.domElement);
@@ -71,7 +75,7 @@ export class SceneView {
 
     this.boat = createBoatMesh(model);
     this.wake = new WakeView(model, this.boat.layout, env);
-    this.water = createWater(waves, this.sky, sun, hemisphere, this.wake);
+    this.water = createWater(waves, this.sky, this.gusts, sun, hemisphere, this.wake);
     this.scene.add(this.water.mesh);
 
     this.grid = new THREE.GridHelper(GRID_CELL * GRID_CELLS, GRID_CELLS, 0x6f9fbf, 0x4a7a9a);
@@ -124,6 +128,7 @@ export class SceneView {
     this.buoys.position.set(-this.origin.x, 0, -this.origin.z);
     this.wake.update(pose, this.origin, this.waves, this.surface.y, b.pitch.rotation.x);
     this.water.update(this.origin, pose.t);
+    this.gusts.update(this.wind, this.origin, pose.t);
     this.grid.visible = this.water.mesh.visible && !wavesActive;
     this.grid.position.x = Math.round(pose.x / GRID_CELL) * GRID_CELL - this.origin.x;
     this.grid.position.z = Math.round(pose.z / GRID_CELL) * GRID_CELL - this.origin.z;
@@ -145,7 +150,8 @@ export class SceneView {
       c.lookAt(0, this.surface.y + OUTSIDE_TARGET_HEIGHT, 0);
       cam = c;
     }
-    this.sky.update(pose.t, this.wind);
+    // Clouds drift with the mean wind, not each gust.
+    this.sky.update(pose.t, meanWind(this.wind));
     this.sky.follow(cam);
     this.renderer.render(this.scene, cam);
   }

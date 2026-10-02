@@ -6,6 +6,8 @@ export {
   type EnvironmentConfig,
   type LayerId,
   type ModelOptions,
+  type GustConfig,
+  type WindConfig,
   type SimConfig,
   type TermToggles,
 } from './config';
@@ -14,7 +16,7 @@ export * from './frames';
 export { CubicSpline } from './spline';
 export { initialState, NEUTRAL_CONTROLS, type BoatState, type Controls } from './state';
 export { evaluate, step, type Diagnostics, type StepResult } from './step';
-export { getWind } from './wind';
+export { getWind, meanWind, windShiftDeg, windSpeedFactor, WIND_PARAMETERS } from './wind';
 export { delftUpright } from './layers/hull';
 export {
   defaultWaves, setWaveParameters, setWaveWind, setWaveLayers, waveAmplitude,

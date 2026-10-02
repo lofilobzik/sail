@@ -1,0 +1,28 @@
+{
+  "gustAmplitude": 0.5,
+  "minFactor": 0.25,
+  "gustLengthM": 90,
+  "fineLengthM": 35,
+  "fineWeight": 0.4,
+  "gustVeerDeg": 8,
+  "shifts": [
+    { "amplitudeDeg": 5, "periodS": 280 },
+    { "amplitudeDeg": 3, "periodS": 97 }
+  ],
+  "visual": {
+    "mapSize": 64,
+    "mapCellM": 10,
+    "referenceDeviation": 0.5,
+    "edgeFadeCells": 6,
+    "darkenMax": 0.3,
+    "lullBrighten": 0.08
+  },
+  "sources": {
+    "model": "Frozen turbulence (Taylor's hypothesis): the gust field is a fixed seeded pattern carried downwind by the mean wind, so wind speed and direction at (position, time) are a pure function of both and a gust reaches a boat downwind of it later. https://en.wikipedia.org/wiki/Taylor%27s_frozen_turbulence_hypothesis is the idea; the pattern itself is smoothed value noise (quintic fade) at two scales, not a measured turbulence spectrum.",
+    "gustAmplitude/minFactor": "TUNING GUESS: speed factor = 1 + gustAmplitude * n, n in about [-1, 1] (standard deviation about 0.35), so about +/-17% typical and about +/-40% in the strongest gusts and lulls at gust strength 1; floored at minFactor. No measured gust factor for Laser sailing is stored in docs/.",
+    "gustLengthM/fineLengthM/fineWeight": "TUNING GUESS: 90 m primary gust size plus a 35 m component at 0.4 weight, so a patch crosses a boat in a 7 kn wind in about 25 s.",
+    "gustVeerDeg": "TUNING GUESS: a full-strength gust turns the wind clockwise by up to this much (stronger gusts veer), scaled by the gust strength.",
+    "shifts": "TUNING GUESS: slow time-only oscillation of the wind direction, a sum of two sine waves (5 deg / 280 s and 3 deg / 97 s) with seeded phases, scaled by the shift strength. Position independent.",
+    "visual": "VISUAL ESTIMATE, render only: gust speed factors are sampled from the same sim function into a 64 x 64 world-anchored single-channel texture with 10 m cells (about 640 m across, fading out over the last 6 cells); referenceDeviation 0.5 is the speed-factor deviation that fills the texture range. The water body colour darkens by up to darkenMax in gusts (ruffled water scatters light) and brightens by lullBrighten in lulls."
+  }
+}

@@ -6,7 +6,7 @@ import { MouseLook } from './input/mouseLook';
 import { Vector2 } from 'three';
 import { SceneView, type RenderPose } from './render/scene';
 import { ForceVectors } from './render/vectors';
-import { DEG, FixedStep, WAVE_PARAMETERS, buildBoat, clamp, defaultConfig, evaluate, getWind, initialState, setWaveParameters, setWaveWind, step, wrapPi, type BoatState, type Diagnostics } from './sim';
+import { DEG, FixedStep, WAVE_PARAMETERS, buildBoat, clamp, defaultConfig, evaluate, initialState, setWaveParameters, setWaveWind, step, wrapPi, type BoatState, type Diagnostics } from './sim';
 import { SKY } from './render/skyModel';
 
 const START_HEADING_DEG = 90; // TUNING GUESS: beam reach for the default wind from 0°
@@ -21,6 +21,9 @@ const cfg = defaultConfig(Math.floor(Math.random() * 0x100000000));
 cfg.waves.enabled = true;
 setWaveWind(cfg.waves, cfg.wind.speedKn);
 const params = new URLSearchParams(location.search);
+// Browser sailing has gusts and shifts (seeded like the sea); ?gusts=0 keeps the wind constant.
+// Headless runs and the polar use defaultConfig, where they are off.
+if (cfg.wind.gusts) cfg.wind.gusts.enabled = params.get('gusts') !== '0';
 if (params.get('waves') === '0') cfg.waves.enabled = false;
 const waveScale = params.get('waveAmplitude');
 if (waveScale !== null && Number.isFinite(Number(waveScale))) {
@@ -35,7 +38,7 @@ setWaveParameters(
 );
 const fixed = new FixedStep(cfg.dt);
 
-const view = new SceneView(boat, cfg.waves, cfg.env);
+const view = new SceneView(boat, cfg.waves, cfg.env, cfg.wind);
 // ?wake=0 starts with the boat wake and bow wave off.
 if (params.get('wake') === '0') view.wake.enabled = false;
 
@@ -142,9 +145,6 @@ function frame(now: number): void {
     lookYaw: look.yaw,
     lookPitch: look.pitch,
   };
-  const wind = getWind({ x, z }, lastPose.t, cfg.wind);
-  view.wind.x = wind.x;
-  view.wind.z = wind.z;
   view.render(lastPose);
 
   if (overlay.visible) vectors.update(diagnostics, view.boat.yaw.position, overlay.arrows);
