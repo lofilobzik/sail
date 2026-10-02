@@ -86,9 +86,14 @@ Rules:
 |---|---|
 | Mouse | Look around (pointer lock) |
 | A / D | Tiller (hold to move, stays where released) |
+| C | Centre tiller at its normal movement rate |
 | W / S | Ease mainsheet / sheet in, holds position |
 | Mouse wheel up / down | Sheet in / ease mainsheet in small steps, holds position |
 | Shift (hold) | Hike out (lean weight out), release to sit in |
+| B (hold), then click | Raise sighting compass; aim at a buoy and record the viewing bearing |
+| M | Toggle mouse interaction with the physical lap chart; no camera movement |
+| Esc while plotting | Leave chart interaction; click the scene to resume pointer-lock look |
+| H | Toggle test instruments (hidden by default) |
 
 Inputs are **continuous with rate limits**: no snapping. A tiller key ramps the tiller over a
 fraction of a second and holds its position. Same idea for the sheet.
@@ -162,12 +167,32 @@ The debug overlay is a developer tool, not a player aid, and is toggled off by d
 ## Navigation
 
 - Compass in view.
-- A paper-style chart with the buoys and a **dead-reckoning (DR) marker**.
-- DR integrates compass heading x logged speed over time, as if the sailor plotted it by hand.
-  It **ignores leeway** and uses an imperfect speed estimate, so it drifts from the true position.
-- The sailor corrects it by taking a **compass bearing to a buoy** and plotting a position line.
-  Exact fix mechanics are decided in milestone 5.
+- A physical paper-style chart on the sailor's lap, following the sailor between sides and while
+  hiking. It is always there: look down to see it. No minimap, chart overlay, automatic camera
+  movement or chart raised into view. `M` releases the mouse to interact with its actual surface;
+  `M` or Escape ends plotting. Sailing and DR continue, with the current boat controls held while
+  plotting. Drag the chart to pan, use the wheel to zoom, or explicitly centre it on DR.
+- DR integrates compass heading x signed forward logged speed at the simulation timestep, as if
+  the sailor plotted it by hand. It **ignores leeway** and adds a small seeded calibration bias and
+  slow speed-log error, so it drifts from the true position. It starts at the known departure origin
+  and resets with the boat. Parameters live in `data/navigation.json` as TUNING GUESS values.
+- A cockpit compass reads true heading. Hold `B` to raise a sighting compass and aim its small
+  crosshair at a buoy; click to record the actual camera viewing bearing, including heel and pitch,
+  graduated to half a degree. There is no automatic exact bearing or automatic buoy identification.
+  Nearly vertical aiming has no usable horizontal bearing and cannot record a note.
+- Identify each recorded buoy on the chart: click the note's buoy field to cycle IDs, or click a
+  chart buoy to identify the newest selected note. Buoys have matching physical painted IDs,
+  distinctive colours and topmarks; these are sandbox landmarks, not an IALA-marked course.
+- **Assisted plotting:** identified notes draw lines of position. Select one or two notes and
+  explicitly apply a correction. One note projects DR onto its line, leaving along-line error;
+  two adequately separated bearings give an intersection fix. Accumulated logged motion advances
+  older lines to the present, so sailing between sightings and during plotting is accounted for.
+  Bearings expire after 180 simulated seconds; near-parallel lines (within 15 degrees), unidentified
+  notes and bearings pointing away from their chosen buoys cannot provide a fix. These limits are
+  TUNING GUESS values, not a model of real compass accuracy.
 - There is no "you are here" marker for the true position (a debug toggle may show it).
+  The navigation estimator receives only instrument readings, never the true boat position;
+  logical navigation coordinates are independent of the render-side floating origin.
 
 ## Milestones
 
@@ -189,8 +214,11 @@ One milestone per session. Commit after each working one.
    Wind-responsive broad waves/ripples, separate layer controls and seeded magnitude variation implemented.
    Render-side floating origin and precision-safe world-anchored wave phases implemented.
    Analytic sky (sun, clouds, water reflection, horizon fog) implemented.
-6. **Navigation:** compass, chart, buoys, dead reckoning with drift, bearing fixes.
-7. **Sailor body and hiking pose.**
+6. **Navigation:** compass, physical lap chart, identifiable buoys, dead reckoning with gentle drift,
+   assisted bearing fixes and running lines implemented as a preview. Pure navigation tests cover
+   drift, signed speed, reset, bearing geometry, time advancement and chart projection. Browser
+   checks intentionally skipped for this preview at the user's request.
+7. **Sailor body and hiking pose (post-v1, as scoped above).**
 8. **Polish:** sound, tuning against the polar.
 
 Later: full wave/buoyancy response, wind gradient with height and gusts that build the sea,
@@ -208,7 +236,7 @@ capsize, planing and stronger wind, third-person camera, cruising / management l
 
 ## Open questions
 
-- Exact chart fix mechanic (plot a line, snap DR to it, or free placement).
+- Lap chart placement/readability and navigation drift tuning await player feedback on the preview.
 - Heel clamp value and what the clamp feels like at the limit.
 - Wave response magnitudes are sanity-checked, not calibrated against measured Laser wave data.
   Tune by feel for now; measured response would be needed for calibration.

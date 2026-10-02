@@ -11,6 +11,8 @@ import { SkyView } from './sky';
 import { GustMap } from './gustMap';
 import { WakeView } from './wake';
 import { createWater, type WaterView } from './water';
+import type { Navigation } from '../nav/navigation';
+import { NavigationView } from './navigation';
 
 const GRID_CELL = 5; // TUNING GUESS: grid cell size, m (grid snaps to multiples of this)
 const GRID_CELLS = 80; // TUNING GUESS: grid cells per side
@@ -45,6 +47,7 @@ export class SceneView {
   readonly boat: BoatMesh;
   readonly wake: WakeView;
   readonly sky: SkyView;
+  readonly navigation: NavigationView;
   /** Gust patches sampled from the sim's wind field. */
   readonly gusts = new GustMap();
   /** Logical position of render-local zero, continuously following the interpolated boat. */
@@ -57,7 +60,7 @@ export class SceneView {
 
   constructor(
     model: BoatModel, private readonly waves: WaveConfig, env: EnvironmentConfig,
-    private readonly wind: WindConfig,
+    private readonly wind: WindConfig, navigation: Navigation,
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
@@ -90,6 +93,7 @@ export class SceneView {
     this.camera.rotation.order = 'YXZ';
     this.boat.sailor.eye.add(this.camera);
     this.outsideCamera = new THREE.PerspectiveCamera(FOV_DEG * 0.8, 1, 0.1, 5000);
+    this.navigation = new NavigationView(navigation, this.boat, this.camera);
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -153,6 +157,7 @@ export class SceneView {
     // Clouds drift with the mean wind, not each gust.
     this.sky.update(pose.t, meanWind(this.wind));
     this.sky.follow(cam);
+    this.navigation.update(pose.heading, pose.t, this.mode === 'cockpit');
     this.renderer.render(this.scene, cam);
   }
 }

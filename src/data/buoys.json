@@ -1,11 +1,11 @@
 {
-  "source": "Test layout for milestone 3 so motion is visible; not a course. Positions are world x (east) and z (south) in metres from the start position; VISUAL ESTIMATE sizes.",
+  "source": "Sandbox landmarks, not a course or IALA navigation marks. Positions are world x (east) and z (south) in metres from the known departure. VISUAL ESTIMATE sizes, distinctive colours/topmarks and painted IDs for milestone 6 sighting and chart identification.",
   "buoys": [
-    { "name": "N", "x": 0, "z": -150, "color": "#ff7a00" },
-    { "name": "NE", "x": 140, "z": -60, "color": "#ffd000" },
-    { "name": "E", "x": 220, "z": 40, "color": "#ff7a00" },
-    { "name": "S", "x": 60, "z": 160, "color": "#ffd000" },
-    { "name": "W", "x": -120, "z": 30, "color": "#ff7a00" }
+    { "name": "N", "x": 0, "z": -150, "color": "#ef6f2f", "topmark": "cone" },
+    { "name": "NE", "x": 140, "z": -60, "color": "#e8c845", "topmark": "sphere" },
+    { "name": "E", "x": 220, "z": 40, "color": "#d04c47", "topmark": "doubleCone" },
+    { "name": "S", "x": 60, "z": 160, "color": "#65aa76", "topmark": "cylinder" },
+    { "name": "W", "x": -120, "z": 30, "color": "#539dd5", "topmark": "cross" }
   ],
   "radius": 0.5,
   "height": 1.2

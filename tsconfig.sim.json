@@ -1,5 +1,5 @@
 {
-  "//": "Headless config: sim/, data/ and scripts/ compile without the DOM lib and without Three.js types, so any DOM global or browser API used in sim/ is a type error.",
+  "//": "Headless config: sim/, nav/, data/ and scripts/ compile without the DOM lib and without Three.js types, so DOM globals and browser APIs in pure math are type errors.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -17,5 +17,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/sim", "src/data", "scripts"]
+  "include": ["src/sim", "src/nav", "src/data", "scripts"]
 }

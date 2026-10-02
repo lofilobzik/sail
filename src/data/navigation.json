@@ -1,0 +1,44 @@
+{
+  "start": { "x": 0, "z": 0 },
+  "log": {
+    "bias": 0.015,
+    "biasSpread": 0.01,
+    "noiseFraction": 0.008,
+    "noisePeriods": [37, 83]
+  },
+  "bearingStepDeg": 0.5,
+  "minSightHorizontal": 0.15,
+  "minFixAngleDeg": 15,
+  "maxBearingAge": 180,
+  "maxObservations": 5,
+  "visual": {
+    "chartWidth": 0.6,
+    "chartHeight": 0.48,
+    "chartBelowEye": 0.51,
+    "chartForwardOfEye": 0.34,
+    "chartTiltDeg": 60,
+    "chartTextureWidth": 1024,
+    "chartTextureHeight": 820,
+    "chartUpdateSeconds": 0.2,
+    "chartSpan": 700,
+    "minChartSpan": 150,
+    "maxChartSpan": 20000,
+    "chartZoomFactor": 1.2,
+    "compassRadius": 0.09,
+    "compassAftOfCockpitFore": 0.15,
+    "compassAboveDeck": 0.045,
+    "sightWidth": 0.18,
+    "sightHeight": 0.09,
+    "sightBelowEye": 0.1,
+    "sightDistance": 0.38,
+    "reticleSize": 0.006,
+    "recordNoticeSeconds": 2
+  },
+  "sources": {
+    "start": "DESIGN.md: known departure position. This matches initialState's origin; resetting navigation uses this known point, never the live boat position.",
+    "log": "TUNING GUESS: signed forward speed log, 1.5% mean bias plus seeded +/-1% calibration variation and two slow 0.8% fractional noise components. No sideways velocity is measured. Smooth time-based error avoids frame-rate-dependent random walks.",
+    "bearingStepDeg/minSightHorizontal": "TUNING GUESS: half-degree sighting-compass graduation; reject nearly vertical aiming where horizontal bearing is undefined/unusable. Bearing uses actual camera world direction, including boat heel and pitch; no exact target bearing or automatic buoy identification.",
+    "minFixAngleDeg/maxBearingAge/maxObservations": "TUNING GUESS: reject crossings within 15 degrees of parallel/antiparallel, expire observations after 180 seconds, retain five sighting notes. Lines are advanced by accumulated logged motion to account for sailing between observations.",
+    "visual": "VISUAL ESTIMATE: physical lap chart follows the sailor's eye anchor, below and ahead of the eye, never camera look or screen coordinates. M releases the mouse without moving the chart or camera. Chart size, texture resolution, update interval, zoom limits, compass placement and sighting-device dimensions are visual/readability tuning. No full-body animation is added."
+  }
+}

@@ -403,11 +403,29 @@ numbers and appearance checks describe the implementations that existed at those
 
 ## 4. Dead reckoning (nav, not sim)
 
-The DR marker lives in `nav/`, separate from the true state.
-- Integrates compass heading x logged speed over time.
-- **Ignores leeway** and applies a small speed-log bias and noise **[tune]**, so it drifts.
-- Corrected by a bearing fix to a buoy (mechanic defined in milestone 5).
-- It must never read the true position except for the debug toggle.
+The DR marker lives in `nav/`, separate from the true state. Milestone 6 preview is implemented.
+- Receives only `{ t, heading, speed }`: heading and signed forward surge speed averaged over each
+  fixed simulation step. It cannot read true position or sideways velocity. The known departure
+  origin comes from `data/navigation.json`, not the live boat state.
+- Integrates compass heading x logged speed over simulated time. **Ignores leeway** and applies a
+  seeded calibration bias and slow fractional log error **[tune]** from `navigation.json`. Noise is
+  time-based rather than sampled randomly per frame. Zero forward speed gives no log displacement;
+  sailing backward reverses DR displacement. Fixes do not change the uncorrected log odometer.
+- Bearings are measured from the actual camera world direction, graduated to half a degree, and
+  identified by the player. They are not computed from true boat/buoy positions. Each note stores
+  its time and uncorrected accumulated logged displacement.
+- A bearing line's normal is perpendicular to its compass direction. Logged displacement since
+  sighting advances the line before plotting/solving a running fix. One bearing projects DR onto
+  that line; two bearings intersect their advanced lines. Fixes require explicit player action.
+  Reject unidentified/expired notes, near-parallel geometry and solutions looking away from the
+  chosen buoy. These readability/conditioning limits are **[tune]**, not empirical compass accuracy.
+- A physical lap chart and compasses in `render/` read this independent navigation state. Plotting
+  does not stop simulation time. Only the explicit chart debug marker receives true position;
+  render-side origin changes never alter navigation or the chart's logical landmark coordinates.
+- Preview navigation regressions cover compass axes, deterministic/gentle drift, timestep convergence,
+  signed speed and rest, reset, north-wrap graduation, one/two-bearing fixes, running observations,
+  bad geometry/identification, bounded notes, and chart pan/zoom/large-coordinate projection.
+  Browser verification was skipped at the user's request.
 
 ## 5. Validation
 

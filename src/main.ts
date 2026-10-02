@@ -3,6 +3,8 @@ import { TestHud } from './debug/hud';
 import { DebugOverlay } from './debug/overlay';
 import { ControlInput, isTypingTarget } from './input/controls';
 import { MouseLook } from './input/mouseLook';
+import { NavigationInput } from './input/navigation';
+import { Navigation } from './nav/navigation';
 import { Vector2 } from 'three';
 import { SceneView, type RenderPose } from './render/scene';
 import { ForceVectors } from './render/vectors';
@@ -38,7 +40,8 @@ setWaveParameters(
 );
 const fixed = new FixedStep(cfg.dt);
 
-const view = new SceneView(boat, cfg.waves, cfg.env, cfg.wind);
+const navigation = new Navigation(cfg.wind.gusts?.seed ?? 1);
+const view = new SceneView(boat, cfg.waves, cfg.env, cfg.wind, navigation);
 // ?wake=0 starts with the boat wake and bow wave off.
 if (params.get('wake') === '0') view.wake.enabled = false;
 
@@ -54,6 +57,26 @@ const clouds = numberParam('clouds');
 if (clouds !== null) view.sky.setCloudCoverage(clouds);
 const input = new ControlInput(view.renderer.domElement);
 const look = new MouseLook(view.renderer.domElement);
+const navigationInput = new NavigationInput(view.renderer.domElement, {
+  cockpit: () => view.mode === 'cockpit',
+  chartMode: (active) => {
+    input.setSuspended(active);
+    look.enabled = !active;
+    view.navigation.chart.setInteractive(active);
+  },
+  record: () => {
+    const bearing = view.navigation.bearing;
+    if (bearing !== null) {
+      navigation.record(bearing);
+      view.navigation.compasses.recorded(curr.t);
+    }
+  },
+  pick: (x, y) => view.navigation.pick(x, y, view.renderer.domElement),
+  down: (p) => view.navigation.chart.pointerDown(p),
+  move: (p) => view.navigation.chart.pointerMove(p),
+  up: (p) => view.navigation.chart.pointerUp(p),
+  zoom: (p, d) => view.navigation.chart.zoom(p, d),
+});
 const vectors = new ForceVectors(boat, view.scene, view.boat.yaw, view.boat.heel);
 
 let prev: BoatState;
@@ -62,12 +85,18 @@ let diagnostics: Diagnostics;
 
 function resetBoat(): void {
   curr = prev = initialState(START_HEADING_DEG * DEG, START_SPEED);
+  navigationInput.cancel();
+  navigation.reset();
+  view.navigation.chart.reset();
+  view.navigation.compasses.reset();
   input.reset();
   diagnostics = evaluate(curr, input.update(0), boat, cfg);
 }
 resetBoat();
 
 const overlay = new DebugOverlay(cfg, resetBoat);
+let showNavigationTruth = false;
+overlay.addToggle('navigation: show true position on chart', false, (v) => { showNavigationTruth = v; });
 overlay.addToggle('wake: Kelvin waves', true, (v) => view.wake.setLayer('kelvin', v));
 overlay.addToggle('wake: bow V waves', true, (v) => view.wake.setLayer('bowWaves', v));
 overlay.addToggle('wake: foam (bow + stern)', true, (v) => view.wake.setLayer('foam', v));
@@ -98,7 +127,8 @@ const hud = new TestHud(boat);
 
 // V: switch between the first-person view and an outside view for checking the model.
 window.addEventListener('keydown', (e) => {
-  if (e.code !== 'KeyV' || isTypingTarget(e.target)) return;
+  if (e.code !== 'KeyV' || e.repeat || isTypingTarget(e.target)) return;
+  navigationInput.cancel();
   view.mode = view.mode === 'cockpit' ? 'outside' : 'cockpit';
 });
 
@@ -130,6 +160,12 @@ function frame(now: number): void {
     prev = curr;
     curr = result.state;
     diagnostics = result.diagnostics;
+    // Narrow instrument boundary: no true x/z or sway enters the navigation estimate.
+    navigation.advance({
+      t: curr.t,
+      heading: prev.heading + wrapPi(curr.heading - prev.heading) / 2,
+      speed: (prev.u + curr.u) / 2,
+    }, cfg.dt);
   }
 
   const a = fixed.alpha;
@@ -156,6 +192,8 @@ function frame(now: number): void {
     lookYaw: look.yaw,
     lookPitch: look.pitch,
   };
+  view.navigation.sighting = navigationInput.sighting;
+  view.navigation.chart.debugPosition = showNavigationTruth ? { x: curr.x, z: curr.z } : null;
   view.render(lastPose);
 
   if (overlay.visible) vectors.update(diagnostics, view.boat.yaw.position, overlay.arrows);

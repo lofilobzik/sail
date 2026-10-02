@@ -56,7 +56,8 @@ tables, so transcribe any number you use from the **page image**, then copy it i
 | `src/data/delft-residuary.json` | Keuning & Katgert Table 2 residuary coefficients a0-a7 vs Fn | done (milestone 2) |
 | `src/data/laser-polar-target.json` | Day VPP 9 kn, 80 kg: Fig 4 (upwind 40-60) and Fig 6 (downwind 150-180), read off the plots (approximate) | done (milestone 2) |
 | `src/data/laser.json` `visual` block | Render-only boat geometry: hull section table (plan from ILCA p27), cockpit, spars and blocks (p33-34), sail widths (p36), visual estimates marked in `sources` | done (milestone 3) |
-| `src/data/buoys.json` | Test buoy positions (not a course) | done (milestone 3) |
+| `src/data/buoys.json` | Sandbox landmark positions (not a course), distinctive colours/topmarks and painted IDs matching the chart | implemented (milestones 3, 6 preview) |
+| `src/data/navigation.json` | Known departure, seeded gentle speed-log error, bearing graduation/fix conditioning, chart scale/placement and compass visuals; TUNING GUESS or VISUAL ESTIMATE | implemented (milestone 6 preview) |
 | `src/data/waves.json` | Shared broad-wave/ripple bands, wind scaling, seeded strength/phase variation plus ripple wavelength/direction variation, amplitude/period bounds, pitch response, water grid and sampling filters; sources and TUNING GUESS labels | implemented; layered-sea and ripple repair checks in `PHYSICS.md` |
 | `src/data/sky.json` | Sun direction, Preetham scattering and cloud parameters, tone exposure, cloud drift and water-reflection cost controls, light strengths; per-parameter sources and TUNING GUESS labels in its `sources` block | implemented (milestone 5) |
 | `src/data/wind.json` | Gust amplitude and length scales, gust veer, slow direction-shift components, gust-patch map size and visual strength; sources and TUNING GUESS labels | implemented |

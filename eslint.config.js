@@ -35,6 +35,17 @@ export default tseslint.config(
     },
   },
   {
+    // Navigation estimates only use instrument readings, with no scene/browser dependencies.
+    files: ['src/nav/**/*.ts'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [
+        { group: ['three', 'three/*', '**/render/**', '**/input/**', '**/debug/**'], message: 'Navigation math must stay pure and headless.' },
+        { group: ['**/sim/state', '**/sim/step', '**/sim/index'], message: 'Navigation receives narrow instrument readings, never BoatState.' },
+      ] }],
+      'no-restricted-globals': ['error', 'window', 'document', 'navigator', 'requestAnimationFrame', 'performance'],
+    },
+  },
+  {
     // Cloth, telltale and wake math stays testable under Node without Three.js.
     files: ['src/render/cloth/**/*.ts', 'src/render/wake/**/*.ts'],
     rules: {

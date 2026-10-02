@@ -41,7 +41,7 @@ const deg = (rad: number, digits = 0) => `${Math.abs(rad / DEG).toFixed(digits)}
 const side = (x: number) => (Math.abs(x) < 1e-9 ? '' : x > 0 ? ' S' : ' P');
 
 export class TestHud {
-  visible = true;
+  visible = false;
   private readonly root = document.createElement('div');
   private readonly tiles: Record<TileKey, Tile>;
   private readonly luffBar = document.createElement('div');
@@ -61,6 +61,8 @@ export class TestHud {
       'position:fixed;right:10px;top:8px;font:13px ui-monospace,Menlo,monospace;color:#fff;' +
       'background:rgba(0,0,0,0.4);padding:2px 6px;border-radius:4px;pointer-events:none;z-index:5;';
     document.body.append(this.root, this.perf);
+    this.root.style.display = 'none';
+    this.perf.style.display = 'none';
 
     window.addEventListener('keydown', (e) => {
       if (e.code !== 'KeyH' || isTypingTarget(e.target)) return;
