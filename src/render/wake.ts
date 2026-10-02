@@ -20,6 +20,10 @@ export interface WakePose extends ContactPose {
 const TWO_PI = 2 * Math.PI;
 const mod = (v: number, m: number) => ((v % m) + m) % m;
 
+/** Independent wake components, each a shader switch (components of the `wakeLayers` uniform). */
+const WAKE_LAYERS = { kelvin: 'x', bowWaves: 'y', foam: 'z' } as const;
+export type WakeLayer = keyof typeof WAKE_LAYERS;
+
 export class WakeView {
   enabled = true;
   private readonly bowField = new BowWaveField(WAKE);
@@ -40,6 +44,7 @@ export class WakeView {
     wakeProfile: { value: new Float32Array(WAKE.hullProfileSamples) },
     wakeFoam: { value: new THREE.Vector4() },
     wakeFoamPhase: { value: new THREE.Vector3() },
+    wakeLayers: { value: new THREE.Vector3(1, 1, 1) },
   };
   private readonly trail = new WakeTrail(WAKE);
   private readonly contact: BowContact;
@@ -67,6 +72,14 @@ export class WakeView {
       profile[i] = layout.waterlineHalfBeamAt(stem - (i / (profile.length - 1)) * length);
     }
     this.uniforms.wakeHull.value.set(0, length, 0, model.cfg.hull.beam);
+  }
+
+  /**
+   * Show or hide one wake component (Kelvin stern waves, bow V waves, foam). Shader-side only:
+   * the trail and the bow field keep their history, so switching back shows the true wake.
+   */
+  setLayer(layer: WakeLayer, on: boolean): void {
+    this.uniforms.wakeLayers.value[WAKE_LAYERS[layer]] = on ? 1 : 0;
   }
 
   update(pose: WakePose, origin: Readonly<Vec2>, waves: WaveConfig, hullY: number, pitch = pose.pitch): void {

@@ -121,7 +121,9 @@ fraction of a second and holds its position. Same idea for the sheet.
   threshold independently of stern turbulence. Stern foam appearance remains unchanged.
   Height, foam and lifetime/resolution parameters are explicit TUNING GUESS values in `wake.json`.
   Parameters in `data/wake.json`; math in `render/wake/` (no Three.js, tested);
-  debug toggle "wake (visual)" and `?wake=0`.
+  debug toggles for the three components, "wake: Kelvin waves", "wake: bow V waves" and "wake: foam (bow +
+  stern)", each a shader-side switch (the trail and bow field keep their history, so switching back shows
+  the true wake), and `?wake=0` to start with the whole wake off.
 - **Sky:** one analytic sky function (`render/sky.ts`, adapted from three's examples Sky: Preetham
   daylight scattering, sun disc, procedural clouds) is the sky for everything. The dome shades with
   it, the water reflects it per pixel and the water's distance fog blends toward its horizon colour,

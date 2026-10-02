@@ -126,8 +126,8 @@ export function createWater(
         wakeFrame(wakePos, wakeSN, wakeProps);
         float cell = max(cellFootprint.x, cellFootprint.y);
         vec4 bowSample = wakeBowSample(wakePos);
-        waterPosition.y += kelvinWake(wakeSN, wakeProps, cell).x * wakeHullMask(wakePos)
-          + bowSample.r * wakeBowFilter(bowSample, cell);
+        waterPosition.y += wakeLayers.x * kelvinWake(wakeSN, wakeProps, cell).x * wakeHullMask(wakePos)
+          + wakeLayers.y * bowSample.r * wakeBowFilter(bowSample, cell);
         vec4 mvPosition = viewMatrix * vec4(waterPosition, 1.0);
         gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
@@ -160,7 +160,7 @@ export function createWater(
         // Wake: add its height gradient to the sea's surface gradient.
         float pixel = max(footprint.x, footprint.y);
         float hullMask = wakeHullMask(wakePos);
-        vec3 kelvin = kelvinWake(wakeSN, wakeProps, pixel) * hullMask;
+        vec3 kelvin = wakeLayers.x * kelvinWake(wakeSN, wakeProps, pixel) * hullMask;
         vec2 tangent = wakeSN.zw / max(length(wakeSN.zw), 1e-6);
         vec2 slope = -normal.xz / normal.y
           + kelvin.y * tangent + kelvin.z * vec2(-tangent.y, tangent.x);
@@ -177,7 +177,7 @@ export function createWater(
             heightDx * bowDy.y - heightDy * bowDx.y,
             heightDy * bowDx.x - heightDx * bowDy.x) / determinant;
         }
-        slope += bowGradient;
+        slope += wakeLayers.y * bowGradient;
         normal = normalize(vec3(-slope.x, 1.0, -slope.y));
 
         vec3 view = normalize(cameraPosition - waterPosition);
@@ -205,7 +205,7 @@ export function createWater(
         float gust = gustAmount(waterPosition.xz);
         colour *= 1.0 - gustMapInfo.z * max(gust, 0.0) + gustMapInfo.w * max(-gust, 0.0);
         // Whitewater: diffuse, unpolished, so it replaces the reflective water colour.
-        float foam = wakeFoamAmount(wakePos, wakeSN, wakeProps, bow, bowSample.g, bowSample.b, pixel);
+        float foam = wakeLayers.z * wakeFoamAmount(wakePos, wakeSN, wakeProps, bow, bowSample.g, bowSample.b, pixel);
         vec3 foamColour = ${FOAM_ALBEDO.toFixed(3)} * (ambient + sunColour * max(dot(normal, sunDirection), 0.0));
         colour = mix(colour, foamColour, foam * ${WAKE.foamOpacity.toFixed(3)});
         // Fog toward the clear sky in this direction, in linear light like the dome, so the

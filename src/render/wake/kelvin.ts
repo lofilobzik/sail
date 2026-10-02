@@ -116,6 +116,7 @@ uniform float bowFieldResolution;
 uniform float wakeProfile[${P}];
 uniform vec4 wakeFoam;
 uniform vec3 wakeFoamPhase;
+uniform vec3 wakeLayers; // 1 or 0: Kelvin waves, bow V waves, foam (debug switches)
 
 float wakeFilter(float phaseStep) {
   return 1.0 - smoothstep(${f(FILTER_FULL)}, ${f(FILTER_ZERO)}, phaseStep);

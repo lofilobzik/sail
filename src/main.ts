@@ -68,7 +68,9 @@ function resetBoat(): void {
 resetBoat();
 
 const overlay = new DebugOverlay(cfg, resetBoat);
-overlay.addToggle('wake (visual)', view.wake.enabled, (v) => (view.wake.enabled = v));
+overlay.addToggle('wake: Kelvin waves', true, (v) => view.wake.setLayer('kelvin', v));
+overlay.addToggle('wake: bow V waves', true, (v) => view.wake.setLayer('bowWaves', v));
+overlay.addToggle('wake: foam (bow + stern)', true, (v) => view.wake.setLayer('foam', v));
 overlay.addNumber('sun elevation ° (-10–90)', sunElevation, (v, el) => {
   sunElevation = clamp(v, -10, 90);
   view.sky.setSun(sunElevation, sunAzimuth);
