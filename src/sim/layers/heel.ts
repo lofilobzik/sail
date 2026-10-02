@@ -11,7 +11,8 @@
  * Crew position (Day 2017 pp7-8): CG at 55% of standing height; fully hiked, the CG
  * is at most 95% of that height out from the centreline (toe strap on the
  * centreline). Sitting-in offset and CG heights are TUNING GUESS (laser.json).
- * The crew sits on the side opposite the boom and moves across at a limited rate.
+ * The crew sits on the side opposite the boom and moves across at a limited rate. With the
+ * crewCentresWhenLuffing term the target offset shrinks as the sail luffs (reach x (1 - luffAmount)).
  * The sailor only changes sides once the boom has swung clearly across, so a boom
  * flicking about the centreline head to wind does not make the crew rock the boat.
  */
@@ -33,11 +34,12 @@ export interface CrewPosition {
   maxReach: number;
 }
 
-export function crewPosition(state: BoatState, controls: Controls, boat: BoatModel): CrewPosition {
+/** `luffAmount` (0..1) pulls the target toward the centreline; pass 0 to keep the full offset. */
+export function crewPosition(state: BoatState, controls: Controls, boat: BoatModel, luffAmount = 0): CrewPosition {
   const c = boat.cfg.crew;
   const hike = Math.min(Math.max(controls.hike, 0), 1);
   const maxReach = c.hikeReachFrac * c.cgHeightFrac * c.height;
-  const reach = c.sitInOffset + hike * (maxReach - c.sitInOffset);
+  const reach = (c.sitInOffset + hike * (maxReach - c.sitInOffset)) * (1 - Math.min(Math.max(luffAmount, 0), 1));
   let side: number;
   if (Math.abs(state.boom) > CREW_SWITCH_BOOM_ANGLE) side = -Math.sign(state.boom);
   else if (state.crewY !== 0) side = Math.sign(state.crewY);

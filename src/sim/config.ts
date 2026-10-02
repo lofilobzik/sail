@@ -38,6 +38,11 @@ export interface TermToggles {
   crossflowDrag: boolean;
   /** L6: hull Munk moment (Day 2017 Eq. 14). */
   munkMoment: boolean;
+  /**
+   * L5: the sailor moves toward the centreline as luffAmount rises (reach scaled by 1 - luffAmount),
+   * as a real sailor sits in when the sail stops pulling. Off: the crew keeps the full windward offset.
+   */
+  crewCentresWhenLuffing: boolean;
 }
 
 /**
@@ -108,6 +113,7 @@ export function defaultConfig(waveSeed?: number): SimConfig {
       heelResistance: true,
       crossflowDrag: true,
       munkMoment: true,
+      crewCentresWhenLuffing: true, // polar: only TWA 30-35 at 6-7 kn change (+0.05-0.08 kn); upwind VMG, reaches and runs identical
     },
     models: {
       liftSlope: 'standard',

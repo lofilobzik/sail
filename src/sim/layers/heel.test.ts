@@ -29,6 +29,16 @@ describe('L5 heel and hiking', () => {
     expect(hiked.targetY).toBeCloseTo(-0.95 * 0.55 * boat.cfg.crew.height, 12);
   });
 
+  it('moves the crew target toward the centreline as luffAmount rises, keeping the crew height', () => {
+    const state = { ...initialState(), boomSide: 1 as const };
+    const hiking = { tiller: 0, sheet: 0, hike: 0.5 };
+    const full = crewPosition(state, hiking, boat).targetY;
+    expect(crewPosition(state, hiking, boat, 0).targetY).toBe(full);
+    expect(crewPosition(state, hiking, boat, 0.5).targetY).toBeCloseTo(full / 2, 12);
+    expect(crewPosition(state, hiking, boat, 1).targetY).toBeCloseTo(0, 12);
+    expect(crewPosition(state, hiking, boat, 1).z).toBe(crewPosition(state, hiking, boat).z);
+  });
+
   it('settles at the heel where righting balances a steady moment, and hiking reduces it', () => {
     // No sail, no foils, no hull: only the crew moment and hydrostatics act.
     const cfg = defaultConfig();

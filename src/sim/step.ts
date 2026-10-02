@@ -120,10 +120,12 @@ export function evaluate(state: BoatState, controls: Controls, boat: BoatModel, 
   const L = cfg.layers;
   const trueWind = getWind({ x: state.x, z: state.z }, state.t, cfg.wind);
   const apparent = apparentWind(state, trueWind, L.apparentWind);
-  const crew = crewPosition(state, controls, boat);
+  let crew = crewPosition(state, controls, boat);
   const waves = waveDiagnostics(state, boat, cfg);
 
   const sail = L.sail ? sailForces(state, apparent, crew.z, boat, cfg.env, cfg.terms) : null;
+  // luffAmount does not depend on the crew, so the crew target is refined after the sail is evaluated.
+  if (cfg.terms.crewCentresWhenLuffing && sail) crew = crewPosition(state, controls, boat, sail.luffAmount);
   const foils = L.foils ? foilForces(state, controls, boat, cfg.env, cfg.terms, cfg.models, waves ?? undefined) : null;
   const hull = L.hull ? hullForces(state, boat, cfg.env, cfg.terms, cfg.models) : null;
   const s = sail ?? ZERO_SAIL_LIKE;
