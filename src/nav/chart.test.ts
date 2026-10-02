@@ -15,22 +15,24 @@ describe('paper chart', () => {
     expect(chart.toWorld(chart.toPaper(world))).toEqual(world);
   });
 
-  it('pans and zooms around the mouse without changing the surveyed buoy coordinates', () => {
+  it('frames every point inside the paper with a margin, wide or tall, and never tighter than the minimum span', () => {
     const chart = new ChartProjection(rect);
-    const mouse = { x: 170, y: 220 };
-    const before = chart.toWorld(mouse);
-    chart.zoom(mouse, -1);
-    const after = chart.toWorld(mouse);
-    expect(after.x).toBeCloseTo(before.x, 10);
-    expect(after.z).toBeCloseTo(before.z, 10);
-    const paper = chart.toPaper(before);
-    chart.pan(20, -30);
-    expect(chart.toPaper(before).x).toBeCloseTo(paper.x + 20, 10);
-    expect(chart.toPaper(before).y).toBeCloseTo(paper.y - 30, 10);
-    for (let i = 0; i < 100; i++) chart.zoom(mouse, -1);
+    const points = [{ x: -300, z: -380 }, { x: 550, z: 100 }, { x: 150, z: 400 }];
+    chart.fit(points);
+    for (const p of points) {
+      const paper = chart.toPaper(p);
+      expect(paper.x).toBeGreaterThan(rect.x);
+      expect(paper.x).toBeLessThan(rect.x + rect.width);
+      expect(paper.y).toBeGreaterThan(rect.y);
+      expect(paper.y).toBeLessThan(rect.y + rect.height);
+    }
+    const tall = [{ x: 0, z: -2000 }, { x: 10, z: 2000 }];
+    chart.fit(tall);
+    expect(chart.toPaper(tall[0]!).y).toBeGreaterThan(rect.y);
+    expect(chart.toPaper(tall[1]!).y).toBeLessThan(rect.y + rect.height);
+    chart.fit([{ x: 5, z: 5 }]);
     expect(chart.span).toBe(NAVIGATION.visual.minChartSpan);
-    for (let i = 0; i < 100; i++) chart.zoom(mouse, 1);
-    expect(chart.span).toBe(NAVIGATION.visual.maxChartSpan);
+    expect(chart.center).toEqual({ x: 5, z: 5 });
     chart.reset();
     expect(chart.center).toEqual(NAVIGATION.start);
   });

@@ -56,6 +56,8 @@ export function createSailor(layout: BoatLayout, parent: THREE.Group): Sailor {
   const maxReach = crew.hikeReachFrac * crew.cgHeightFrac * crew.height;
 
   const eye = new THREE.Group();
+  // TEMP: arms (forearms and hands) hidden on request while checking the view; set false to restore.
+  const HIDE_ARMS = true;
   parent.add(eye);
 
   const skin = new THREE.MeshStandardMaterial({ color: SKIN_COLOR, roughness: 0.7 });
@@ -68,6 +70,7 @@ export function createSailor(layout: BoatLayout, parent: THREE.Group): Sailor {
     extension: rod(EXTENSION_RADIUS, new THREE.MeshStandardMaterial({ color: EXTENSION_COLOR }), 5),
   };
   parent.add(...Object.values(parts));
+  if (HIDE_ARMS) for (const [name, p] of Object.entries(parts)) p.visible = name === 'extension';
 
   const sheetHand = new THREE.Vector3();
   const v = {
@@ -84,7 +87,7 @@ export function createSailor(layout: BoatLayout, parent: THREE.Group): Sailor {
     eye,
     sheetHand,
     setVisible(on) {
-      for (const p of Object.values(parts)) p.visible = on;
+      for (const [name, p] of Object.entries(parts)) p.visible = on && !(HIDE_ARMS && name !== 'extension');
     },
     update(pose) {
       const side = pose.crewY < 0 ? -1 : 1;

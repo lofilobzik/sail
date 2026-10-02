@@ -1,5 +1,5 @@
 /** Paper chart projection, independent of Three.js, the floating origin, and the true boat position. */
-import { clamp, type Vec2 } from '../sim/frames';
+import type { Vec2 } from '../sim/frames';
 import { NAVIGATION } from './navigation';
 
 export interface PaperPoint { x: number; y: number }
@@ -32,19 +32,19 @@ export class ChartProjection {
     };
   }
 
-  pan(dx: number, dy: number): void {
-    this.center.x -= dx * this.span / this.rect.width;
-    this.center.z -= dy * this.span / this.rect.width;
-  }
-
-  /** Keep the chart point under the mouse fixed while zooming, with bounded scale. */
-  zoom(point: PaperPoint, direction: number): void {
-    const before = this.toWorld(point);
+  /** Frame every point with a margin, never tighter than the minimum span. North stays up. */
+  fit(points: readonly Vec2[]): void {
+    if (!points.length) return;
     const visual = NAVIGATION.visual;
-    this.span = clamp(this.span * visual.chartZoomFactor ** Math.sign(direction), visual.minChartSpan, visual.maxChartSpan);
-    const after = this.toWorld(point);
-    this.center.x += before.x - after.x;
-    this.center.z += before.z - after.z;
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const p of points) {
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+    }
+    this.center = { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2 };
+    // The span is the paper width in metres, so a tall extent needs a proportionally wider span.
+    const needed = Math.max(maxX - minX, (maxZ - minZ) * this.rect.width / this.rect.height);
+    this.span = Math.max(needed * visual.chartFitPadding, visual.minChartSpan);
   }
 
   reset(): void {

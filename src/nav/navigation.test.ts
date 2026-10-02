@@ -1,73 +1,326 @@
 import { describe, expect, it } from 'vitest';
 import { DEG, worldToBearing } from '../sim/frames';
-import { NAV_BUOYS, NAVIGATION, Navigation, graduatedBearing, positionLine, solveFix, type NavigationState, type Observation } from './navigation';
+import { NAV_BUOYS, NAVIGATION, Navigation, graduatedBearing, lineIntersection, positionLine, solveFix, type FixContext, type Observation } from './navigation';
 
-const state = (x = 0, z = 0): NavigationState => ({ x, z, t: 0, loggedSpeed: 0, trackX: 0, trackZ: 0, distance: 0 });
-function note(id: number, buoyId: string, from = { x: 0, z: 0 }): Observation {
+const at = (x = 0, z = 0, t = 0, velocity: FixContext['velocity'] = null): FixContext => ({ position: { x, z }, t, velocity });
+function note(id: number, buoyId: string, from = { x: 0, z: 0 }, t = 0): Observation {
   const buoy = NAV_BUOYS.find((b) => b.name === buoyId)!;
-  return { id, buoyId, bearing: worldToBearing(buoy.x - from.x, buoy.z - from.z), t: 0, trackX: 0, trackZ: 0 };
+  return { id, buoyId, bearing: worldToBearing(buoy.x - from.x, buoy.z - from.z), t };
 }
 
-describe('dead reckoning instruments', () => {
-  it('integrates north/east headings and a signed log, without a sideways-velocity or position input', () => {
-    const nav = new Navigation(13);
-    nav.advance({ t: 1, heading: 0, speed: 2 }, 1);
-    expect(nav.state.x).toBe(0);
-    expect(nav.state.z).toBeLessThan(-2);
-    const z = nav.state.z;
-    nav.advance({ t: 2, heading: Math.PI / 2, speed: 2 }, 1);
-    expect(nav.state.x).toBeGreaterThan(2);
-    expect(nav.state.z).toBeCloseTo(z, 10);
-    nav.advance({ t: 3, heading: Math.PI / 2, speed: -2 }, 1);
-    expect(Math.abs(nav.state.x)).toBeLessThan(0.01);
-    expect(nav.state.loggedSpeed).toBeLessThan(0);
-    expect(nav.state.distance).toBeGreaterThan(6);
-  });
+/** Step the navigation model through simulated time. */
+function run(nav: Navigation, seconds: number, speed = 2, dt = 0.1): void {
+  const steps = Math.round(seconds / dt);
+  for (let i = 0; i < steps; i++) nav.advance({ t: nav.t + dt, speed }, dt);
+}
 
-  it('has repeatable gentle error over minutes, distinct calibration by seed, and no drift at rest', () => {
-    const run = (seed: number) => {
-      const nav = new Navigation(seed);
-      for (let t = 1; t <= 300; t++) nav.advance({ t, heading: Math.PI / 2, speed: 2 }, 1);
-      return nav;
-    };
-    const a = run(7), b = run(7), c = run(8);
-    expect(a.state).toEqual(b.state);
-    expect(a.state.x).not.toBe(c.state.x);
-    expect(a.state.x - 600).toBeGreaterThan(0);
-    expect(a.state.x - 600).toBeLessThan(20);
-    const position = { x: a.state.x, z: a.state.z };
-    a.advance({ t: 301, heading: 1, speed: 0 }, 1);
-    expect({ x: a.state.x, z: a.state.z }).toEqual(position);
-  });
+/** Take a complete bearing reading while aiming steadily. */
+function sight(nav: Navigation, bearing: number): void {
+  nav.setAim(bearing);
+  nav.beginReading('bearing');
+  run(nav, NAVIGATION.timing.bearingRead + 0.2);
+  nav.setAim(null);
+}
 
-  it('converges with timestep refinement rather than accumulating frame-random noise', () => {
-    const run = (dt: number) => {
-      const nav = new Navigation(5);
-      for (let i = 1; i <= Math.round(120 / dt); i++) nav.advance({ t: i * dt, heading: 1, speed: 2 }, dt);
-      return nav.state;
-    };
-    const a = run(1 / 60), b = run(1 / 120);
-    expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeLessThan(0.001);
-  });
+/** Hold the compass on a bearing that moves at `rate` rad/s, updating the aim every step like a camera frame. */
+function track(nav: Navigation, start: number, rate: number, seconds: number, dt = 0.1): void {
+  const t0 = nav.t;
+  for (let i = 0; i < Math.round(seconds / dt); i++) {
+    nav.setAim(start + rate * (nav.t + dt - t0));
+    nav.advance({ t: nav.t + dt, speed: 2 }, dt);
+  }
+}
 
-  it('resets estimate, odometer, notes, and calibration replay to the known departure', () => {
-    const nav = new Navigation(3);
-    nav.advance({ t: 1, heading: 0, speed: 2 }, 1);
-    const moved = { ...nav.state };
-    nav.record(0);
-    nav.reset();
-    expect(nav.state).toEqual(state());
-    expect(nav.observations).toEqual([]);
-    expect(nav.selected.size).toBe(0);
-    nav.advance({ t: 1, heading: 0, speed: 2 }, 1);
-    expect(nav.state).toEqual(moved);
-  });
-
-  it('ignores invalid readings without poisoning the estimate', () => {
+describe('timed readings', () => {
+  it('shows no motion estimate until course and speed have been read', () => {
     const nav = new Navigation();
-    nav.advance({ t: 1, heading: NaN, speed: 2 }, 1);
-    nav.advance({ t: 1, heading: 0, speed: 2 }, -1);
-    expect(nav.state).toEqual(state());
+    run(nav, 30);
+    expect(nav.velocity).toBeNull();
+    expect(nav.plotted).toMatchObject({ x: 0, z: 0, t: 0 });
+  });
+
+  it('takes the wake reading only after it has been watched long enough, and remembers its time', () => {
+    const nav = new Navigation();
+    nav.setAstern(true);
+    nav.beginReading('speed');
+    run(nav, NAVIGATION.timing.speedRead - 0.5, 2.5);
+    expect(nav.speed).toBeNull();
+    expect(nav.progress).toBeGreaterThan(0.5);
+    run(nav, 1, 2.5);
+    expect(nav.speed?.value).toBe(2.5);
+    expect(nav.speed?.t).toBeGreaterThan(NAVIGATION.timing.speedRead - 0.5);
+    expect(nav.task).toBeNull();
+  });
+
+  it('only judges the wake while looking astern, and the ring starts over when the sailor turns away', () => {
+    const nav = new Navigation();
+    nav.beginReading('speed');
+    run(nav, 5, 2);
+    expect(nav.speed).toBeNull();
+    expect(nav.task!.elapsed).toBe(0);
+    nav.setAstern(true);
+    run(nav, 1, 2);
+    nav.setAstern(false);
+    run(nav, 1, 2);
+    expect(nav.task!.elapsed).toBe(0);
+    nav.setAstern(true);
+    run(nav, NAVIGATION.timing.speedRead + 0.2, 2);
+    expect(nav.speed?.value).toBe(2);
+  });
+
+  it('calls a remembered speed old after a couple of minutes', () => {
+    const nav = new Navigation();
+    nav.setAstern(true);
+    nav.beginReading('speed');
+    run(nav, NAVIGATION.timing.speedRead + 0.2, 2);
+    expect(nav.speedStale).toBe(false);
+    run(nav, NAVIGATION.speedStaleSeconds + 1, 2);
+    expect(nav.speedStale).toBe(true);
+  });
+
+  it('records the bearing in view at the end of a steady hold', () => {
+    const nav = new Navigation();
+    sight(nav, 40 * DEG);
+    expect(nav.observations).toHaveLength(1);
+    expect(nav.observations[0]!.bearing / DEG).toBeCloseTo(40, 6);
+  });
+
+  it('restarts when the compass sweeps off the mark or points at nothing, and a released hold records nothing', () => {
+    const nav = new Navigation();
+    nav.beginReading('bearing');
+    track(nav, 10 * DEG, 0, 2);
+    track(nav, 10 * DEG + 12 * DEG, 0, 0.1); // 12 degrees in one step: a sweep, not a hold
+    expect(nav.task!.elapsed).toBeLessThan(0.5);
+    nav.setAim(null);
+    run(nav, 5);
+    expect(nav.task!.elapsed).toBe(0);
+    nav.cancelReading();
+    expect(nav.observations).toHaveLength(0);
+    expect(nav.task).toBeNull();
+  });
+
+  it('lets a slow track on a mark finish and records its recent mean direction', () => {
+    const nav = new Navigation();
+    const rate = 3 * DEG; // the boat is swinging and the eye follows the buoy: the mean moves with it
+    nav.beginReading('bearing');
+    track(nav, 100 * DEG, rate, NAVIGATION.timing.bearingRead + 0.1);
+    expect(nav.observations).toHaveLength(1);
+    const finished = NAVIGATION.timing.bearingRead;
+    const expected = 100 + (rate / DEG) * (finished - NAVIGATION.aimAverageSeconds / 2);
+    expect(Math.abs(nav.observations[0]!.bearing / DEG - expected)).toBeLessThan(1);
+  });
+
+  it('averages out the rocking of the boat in waves', () => {
+    const nav = new Navigation();
+    nav.beginReading('bearing');
+    const steps = Math.round((NAVIGATION.timing.bearingRead + 0.1) / 0.1);
+    for (let i = 1; i <= steps; i++) {
+      nav.setAim((60 + 5 * Math.sin(2 * Math.PI * i * 0.1 / 1.5)) * DEG);
+      nav.advance({ t: nav.t + 0.1, speed: 2 }, 0.1);
+    }
+    expect(nav.observations).toHaveLength(1);
+    expect(Math.abs(nav.observations[0]!.bearing / DEG - 60)).toBeLessThan(3);
+  });
+
+  it('tracks smoothly across north', () => {
+    const nav = new Navigation();
+    nav.beginReading('bearing');
+    track(nav, 358 * DEG, 2 * DEG, NAVIGATION.timing.bearingRead + 0.1);
+    expect(nav.observations).toHaveLength(1);
+    const bearing = nav.observations[0]!.bearing / DEG;
+    expect(Math.min(bearing, 360 - bearing)).toBeLessThan(6);
+  });
+
+  /** One hold on a steady 50 degree bearing, with the crosshair on `buoyAt(step)` and the bow on `bowAt(step)`. */
+  function holdWith(nav: Navigation, buoyAt: (i: number) => string | null, bowAt: (i: number) => boolean = () => false): void {
+    nav.beginReading('bearing');
+    const steps = Math.round((NAVIGATION.timing.bearingRead + 0.1) / 0.1);
+    for (let i = 1; i <= steps; i++) {
+      nav.setAim(50 * DEG);
+      nav.setAimedBuoy(buoyAt(i));
+      nav.setAimedBow(bowAt(i));
+      nav.advance({ t: nav.t + 0.1, speed: 2 }, 0.1);
+    }
+  }
+
+  it('names the buoy under the crosshair by its painted ID, while the bearing stays the compass\'s', () => {
+    const nav = new Navigation();
+    holdWith(nav, () => 'NE');
+    expect(nav.observations[0]!.buoyId).toBe('NE');
+    expect(nav.observations[0]!.bearing / DEG).toBeCloseTo(50, 6);
+  });
+
+  it('forgives the rocking boat taking the crosshair off the buoy for part of the hold', () => {
+    const nav = new Navigation();
+    holdWith(nav, (i) => (i % 5 < 3 ? 'E' : i % 5 === 3 ? 'N' : null)); // E 60%, N 20%, nothing 20%
+    expect(nav.observations[0]!.buoyId).toBe('E');
+  });
+
+  it('names nothing when the crosshair was on a buoy for too little of the hold', () => {
+    const nav = new Navigation();
+    holdWith(nav, (i) => (i % 10 === 0 ? 'E' : null));
+    expect(nav.observations).toHaveLength(1);
+    expect(nav.observations[0]!.buoyId).toBeNull();
+  });
+
+  it('takes a bow bearing as the remembered course, ahead of any buoy in line, and leaves no note', () => {
+    const nav = new Navigation();
+    holdWith(nav, () => 'N', () => true);
+    expect(nav.course?.value).toBeCloseTo(50 * DEG, 6);
+    expect(nav.observations).toHaveLength(0);
+  });
+
+  it('does not take the course from a bow that was only briefly in line', () => {
+    const nav = new Navigation();
+    holdWith(nav, () => 'S', (i) => i % 3 === 0);
+    expect(nav.course).toBeNull();
+    expect(nav.observations[0]!.buoyId).toBe('S');
+  });
+
+  it('plots the newest named note of each buoy taken since the last plot, skipping untagged, old and plotted ones', () => {
+    const nav = new Navigation();
+    run(nav, 1);
+    nav.record(0); nav.identify(1, 'N');
+    run(nav, 1);
+    nav.record(0.1); nav.identify(2, 'N');
+    nav.record(1); nav.identify(3, 'E');
+    nav.record(2);
+    expect(nav.candidateNotes().map((n) => n.id)).toEqual([2, 3]);
+    nav.course = { value: 0, t: 0 };
+    nav.speed = { value: 0, t: 0 };
+    expect(nav.beginAutoPlot()).toBe(true);
+    expect(nav.plotting).toBe('fix');
+    run(nav, 2 * NAVIGATION.timing.plotLine + 0.2, 0);
+    expect(nav.candidateNotes()).toEqual([]); // consumed: the next plot is the leg
+    expect(nav.beginAutoPlot()).toBe(true);
+    expect(nav.plotting).toBe('leg');
+    nav.cancelPlot();
+    run(nav, NAVIGATION.maxBearingAge + 1, 0);
+    nav.record(0); nav.identify(6, 'N');
+    run(nav, NAVIGATION.maxBearingAge + 1, 0);
+    expect(nav.candidateNotes()).toEqual([]); // too old
+  });
+
+  it('keeps a pencil track of every plotted position and caps its length', () => {
+    const nav = new Navigation();
+    nav.course = { value: Math.PI / 2, t: 0 };
+    nav.speed = { value: 2, t: 0 };
+    expect(nav.track).toEqual([{ x: 0, z: 0, t: 0, radius: NAVIGATION.accuracy.departure }]);
+    for (let i = 0; i < NAVIGATION.maxTrack + 5; i++) {
+      nav.beginPlot('leg');
+      run(nav, NAVIGATION.timing.plotLeg + 0.2, 2);
+    }
+    expect(nav.track).toHaveLength(NAVIGATION.maxTrack);
+    expect(nav.track.at(-1)).toBe(nav.plotted);
+    expect(nav.track[1]!.x).toBeGreaterThan(nav.track[0]!.x);
+    nav.reset();
+    expect(nav.track).toHaveLength(1);
+  });
+
+  it('pauses pencil work while the chart is out of view and resumes where it left off', () => {
+    const nav = new Navigation();
+    nav.course = { value: 0, t: 0 };
+    nav.speed = { value: 1, t: 0 };
+    nav.beginPlot('leg');
+    run(nav, 2);
+    nav.setLooking(false);
+    run(nav, 10);
+    expect(nav.task!.elapsed).toBeCloseTo(2, 6);
+    nav.setLooking(true);
+    run(nav, NAVIGATION.timing.plotLeg - 2 + 0.2);
+    expect(nav.task).toBeNull();
+    expect(nav.plotted.t).toBeGreaterThan(12);
+  });
+
+  it('keeps timed wake readings running while the chart is out of view', () => {
+    const nav = new Navigation();
+    nav.setLooking(false);
+    nav.setAstern(true);
+    nav.beginReading('speed');
+    run(nav, NAVIGATION.timing.speedRead + 0.2, 2);
+    expect(nav.speed?.value).toBe(2);
+  });
+
+  it('turns a note taken along the bow into the remembered course', () => {
+    const nav = new Navigation();
+    sight(nav, 90 * DEG);
+    nav.assignCourse(1);
+    expect(nav.course?.value).toBeCloseTo(Math.PI / 2, 6);
+    expect(nav.observations).toHaveLength(0);
+  });
+});
+
+describe('plotting the dead-reckoning leg', () => {
+  function sailingEast(): Navigation {
+    const nav = new Navigation();
+    sight(nav, 90 * DEG);
+    nav.assignCourse(1);
+    nav.setAstern(true);
+    nav.beginReading('speed');
+    run(nav, NAVIGATION.timing.speedRead + 0.2, 3);
+    return nav;
+  }
+
+  it('refuses until a course and a speed are remembered', () => {
+    const nav = new Navigation();
+    expect(nav.beginPlot('leg')).toBe(false);
+    sight(nav, 90 * DEG);
+    nav.assignCourse(1);
+    expect(nav.beginPlot('leg')).toBe(false);
+    expect(nav.task).toBeNull();
+  });
+
+  it('leaves the marker where it was until the plotting time has passed', () => {
+    const nav = sailingEast();
+    run(nav, 20, 3);
+    expect(nav.plotted.x).toBe(0);
+    expect(nav.beginPlot('leg')).toBe(true);
+    run(nav, NAVIGATION.timing.plotLeg - 1, 3);
+    expect(nav.plotted.x).toBe(0);
+    run(nav, 1.2, 3);
+    expect(nav.plotted.t).toBeGreaterThan(30);
+    expect(nav.plotted.x).toBeCloseTo(3 * nav.plotted.t, 6);
+    expect(nav.plotted.z).toBeCloseTo(0, 6);
+  });
+
+  it('carries on from the remembered values, even after the boat changes course', () => {
+    const nav = sailingEast();
+    run(nav, 60, 1); // the real boat slowed down; the sailor still remembers 3 m/s
+    nav.beginPlot('leg');
+    run(nav, NAVIGATION.timing.plotLeg + 0.2, 1);
+    expect(nav.plotted.x).toBeCloseTo(3 * nav.plotted.t, 6);
+  });
+
+  it('adds doubt in proportion to the distance sailed on memory, and abandoned plotting changes nothing', () => {
+    const nav = sailingEast();
+    run(nav, 100, 3);
+    const before = { ...nav.plotted };
+    nav.beginPlot('leg');
+    nav.cancelPlot();
+    run(nav, 10, 3);
+    expect(nav.plotted).toEqual(before);
+    nav.beginPlot('leg');
+    run(nav, NAVIGATION.timing.plotLeg + 0.2, 3);
+    const { speedFraction, courseSigmaDeg, departure } = NAVIGATION.accuracy;
+    const expected = departure + Math.hypot(speedFraction, Math.tan(courseSigmaDeg * DEG)) * nav.plotted.x;
+    expect(nav.plotted.radius).toBeCloseTo(expected, 6);
+    expect(nav.plotted.radius).toBeGreaterThan(NAVIGATION.accuracy.departure + 30);
+  });
+
+  it('resets to the known departure, forgetting every reading', () => {
+    const nav = sailingEast();
+    nav.reset();
+    expect(nav.plotted).toEqual({ x: 0, z: 0, t: 0, radius: NAVIGATION.accuracy.departure });
+    expect(nav.course).toBeNull();
+    expect(nav.speed).toBeNull();
+    expect(nav.t).toBe(0);
+  });
+
+  it('ignores invalid instrument steps', () => {
+    const nav = new Navigation();
+    nav.advance({ t: NaN, speed: 2 }, 1);
+    nav.advance({ t: 1, speed: 2 }, -1);
+    expect(nav.t).toBe(0);
   });
 });
 
@@ -79,7 +332,7 @@ describe('bearing lines and fixes', () => {
   });
 
   it('projects a one-bearing estimate onto the line without inventing an along-line fix', () => {
-    const result = solveFix([note(1, 'N')], state(40, 25));
+    const result = solveFix([note(1, 'N')], at(40, 25));
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.position.x).toBeCloseTo(0, 10);
@@ -89,7 +342,7 @@ describe('bearing lines and fixes', () => {
 
   it('recovers an independent point from two identified bearings', () => {
     const from = { x: 35, z: 45 };
-    const result = solveFix([note(1, 'N', from), note(2, 'E', from)], state(60, 80));
+    const result = solveFix([note(1, 'N', from), note(2, 'E', from)], at(60, 80));
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.position.x).toBeCloseTo(from.x, 10);
@@ -97,48 +350,71 @@ describe('bearing lines and fixes', () => {
     }
   });
 
-  it('advances earlier lines by logged motion between sightings and during plotting', () => {
-    const first = note(1, 'N');
-    const second = { ...note(2, 'E', { x: 40, z: 20 }), t: 20, trackX: 40, trackZ: 20 };
-    const current = { ...state(80, 10), t: 35, trackX: 70, trackZ: 30 };
-    const result = solveFix([first, second], current);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.position.x).toBeCloseTo(70, 10);
-      expect(result.position.z).toBeCloseTo(30, 10);
-    }
-    expect(positionLine(first, current)?.buoy).toEqual({ x: 70, z: -120 });
+  it('exposes the crossing of two drawn lines and nothing for near-parallel ones', () => {
+    const from = { x: -20, z: 30 };
+    const a = positionLine(note(1, 'N', from), at())!;
+    const b = positionLine(note(2, 'E', from), at())!;
+    expect(lineIntersection(a, b)!.x).toBeCloseTo(from.x, 10);
+    expect(lineIntersection(a, a)).toBeNull();
   });
 
-  it('rejects parallel/antiparallel geometry, unidentified/expired notes, and wrong-way rays', () => {
+  it('carries earlier lines forward by the remembered motion between sightings and plotting', () => {
+    const velocity = { x: 2, z: 1 };
+    const first = note(1, 'N');
+    const second = note(2, 'E', { x: 40, z: 20 }, 20);
+    const context = at(80, 10, 35, velocity);
+    const result = solveFix([first, second], context);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Second sighting at (40, 20); 15 s at (2, 1) m/s carries it to (70, 35).
+      expect(result.position.x).toBeCloseTo(70, 10);
+      expect(result.position.z).toBeCloseTo(35, 10);
+    }
+    expect(positionLine(first, context)?.buoy).toEqual({ x: 70, z: NAV_BUOYS.find((b) => b.name === 'N')!.z + 35 });
+  });
+
+  it('rejects parallel/antiparallel geometry, unidentified/expired notes, wrong-way rays and unremembered motion', () => {
     const a = note(1, 'N');
     const parallel = { ...note(2, 'E'), bearing: a.bearing + 5 * DEG };
     const opposite = { ...parallel, bearing: a.bearing + Math.PI };
-    expect(solveFix([a, parallel], state())).toMatchObject({ ok: false, reason: expect.stringMatching(/parallel/) });
-    expect(solveFix([a, opposite], state()).ok).toBe(false);
-    expect(solveFix([{ ...a, buoyId: null }], state()).ok).toBe(false);
-    expect(solveFix([a], { ...state(), t: NAVIGATION.maxBearingAge + 1 }).ok).toBe(false);
-    expect(solveFix([{ ...a, bearing: Math.PI }], state())).toMatchObject({ ok: false, reason: expect.stringMatching(/away/) });
-    expect(solveFix([], state()).ok).toBe(false);
+    expect(solveFix([a, parallel], at())).toMatchObject({ ok: false, reason: expect.stringMatching(/parallel/) });
+    expect(solveFix([a, opposite], at()).ok).toBe(false);
+    expect(solveFix([{ ...a, buoyId: null }], at()).ok).toBe(false);
+    expect(solveFix([a], at(0, 0, NAVIGATION.maxBearingAge + 1, { x: 0, z: 0 })).ok).toBe(false);
+    expect(solveFix([{ ...a, bearing: Math.PI }], at())).toMatchObject({ ok: false, reason: expect.stringMatching(/away/) });
+    expect(solveFix([a], at(0, 0, 30))).toMatchObject({ ok: false, reason: expect.stringMatching(/course and speed/) });
+    expect(solveFix([], at()).ok).toBe(false);
   });
 
-  it('requires explicit identification and correction, preserves log references, and bounds notes', () => {
+  it('plots a fix only after the pencil time, moves the marker there and tightens the doubt', () => {
     const nav = new Navigation();
-    nav.state = { ...state(50, 20), t: 10, trackX: 25, trackZ: 5 };
-    nav.record(0);
-    expect(nav.applyFix().ok).toBe(false);
+    nav.course = { value: 0, t: 0 };
+    nav.speed = { value: 0, t: 0 };
+    const buoy = NAV_BUOYS.find((b) => b.name === 'N')!;
+    run(nav, 1, 0);
+    nav.record(worldToBearing(buoy.x - 0, buoy.z - 0));
     nav.identify(1, 'N');
-    expect(nav.state.x).toBe(50);
-    expect(nav.applyFix().ok).toBe(true);
-    expect(nav.state.x).toBeCloseTo(0);
-    expect(nav.state.trackX).toBe(25);
-    expect(nav.state.trackZ).toBe(5);
+    expect(nav.beginPlot('fix')).toBe(true);
+    run(nav, NAVIGATION.timing.plotLine - 1, 0);
+    expect(nav.plotted.radius).toBe(NAVIGATION.accuracy.departure);
+    run(nav, 1.2, 0);
+    expect(nav.plotted.radius).toBe(NAVIGATION.accuracy.oneLineFix);
+    expect(nav.plotted.t).toBeGreaterThan(NAVIGATION.timing.plotLine - 0.2);
+  });
+
+  it('requires a named note before a fix, keeps readings, and bounds notes', () => {
+    const nav = new Navigation();
+    nav.course = { value: 0, t: 0 };
+    nav.speed = { value: 1, t: 0 };
+    run(nav, 1, 0);
+    nav.record(0);
+    expect(nav.beginPlot('fix')).toBe(false);
+    nav.identify(1, 'N');
+    expect(nav.beginPlot('fix')).toBe(true);
+    nav.cancelPlot();
     for (let i = 0; i < NAVIGATION.maxObservations + 3; i++) nav.record(i);
     expect(nav.observations).toHaveLength(NAVIGATION.maxObservations);
-    expect(nav.selected.size).toBe(2);
-    expect([...nav.selected].every((id) => nav.observations.some((o) => o.id === id))).toBe(true);
-    const before = { ...nav.state };
-    nav.clearNotes();
-    expect(nav.state).toEqual(before);
+    expect(nav.course).not.toBeNull();
+    expect(nav.speed).not.toBeNull();
   });
 });

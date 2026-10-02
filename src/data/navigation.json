@@ -1,15 +1,28 @@
 {
   "start": { "x": 0, "z": 0 },
-  "log": {
-    "bias": 0.015,
-    "biasSpread": 0.01,
-    "noiseFraction": 0.008,
-    "noisePeriods": [37, 83]
+  "timing": {
+    "bearingRead": 2.5,
+    "speedRead": 2,
+    "plotLeg": 5,
+    "plotLine": 4
+  },
+  "aimToleranceDeg": 10,
+  "aimAverageSeconds": 1.5,
+  "buoyHoldFraction": 0.3,
+  "accuracy": {
+    "departure": 5,
+    "oneLineFix": 25,
+    "twoLineFix": 10,
+    "speedFraction": 0.1,
+    "courseSigmaDeg": 3
   },
   "bearingStepDeg": 0.5,
   "minSightHorizontal": 0.15,
   "minFixAngleDeg": 15,
   "maxBearingAge": 180,
+  "noteCarryGrace": 1,
+  "speedStaleSeconds": 120,
+  "maxTrack": 40,
   "maxObservations": 5,
   "visual": {
     "chartWidth": 0.6,
@@ -20,25 +33,37 @@
     "chartTextureWidth": 1024,
     "chartTextureHeight": 820,
     "chartUpdateSeconds": 0.2,
-    "chartSpan": 700,
-    "minChartSpan": 150,
-    "maxChartSpan": 20000,
-    "chartZoomFactor": 1.2,
-    "compassRadius": 0.09,
-    "compassAftOfCockpitFore": 0.15,
-    "compassAboveDeck": 0.045,
-    "sightWidth": 0.18,
-    "sightHeight": 0.09,
-    "sightBelowEye": 0.1,
-    "sightDistance": 0.38,
-    "reticleSize": 0.006,
-    "recordNoticeSeconds": 2
+    "chartPlotUpdateSeconds": 0.05,
+    "chartSpan": 1800,
+    "minChartSpan": 600,
+    "chartFitPadding": 1.25,
+    "courseTickMinutes": [1, 2, 5],
+    "wakeLookDeg": 50,
+    "handCompassRadius": 0.05,
+    "handCompassDepth": 0.034,
+    "handCompassTiltDeg": 28,
+    "handCompassOffsetRight": 0.02,
+    "handCompassBelowEye": 0.13,
+    "handCompassDistance": 0.3,
+    "chartViewDeg": 32,
+    "buoyAimDeg": 7,
+    "bowAimDeg": 6,
+    "bowMinPitchDeg": 8,
+    "reticleSize": 0.006
   },
   "sources": {
     "start": "DESIGN.md: known departure position. This matches initialState's origin; resetting navigation uses this known point, never the live boat position.",
-    "log": "TUNING GUESS: signed forward speed log, 1.5% mean bias plus seeded +/-1% calibration variation and two slow 0.8% fractional noise components. No sideways velocity is measured. Smooth time-based error avoids frame-rate-dependent random walks.",
-    "bearingStepDeg/minSightHorizontal": "TUNING GUESS: half-degree sighting-compass graduation; reject nearly vertical aiming where horizontal bearing is undefined/unusable. Bearing uses actual camera world direction, including boat heel and pitch; no exact target bearing or automatic buoy identification.",
-    "minFixAngleDeg/maxBearingAge/maxObservations": "TUNING GUESS: reject crossings within 15 degrees of parallel/antiparallel, expire observations after 180 seconds, retain five sighting notes. Lines are advanced by accumulated logged motion to account for sailing between observations.",
-    "visual": "VISUAL ESTIMATE: physical lap chart follows the sailor's eye anchor, below and ahead of the eye, never camera look or screen coordinates. M releases the mouse without moving the chart or camera. Chart size, texture resolution, update interval, zoom limits, compass placement and sighting-device dimensions are visual/readability tuning. No full-body animation is added."
+    "timing": "TUNING GUESS: seconds of simulated time. Holding a hand-bearing compass steady on a mark, glancing at the wake for speed, and pencilling a DR leg or a bearing line each take time while the boat keeps sailing.",
+    "aimToleranceDeg/aimAverageSeconds": "TUNING GUESS: a reading restarts if the aim strays this far from its own mean over the last 1.5 s. Waves rock the boat and swing the aim a few degrees either way (measured about +-5 degrees at a 1.5 s period), which averages out; a slow track on a mark moves the mean with it. The recorded bearing is that mean.",
+    "buoyAimDeg": "VISUAL ESTIMATE: a buoy counts as under the crosshair within this angle of the line of sight, generous because the boat rocks the crosshair around. The buoy named is the one under the crosshair for the largest share of the hold, at least buoyHoldFraction (30%) of it, so a moment off the buoy is forgiven. The sailor reads the buoy's painted ID by eye; the bearing still comes from the compass and no true boat position is used.",
+    "bowAimDeg/bowMinPitchDeg": "VISUAL ESTIMATE: lining the compass up with the boat's centreline, within bowAimDeg in heading and tilted down at least bowMinPitchDeg (down the deck toward the bow, where no buoy is), takes a bow bearing, which is remembered as the course. Sighting at the bow tip itself from an off-centre seat would read a parallax error, so the centreline is what counts.",
+    "speedStaleSeconds/maxTrack": "TUNING GUESS: a remembered speed older than two minutes is flagged OLD on the chart (speed by eye drifts as gusts and lulls pass); the pencil track keeps the last 40 plotted positions.",
+    "courseTickMinutes/wakeLookDeg": "VISUAL ESTIMATE: the course line ahead of the marker is ticked at 1, 2 and 5 minutes at the remembered speed. The wake can only be judged looking back: the line of sight must be within wakeLookDeg of straight astern.",
+    "chartSpan/minChartSpan/chartFitPadding": "VISUAL ESTIMATE: the chart frames the marker, track, course line and all buoys automatically with a 25% margin and never zooms in tighter than minChartSpan metres across the paper; chartSpan is the departure framing.",
+    "chartViewDeg": "VISUAL ESTIMATE: the chart counts as in view when the line of sight is within this angle of the paper centre; plotting pauses while it is not.",
+    "accuracy": "TUNING GUESS: radius of the sailor's doubt in metres. Known departure 5 m; a single line leaves along-line error (25 m); two good bearings 10 m. A plotted leg adds doubt in proportion to its length from a 10% speed-by-feel error combined with a 3 degree course error. Readings themselves are exact for now.",
+    "bearingStepDeg/minSightHorizontal": "TUNING GUESS: half-degree compass graduation; reject nearly vertical aiming where horizontal bearing is undefined/unusable. Bearing uses actual camera world direction, including boat heel and pitch.",
+    "minFixAngleDeg/maxBearingAge/noteCarryGrace/maxObservations": "TUNING GUESS: reject crossings within 15 degrees of parallel/antiparallel, expire observations after 180 seconds, allow one second of carry-forward without a remembered course and speed, retain five notes. Lines are advanced by the remembered course and speed to account for sailing between observations.",
+    "visual": "VISUAL ESTIMATE: physical lap chart follows the sailor's eye anchor, below and ahead of the eye, never camera look or screen coordinates. M releases the mouse without moving the chart or camera. Chart size, texture resolution, update interval, zoom limits and the yellow hand-bearing compass (modelled on a Plastimo Iris 50) are visual/readability tuning. No full-body animation is added."
   }
 }

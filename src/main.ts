@@ -4,7 +4,8 @@ import { DebugOverlay } from './debug/overlay';
 import { ControlInput, isTypingTarget } from './input/controls';
 import { MouseLook } from './input/mouseLook';
 import { NavigationInput } from './input/navigation';
-import { Navigation } from './nav/navigation';
+import { Navigation, type ReadingKind } from './nav/navigation';
+import { MemoryReadout } from './render/memory';
 import { Vector2 } from 'three';
 import { SceneView, type RenderPose } from './render/scene';
 import { ForceVectors } from './render/vectors';
@@ -40,7 +41,8 @@ setWaveParameters(
 );
 const fixed = new FixedStep(cfg.dt);
 
-const navigation = new Navigation(cfg.wind.gusts?.seed ?? 1);
+const navigation = new Navigation();
+const memory = new MemoryReadout();
 const view = new SceneView(boat, cfg.waves, cfg.env, cfg.wind, navigation);
 // ?wake=0 starts with the boat wake and bow wave off.
 if (params.get('wake') === '0') view.wake.enabled = false;
@@ -57,26 +59,7 @@ const clouds = numberParam('clouds');
 if (clouds !== null) view.sky.setCloudCoverage(clouds);
 const input = new ControlInput(view.renderer.domElement);
 const look = new MouseLook(view.renderer.domElement);
-const navigationInput = new NavigationInput(view.renderer.domElement, {
-  cockpit: () => view.mode === 'cockpit',
-  chartMode: (active) => {
-    input.setSuspended(active);
-    look.enabled = !active;
-    view.navigation.chart.setInteractive(active);
-  },
-  record: () => {
-    const bearing = view.navigation.bearing;
-    if (bearing !== null) {
-      navigation.record(bearing);
-      view.navigation.compasses.recorded(curr.t);
-    }
-  },
-  pick: (x, y) => view.navigation.pick(x, y, view.renderer.domElement),
-  down: (p) => view.navigation.chart.pointerDown(p),
-  move: (p) => view.navigation.chart.pointerMove(p),
-  up: (p) => view.navigation.chart.pointerUp(p),
-  zoom: (p, d) => view.navigation.chart.zoom(p, d),
-});
+const navigationInput = new NavigationInput(() => view.mode === 'cockpit');
 const vectors = new ForceVectors(boat, view.scene, view.boat.yaw, view.boat.heel);
 
 let prev: BoatState;
@@ -88,7 +71,7 @@ function resetBoat(): void {
   navigationInput.cancel();
   navigation.reset();
   view.navigation.chart.reset();
-  view.navigation.compasses.reset();
+  memory.update(navigation, false);
   input.reset();
   diagnostics = evaluate(curr, input.update(0), boat, cfg);
 }
@@ -148,24 +131,41 @@ let last = performance.now();
 let frameMs = 16.7;
 let cpuMs = 0;
 let lastPose: RenderPose | null = null;
+let wantedReading: ReadingKind | null = null;
 function frame(now: number): void {
   const t0 = performance.now();
   const frameSeconds = (now - last) / 1000;
   last = now;
   frameMs += (frameSeconds * 1000 - frameMs) * FRAME_SMOOTHING;
 
+  // F starts one reading when pressed: the wake if the sailor is looking astern with no buoy under the
+  // crosshair, otherwise a compass bearing (a buoy astern is still a bearing). It is not repeated
+  // until the key is released, and the kind is fixed for the whole press.
+  if (!navigationInput.held) {
+    if (wantedReading) navigation.cancelReading();
+    wantedReading = null;
+  } else if (!wantedReading) {
+    wantedReading = view.navigation.lookingAstern && !view.navigation.aimedBuoy ? 'speed' : 'bearing';
+    navigation.beginReading(wantedReading);
+  }
+  navigation.setAim(wantedReading === 'bearing' ? view.navigation.bearing : null);
+  navigation.setAimedBuoy(wantedReading === 'bearing' ? view.navigation.aimedBuoy : null);
+  navigation.setAimedBow(wantedReading === 'bearing' && view.navigation.aimedBow);
+  navigation.setAstern(view.navigation.lookingAstern);
+  const lookingAtChart = view.navigation.chartInView;
+  navigation.setLooking(lookingAtChart);
+  if (navigationInput.takeReckon()) {
+    if (lookingAtChart) navigation.beginAutoPlot();
+    else navigation.message = 'Look down at the chart to reckon.';
+  }
   const steps = fixed.advance(frameSeconds);
   for (let i = 0; i < steps; i++) {
     const result = step(curr, input.update(cfg.dt), boat, cfg);
     prev = curr;
     curr = result.state;
     diagnostics = result.diagnostics;
-    // Narrow instrument boundary: no true x/z or sway enters the navigation estimate.
-    navigation.advance({
-      t: curr.t,
-      heading: prev.heading + wrapPi(curr.heading - prev.heading) / 2,
-      speed: (prev.u + curr.u) / 2,
-    }, cfg.dt);
+    // Narrow instrument boundary: only the speed through the water; no true x/z, heading or sway.
+    navigation.advance({ t: curr.t, speed: (prev.u + curr.u) / 2 }, cfg.dt);
   }
 
   const a = fixed.alpha;
@@ -192,7 +192,8 @@ function frame(now: number): void {
     lookYaw: look.yaw,
     lookPitch: look.pitch,
   };
-  view.navigation.sighting = navigationInput.sighting;
+  view.navigation.sighting = wantedReading === 'bearing';
+  memory.update(navigation, view.mode === 'cockpit');
   view.navigation.chart.debugPosition = showNavigationTruth ? { x: curr.x, z: curr.z } : null;
   view.render(lastPose);
 

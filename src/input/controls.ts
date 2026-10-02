@@ -26,11 +26,10 @@ export class ControlInput {
   private sheet = INITIAL_SHEET;
   private sheetTarget = INITIAL_SHEET;
   private hike = 0;
-  private suspended = false;
 
   constructor(wheelTarget: HTMLElement) {
     window.addEventListener('keydown', (e) => {
-      if (this.suspended || isTypingTarget(e.target)) return;
+      if (isTypingTarget(e.target)) return;
       this.down.add(e.code);
     });
     window.addEventListener('keyup', (e) => this.down.delete(e.code));
@@ -38,7 +37,6 @@ export class ControlInput {
     wheelTarget.addEventListener(
       'wheel',
       (e) => {
-        if (this.suspended) return; // wheel belongs to the physical chart while plotting
         e.preventDefault();
         if (e.deltaY === 0) return;
         // Wheel down (toward the user) eases, wheel up sheets in.
@@ -54,16 +52,7 @@ export class ControlInput {
     this.hike = 0;
   }
 
-  /** Chart input holds the current control settings; no hidden steering or sheet changes. */
-  setSuspended(on: boolean): void {
-    this.suspended = on;
-    this.down.clear();
-    // Cancel any queued wheel travel, so sheet position really holds while charting.
-    if (on) this.sheetTarget = this.sheet;
-  }
-
   update(dt: number): Controls {
-    if (this.suspended) return { tiller: this.tiller, sheet: this.sheet, hike: this.hike };
     const k = this.down;
     const left = k.has('KeyA');
     const right = k.has('KeyD');

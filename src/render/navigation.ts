@@ -1,41 +1,90 @@
-/** Navigation scene objects and surface picking. Rendering reads the independent navigation model. */
+/** Navigation scene objects and what the sailor's eyes can tell. Rendering reads the independent navigation model. */
 import * as THREE from 'three';
-import type { Navigation } from '../nav/navigation';
-import type { PaperPoint } from '../nav/chart';
+import buoyData from '../data/buoys.json';
+import { NAVIGATION, type Navigation } from '../nav/navigation';
 import { sightingBearing } from '../nav/sighting';
 import { LapChart } from './chart';
-import { NavigationCompasses } from './compass';
+import { HandBearingCompass } from './compass';
 import type { BoatMesh } from './boatMesh';
+import { bodyToLocal } from './bodyFrame';
 
 export class NavigationView {
   readonly chart: LapChart;
-  readonly compasses: NavigationCompasses;
+  readonly compass: HandBearingCompass;
   sighting = false;
+  /** Horizontal direction the camera looks, graduated; null when aimed too steeply to read. */
   bearing: number | null = null;
-  private readonly raycaster = new THREE.Raycaster();
-  private readonly mouse = new THREE.Vector2();
+  /** The line of sight is near the lap chart, so pencil work can go on. */
+  chartInView = false;
+  /** The line of sight is back along the wake, where speed through the water can be judged. */
+  lookingAstern = false;
+  /** The painted buoy under the crosshair, by name; the eye reads its ID, the compass gives the bearing. */
+  aimedBuoy: string | null = null;
+  /** Sighting down the boat toward its bow: the compass is lined up with the centreline, tilted down. */
+  aimedBow = false;
+  private readonly bow = new THREE.Object3D();
+  private readonly forward = new THREE.Vector3();
+  private readonly buoyPosition = new THREE.Vector3();
+  private readonly chartPosition = new THREE.Vector3();
+  private readonly eyePosition = new THREE.Vector3();
   private readonly direction = new THREE.Vector3();
 
-  constructor(nav: Navigation, boat: BoatMesh, private readonly camera: THREE.PerspectiveCamera) {
+  constructor(
+    nav: Navigation, boat: BoatMesh, private readonly camera: THREE.PerspectiveCamera,
+    private readonly buoys: THREE.Object3D,
+  ) {
     this.chart = new LapChart(nav, boat.sailor.eye);
-    this.compasses = new NavigationCompasses(boat.layout, boat.heel, camera);
+    this.compass = new HandBearingCompass(camera);
+    // The bow tip, riding with the hull, is what the sailor sights along to read the boat's own course.
+    bodyToLocal(boat.layout.bowX, 0, boat.layout.sheerAt(boat.layout.bowX), this.bow.position);
+    boat.heel.add(this.bow);
   }
 
   /** Camera world direction includes look, heading, heel, and pitch. No target position is consulted. */
-  update(heading: number, time: number, cockpit: boolean): void {
+  update(cockpit: boolean): void {
     this.camera.updateWorldMatrix(true, false);
     this.bearing = sightingBearing(this.camera.getWorldDirection(this.direction));
-    this.compasses.update(heading, this.bearing, this.sighting && cockpit, time);
+    this.chart.object.getWorldPosition(this.chartPosition);
+    this.camera.getWorldPosition(this.eyePosition);
+    const toChart = this.chartPosition.sub(this.eyePosition).normalize();
+    this.chartInView = cockpit && toChart.dot(this.direction) > Math.cos(NAVIGATION.visual.chartViewDeg * Math.PI / 180);
+    this.aimedBuoy = cockpit ? this.buoyUnderCrosshair() : null;
+    this.aimedBow = cockpit && this.sightingAlongBow();
+    this.lookingAstern = cockpit && this.facingAstern();
+    this.compass.update(this.bearing, this.sighting && cockpit);
     this.chart.update();
   }
 
-  pick(clientX: number, clientY: number, canvas: HTMLElement): PaperPoint | null {
-    const rect = canvas.getBoundingClientRect();
-    this.mouse.set((clientX - rect.left) / rect.width * 2 - 1, 1 - (clientY - rect.top) / rect.height * 2);
-    this.chart.paper.updateWorldMatrix(true, false);
-    this.camera.updateWorldMatrix(true, false);
-    this.raycaster.setFromCamera(this.mouse, this.camera);
-    const hit = this.raycaster.intersectObject(this.chart.paper, false)[0];
-    return hit?.uv ? this.chart.fromUV(hit.uv) : null;
+  /** Aimed down the deck (not at the horizon, where buoys are) and within `bowAimDeg` of the centreline. */
+  private sightingAlongBow(): boolean {
+    const visual = NAVIGATION.visual;
+    if (this.direction.y > -Math.sin(visual.bowMinPitchDeg * Math.PI / 180)) return false;
+    this.bow.getWorldDirection(this.forward).negate(); // local -z is the boat's forward
+    const offset = Math.atan2(this.direction.x, -this.direction.z) - Math.atan2(this.forward.x, -this.forward.z);
+    return Math.abs(Math.atan2(Math.sin(offset), Math.cos(offset))) < visual.bowAimDeg * Math.PI / 180;
+  }
+
+  /** The buoy whose mid-height lies within `buoyAimDeg` of the line of sight, nearest to it first. */
+  private buoyUnderCrosshair(): string | null {
+    const limit = Math.cos(NAVIGATION.visual.buoyAimDeg * Math.PI / 180);
+    let best: string | null = null;
+    let bestDot = limit;
+    for (const buoy of this.buoys.children) {
+      buoy.getWorldPosition(this.buoyPosition);
+      this.buoyPosition.y += buoyData.height / 2;
+      const dot = this.buoyPosition.sub(this.eyePosition).normalize().dot(this.direction);
+      if (dot > bestDot) {
+        bestDot = dot;
+        best = buoy.name;
+      }
+    }
+    return best;
+  }
+
+  /** The heading of the line of sight is within `wakeLookDeg` of straight astern. */
+  private facingAstern(): boolean {
+    this.bow.getWorldDirection(this.forward).negate(); // local -z is the boat's forward
+    const offset = Math.atan2(this.direction.x, -this.direction.z) - Math.atan2(this.forward.x, -this.forward.z);
+    return Math.PI - Math.abs(Math.atan2(Math.sin(offset), Math.cos(offset))) < NAVIGATION.visual.wakeLookDeg * Math.PI / 180;
   }
 }

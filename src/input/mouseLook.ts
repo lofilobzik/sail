@@ -7,15 +7,13 @@ export class MouseLook {
   yaw = 0;
   /** Rad, + = look up. */
   pitch = 0;
-  /** Chart interaction releases the pointer; clicking the paper must not lock it again. */
-  enabled = true;
 
   constructor(private readonly canvas: HTMLElement) {
     canvas.addEventListener('click', () => {
-      if (this.enabled && document.pointerLockElement !== canvas) void canvas.requestPointerLock();
+      if (document.pointerLockElement !== canvas) void canvas.requestPointerLock();
     });
     document.addEventListener('mousemove', (e) => {
-      if (!this.enabled || document.pointerLockElement !== this.canvas) return;
+      if (document.pointerLockElement !== this.canvas) return;
       this.yaw -= e.movementX * SENSITIVITY;
       this.pitch = Math.min(MAX_PITCH, Math.max(-MAX_PITCH, this.pitch - e.movementY * SENSITIVITY));
     });

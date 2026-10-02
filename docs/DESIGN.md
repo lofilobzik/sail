@@ -90,9 +90,8 @@ Rules:
 | W / S | Ease mainsheet / sheet in, holds position |
 | Mouse wheel up / down | Sheet in / ease mainsheet in small steps, holds position |
 | Shift (hold) | Hike out (lean weight out), release to sit in |
-| B (hold), then click | Raise sighting compass; aim at a buoy and record the viewing bearing |
-| M | Toggle mouse interaction with the physical lap chart; no camera movement |
-| Esc while plotting | Leave chart interaction; click the scene to resume pointer-lock look |
+| F (hold) | Take a reading; where you look decides which. Looking astern at the wake (no buoy under the crosshair) judges boat speed. Anything else raises the yellow hand-bearing compass for a bearing: the buoy under the crosshair names itself, and lined up with the bow, tilted down, the bearing is your course. A buoy astern is still a bearing |
+| R | Reckon, with the chart in view: plot bearings taken since the last plot (a fix), otherwise the dead-reckoning leg |
 | H | Toggle test instruments (hidden by default) |
 
 Inputs are **continuous with rate limits**: no snapping. A tiller key ramps the tiller over a
@@ -166,30 +165,59 @@ The debug overlay is a developer tool, not a player aid, and is toggled off by d
 
 ## Navigation
 
-- Compass in view.
 - A physical paper-style chart on the sailor's lap, following the sailor between sides and while
   hiking. It is always there: look down to see it. No minimap, chart overlay, automatic camera
-  movement or chart raised into view. `M` releases the mouse to interact with its actual surface;
-  `M` or Escape ends plotting. Sailing and DR continue, with the current boat controls held while
-  plotting. Drag the chart to pan, use the wheel to zoom, or explicitly centre it on DR.
-- DR integrates compass heading x signed forward logged speed at the simulation timestep, as if
-  the sailor plotted it by hand. It **ignores leeway** and adds a small seeded calibration bias and
-  slow speed-log error, so it drifts from the true position. It starts at the known departure origin
-  and resets with the boat. Parameters live in `data/navigation.json` as TUNING GUESS values.
-- A cockpit compass reads true heading. Hold `B` to raise a sighting compass and aim its small
-  crosshair at a buoy; click to record the actual camera viewing bearing, including heel and pitch,
-  graduated to half a degree. There is no automatic exact bearing or automatic buoy identification.
-  Nearly vertical aiming has no usable horizontal bearing and cannot record a note.
-- Identify each recorded buoy on the chart: click the note's buoy field to cycle IDs, or click a
-  chart buoy to identify the newest selected note. Buoys have matching physical painted IDs,
+  movement or chart raised into view. It is read-only and driven entirely by the keyboard: the mouse
+  only looks around (and clicks the debug panel). The chart frames the marker, its track, the course
+  line and all the buoys by itself.
+- **No instrument tells you where you are.** The boat has no log, GPS or deck compass. The only
+  instruments are a yellow hand-bearing compass (modelled on a Plastimo Iris 50) and the sailor's
+  eyes. There is no live position: the chart shows only the last position pencilled onto it, how
+  long ago, and the sailor's doubt about it in metres (no circle is drawn).
+- **Readings take time.** Hold `F` to raise the compass and hold it on a mark (a ring fills; pointing
+  at the sky, or straying more than 10 degrees from your own recent mean aim, restarts it) to record
+  a bearing. The boat rocks in the waves, which swings the aim a few degrees either way; the
+  recorded bearing is the mean over the last 1.5 s, so a slow track on a buoy works. The buoy that
+  was under the crosshair for most of the hold (at least 30% of it, so a rocking boat is forgiven)
+  is named automatically. Lining the compass up with the boat's centreline, tilted down at least 8
+  degrees toward the bow for most of the hold, takes a bow bearing, which is remembered as the
+  course. Speed comes from the wake: press `F` looking astern (within about 50 degrees of straight
+  back) with no buoy under the crosshair; the kind of reading is fixed when the key goes down, and
+  turning away from the wake restarts the ring. A remembered speed older than two minutes is flagged
+  OLD on the chart, so the sailor knows to look at the wake again. A value is only taken when the
+  ring completes, is not repeated until the key is released, and is kept with its age.
+- **Remembered values are shown as faint text** in the lower-right corner (course, speed, and each
+  bearing with its buoy), never as an instrument. They are exactly true for now; no instrument
+  error, magnetic variation or deviation is modelled.
+- **One reckoning key.** `R`, with the chart in view, plots the bearings taken since the last plot if
+  there are any named ones (a fix, about 4 s per line), and otherwise the dead-reckoning leg
+  (about 5 s). Pencil work only progresses while you look at the paper; looking away pauses it
+  where it was. A leg carries the last pencilled position forward by the remembered course and
+  speed over the time since the last plot, ignoring leeway and anything that changed since the
+  readings. A fix takes the newest named note of each buoy, up to two: one projects the marker onto
+  its line, leaving along-line error; two adequately separated bearings give an intersection fix.
+  The marker only moves when the pencil work finishes. The doubt figure in the header grows with the
+  length of each leg plotted on memory and shrinks again on a fix.
+- **What the chart tells you, and nothing more.** The last plotted position is a simple pencil dot.
+  Every earlier plotted position stays as a dot on a thin pencilled
+  track. A dashed course line runs ahead of the dot with ticks at 1, 2 and 5 minutes at the
+  remembered speed, and a little triangle points where the last bow reading says we are heading.
+  Every buoy always shows the bearing and distance from the last plotted position, so the chart says
+  what to steer for; those figures go stale as the boat sails on until the next plot. Bearing lines
+  are drawn only for notes the next plot will use; plotted ones are rubbed out. There are no grid
+  numbers, track times or arrival times.
+- **Buoys identify themselves to the eye.** A sailor can read the painted ID of the buoy they are
+  looking at, so a buoy within 7 degrees of the line of sight counts as under the crosshair. This
+  uses only what the eye sees: the bearing still comes from the compass, and the boat's position is
+  never used. There is no manual selection: a note taken with no buoy under the crosshair stays
+  unnamed and is not used for fixes. Buoys have matching physical painted IDs,
   distinctive colours and topmarks; these are sandbox landmarks, not an IALA-marked course.
-- **Assisted plotting:** identified notes draw lines of position. Select one or two notes and
-  explicitly apply a correction. One note projects DR onto its line, leaving along-line error;
-  two adequately separated bearings give an intersection fix. Accumulated logged motion advances
-  older lines to the present, so sailing between sightings and during plotting is accounted for.
-  Bearings expire after 180 simulated seconds; near-parallel lines (within 15 degrees), unidentified
-  notes and bearings pointing away from their chosen buoys cannot provide a fix. These limits are
-  TUNING GUESS values, not a model of real compass accuracy.
+- **Bearing lines on the chart.** Each named note draws a pencil line from its buoy back along the
+  bearing, labelled with its angle; the ones the next plot will use are darker, and where two of
+  them cross the crossing is marked. Lines are advanced by the remembered course and speed, so
+  sailing between sightings is accounted for. Bearings expire after 180 simulated seconds;
+  near-parallel lines (within 15 degrees), unnamed notes and bearings pointing away from their
+  chosen buoys cannot provide a fix. These limits are TUNING GUESS values.
 - There is no "you are here" marker for the true position (a debug toggle may show it).
   The navigation estimator receives only instrument readings, never the true boat position;
   logical navigation coordinates are independent of the render-side floating origin.
@@ -214,10 +242,10 @@ One milestone per session. Commit after each working one.
    Wind-responsive broad waves/ripples, separate layer controls and seeded magnitude variation implemented.
    Render-side floating origin and precision-safe world-anchored wave phases implemented.
    Analytic sky (sun, clouds, water reflection, horizon fog) implemented.
-6. **Navigation:** compass, physical lap chart, identifiable buoys, dead reckoning with gentle drift,
-   assisted bearing fixes and running lines implemented as a preview. Pure navigation tests cover
-   drift, signed speed, reset, bearing geometry, time advancement and chart projection. Browser
-   checks intentionally skipped for this preview at the user's request.
+6. **Navigation:** yellow hand-bearing compass, wake speed reading, timed readings and plotting, faint
+   remembered values, physical lap chart with doubt circle and bearing lines, identifiable buoys.
+   Pure navigation tests cover timed holds, remembered values, leg plotting, bearing geometry, fixes and
+   chart projection. Browser smoke checked pointer-locked readings, the memory text, plotting and lines.
 7. **Sailor body and hiking pose (post-v1, as scoped above).**
 8. **Polish:** sound, tuning against the polar.
 

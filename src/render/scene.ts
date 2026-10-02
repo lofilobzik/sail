@@ -93,7 +93,9 @@ export class SceneView {
     this.camera.rotation.order = 'YXZ';
     this.boat.sailor.eye.add(this.camera);
     this.outsideCamera = new THREE.PerspectiveCamera(FOV_DEG * 0.8, 1, 0.1, 5000);
-    this.navigation = new NavigationView(navigation, this.boat, this.camera);
+    this.navigation = new NavigationView(navigation, this.boat, this.camera, this.buoys);
+    // Raising the compass for the first time must not compile shaders or upload textures mid-frame.
+    this.navigation.compass.prewarm(this.renderer, this.scene, this.camera);
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -157,7 +159,7 @@ export class SceneView {
     // Clouds drift with the mean wind, not each gust.
     this.sky.update(pose.t, meanWind(this.wind));
     this.sky.follow(cam);
-    this.navigation.update(pose.heading, pose.t, this.mode === 'cockpit');
+    this.navigation.update(this.mode === 'cockpit');
     this.renderer.render(this.scene, cam);
   }
 }

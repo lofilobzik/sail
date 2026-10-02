@@ -1,107 +1,156 @@
-/** Physical cockpit and hand-bearing compasses. Artwork and mesh details are VISUAL ESTIMATE. */
+/** Yellow hand-bearing compass, after a Plastimo Iris 50. Artwork and mesh details are VISUAL ESTIMATE. */
 import * as THREE from 'three';
 import { DEG } from '../sim/frames';
-import { NAVIGATION, bearingLabel, graduatedBearing } from '../nav/navigation';
-import type { BoatLayout } from './boatLayout';
-import { bodyToLocal } from './bodyFrame';
+import { NAVIGATION } from '../nav/navigation';
 
-function makeFace(width: number, height: number): { ctx: CanvasRenderingContext2D; texture: THREE.CanvasTexture } {
-  const canvas = document.createElement('canvas');
-  canvas.width = width; canvas.height = height;
-  const ctx = canvas.getContext('2d')!;
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return { ctx, texture };
+const CARD_SIZE = 512;
+const YELLOW = 0xf0c20a; // VISUAL ESTIMATE: moulded rubber body
+const READOUT_MIN_MS = 100; // VISUAL ESTIMATE: the prism number refreshes at 10 Hz at most
+
+function drawCard(ctx: CanvasRenderingContext2D): void {
+  const c = CARD_SIZE / 2;
+  ctx.fillStyle = '#ebe8d6';
+  ctx.fillRect(0, 0, CARD_SIZE, CARD_SIZE);
+  ctx.strokeStyle = '#1d2321'; ctx.fillStyle = '#1d2321';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let deg = 0; deg < 360; deg += 5) {
+    const a = deg * DEG;
+    const x = Math.sin(a), y = -Math.cos(a);
+    const major = deg % 30 === 0;
+    ctx.lineWidth = major ? 4 : deg % 10 === 0 ? 3 : 2;
+    ctx.beginPath();
+    ctx.moveTo(c + x * (c - 8), c + y * (c - 8));
+    ctx.lineTo(c + x * (c - (major ? 40 : deg % 10 === 0 ? 30 : 20)), c + y * (c - (major ? 40 : deg % 10 === 0 ? 30 : 20)));
+    ctx.stroke();
+    if (major) {
+      const letter = ['N', 'E', 'S', 'W'][deg / 90];
+      ctx.save();
+      ctx.translate(c + x * (c - 78), c + y * (c - 78));
+      ctx.rotate(a);
+      ctx.font = letter ? 'bold 54px Georgia, serif' : 'bold 38px ui-monospace, monospace';
+      ctx.fillText(letter ?? String(deg), 0, 0);
+      ctx.restore();
+    }
+  }
+  ctx.fillStyle = '#16191a';
+  ctx.beginPath(); ctx.arc(c, c, 62, 0, 2 * Math.PI); ctx.fill();
 }
 
-export class NavigationCompasses {
-  readonly sight = new THREE.Group();
-  private readonly cockpit = makeFace(512, 512);
-  private readonly hand = makeFace(512, 256);
-  private lastHeading = NaN;
-  private lastSight = '';
-  private noticeUntil = -Infinity;
+export class HandBearingCompass {
+  readonly group = new THREE.Group();
+  private readonly card: THREE.Mesh;
+  private readonly readout = document.createElement('canvas');
+  private readonly readoutTexture: THREE.CanvasTexture;
+  private lastLabel = '';
+  private lastDraw = -Infinity;
 
-  constructor(layout: BoatLayout, heel: THREE.Group, camera: THREE.PerspectiveCamera) {
+  constructor(camera: THREE.PerspectiveCamera) {
     const v = NAVIGATION.visual;
-    const mounting = new THREE.Group();
-    const x = layout.cockpit.fore - v.compassAftOfCockpitFore;
-    bodyToLocal(x, 0, layout.sheerAt(x) + v.compassAboveDeck, mounting.position);
-    mounting.rotation.x = -Math.PI / 2;
-    const rim = new THREE.Mesh(new THREE.CircleGeometry(v.compassRadius * 1.15, 32), new THREE.MeshStandardMaterial({ color: 0x253634, roughness: 0.7 }));
-    const face = new THREE.Mesh(new THREE.CircleGeometry(v.compassRadius, 32), new THREE.MeshBasicMaterial({ map: this.cockpit.texture }));
-    face.position.z = 0.002;
-    mounting.add(rim, face);
-    heel.add(mounting);
+    const R = v.handCompassRadius;
+    const D = v.handCompassDepth;
+    // Emissive lift keeps the moulded rubber a clear yellow under the scene's sun and sky.
+    const yellow = new THREE.MeshStandardMaterial({ color: YELLOW, emissive: 0x6b5200, roughness: 0.55, side: THREE.DoubleSide });
 
-    const back = new THREE.Mesh(new THREE.BoxGeometry(v.sightWidth + 0.01, v.sightHeight + 0.01, 0.012), new THREE.MeshBasicMaterial({ color: 0x263735 }));
-    const glass = new THREE.Mesh(new THREE.PlaneGeometry(v.sightWidth, v.sightHeight), new THREE.MeshBasicMaterial({ map: this.hand.texture }));
-    glass.position.z = 0.007;
+    // Moulded body: a lathe profile (radius, height) turned about +z.
+    const profile = [
+      [0, 0], [0.88, 0], [0.98, 0.12], [1, 0.5], [0.94, 0.85], [0.8, 1], [0.74, 0.9], [0.72, 0.78], [0, 0.78],
+    ].map(([r, h]) => new THREE.Vector2(r! * R, h! * D));
+    const body = new THREE.Mesh(new THREE.LatheGeometry(profile, 48), yellow);
+    body.rotation.x = Math.PI / 2;
+    const dialZ = 0.78 * D + 0.0004;
+
+    const cardCanvas = document.createElement('canvas');
+    cardCanvas.width = cardCanvas.height = CARD_SIZE;
+    drawCard(cardCanvas.getContext('2d')!);
+    const cardTexture = new THREE.CanvasTexture(cardCanvas);
+    cardTexture.colorSpace = THREE.SRGBColorSpace;
+    cardTexture.anisotropy = 4;
+    this.card = new THREE.Mesh(new THREE.CircleGeometry(0.72 * R, 64), new THREE.MeshBasicMaterial({ map: cardTexture }));
+    this.card.position.z = dialZ;
+
+    // Raised prism at the far edge, magnifying the card under the red lubber line.
+    const prism = new THREE.Mesh(
+      new THREE.BoxGeometry(0.42 * R, 0.26 * R, 0.32 * D),
+      new THREE.MeshStandardMaterial({ color: 0xd4eef2, transparent: true, opacity: 0.45, roughness: 0.1 }),
+    );
+    prism.position.set(0, 0.52 * R, dialZ + 0.16 * D);
+    this.readout.width = 256; this.readout.height = 96;
+    this.readoutTexture = new THREE.CanvasTexture(this.readout);
+    this.readoutTexture.colorSpace = THREE.SRGBColorSpace;
+    const readout = new THREE.Mesh(new THREE.PlaneGeometry(0.4 * R, 0.15 * R), new THREE.MeshBasicMaterial({ map: this.readoutTexture }));
+    readout.position.set(0, 0.52 * R, dialZ + 0.325 * D);
+
+    const red = new THREE.MeshBasicMaterial({ color: 0xd8242a });
+    const lubber = new THREE.Mesh(new THREE.PlaneGeometry(0.028 * R, 0.5 * R), red);
+    lubber.position.set(0, 0.4 * R, dialZ + 0.001);
+    const arrowShape = new THREE.Shape([new THREE.Vector2(0, 0.24 * R), new THREE.Vector2(-0.07 * R, -0.02 * R), new THREE.Vector2(0.07 * R, -0.02 * R)]);
+    const arrow = new THREE.Mesh(new THREE.ShapeGeometry(arrowShape), red);
+    arrow.position.z = dialZ + 0.0012;
+
+    // Moulded side lugs and the lanyard.
+    const lugGeometry = new THREE.SphereGeometry(0.24 * R, 16, 12);
+    const lugs = [-1, 1].map((side) => {
+      const lug = new THREE.Mesh(lugGeometry, yellow);
+      lug.scale.set(1.1, 0.8, 0.7);
+      lug.position.set(side * 0.98 * R, -0.1 * R, 0.35 * D);
+      return lug;
+    });
+    const lanyard = new THREE.Mesh(
+      new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, -0.96 * R, 0.3 * D), new THREE.Vector3(0.01, -1.25 * R, 0.1 * D),
+        new THREE.Vector3(-0.02, -1.55 * R, -0.2 * D), new THREE.Vector3(0.015, -1.8 * R, -0.4 * D),
+      ]), 16, 0.0011, 5),
+      new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 }),
+    );
+
     const device = new THREE.Group();
-    device.position.set(0, -v.sightBelowEye, -v.sightDistance);
-    device.add(back, glass);
+    device.add(body, this.card, prism, readout, lubber, arrow, ...lugs, lanyard);
+    device.position.set(v.handCompassOffsetRight, -v.handCompassBelowEye, -v.handCompassDistance);
+    device.rotation.x = -v.handCompassTiltDeg * DEG;
+
     const s = v.reticleSize;
+    const z = -v.handCompassDistance * 2;
     const reticle = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-s, 0, -v.sightDistance), new THREE.Vector3(s, 0, -v.sightDistance),
-      new THREE.Vector3(0, -s, -v.sightDistance), new THREE.Vector3(0, s, -v.sightDistance),
+      new THREE.Vector3(-s, 0, z), new THREE.Vector3(s, 0, z),
+      new THREE.Vector3(0, -s, z), new THREE.Vector3(0, s, z),
     ]), new THREE.LineBasicMaterial({ color: 0xf3e7b9 }));
-    this.sight.add(device, reticle);
-    this.sight.visible = false;
-    camera.add(this.sight);
+    this.group.add(device, reticle);
+    this.group.visible = false;
+    camera.add(this.group);
   }
 
-  recorded(time: number): void {
-    this.noticeUntil = time + NAVIGATION.visual.recordNoticeSeconds;
+  /** `bearing` is the horizontal direction the camera looks; null when aimed too steeply to read. */
+  update(bearing: number | null, raised: boolean): void {
+    this.group.visible = raised;
+    if (!raised) return;
+    if (bearing !== null) this.card.rotation.z = bearing;
+    const label = bearing === null ? '---' : String(Math.round(bearing / DEG) % 360).padStart(3, '0');
+    if (label === this.lastLabel) return;
+    // The number is a tiny texture upload; a rocking boat changes it nearly every frame, so cap the rate.
+    const now = performance.now();
+    if (now - this.lastDraw < READOUT_MIN_MS) return;
+    this.lastDraw = now;
+    this.drawReadout(label);
   }
 
-  reset(): void {
-    this.noticeUntil = -Infinity;
-    this.lastSight = '';
-    this.sight.visible = false;
-  }
-
-  update(heading: number, bearing: number | null, sighting: boolean, time: number): void {
-    const h = graduatedBearing(heading);
-    if (h !== this.lastHeading) {
-      this.drawCockpit(h);
-      this.lastHeading = h;
-    }
-    this.sight.visible = sighting;
-    if (!sighting) return;
-    const notice = time < this.noticeUntil;
-    const key = `${bearing}:${notice}`;
-    if (key !== this.lastSight) {
-      const ctx = this.hand.ctx;
-      ctx.fillStyle = '#e3dfc9'; ctx.fillRect(0, 0, 512, 256);
-      ctx.strokeStyle = '#708075'; ctx.lineWidth = 8; ctx.strokeRect(5, 5, 502, 246);
-      ctx.fillStyle = '#2b3b35'; ctx.textAlign = 'center';
-      ctx.font = 'bold 27px Georgia, serif'; ctx.fillText('SIGHTING COMPASS', 256, 43);
-      ctx.font = 'bold 78px ui-monospace, monospace'; ctx.fillText(bearing === null ? '—' : bearingLabel(bearing), 256, 139);
-      ctx.font = '25px ui-monospace, monospace';
-      ctx.fillText(bearing === null ? 'Aim toward the horizon' : notice ? 'NOTED · identify on chart' : 'CLICK: note · release B: lower', 256, 208);
-      this.hand.texture.needsUpdate = true;
-      this.lastSight = key;
-    }
-  }
-
-  private drawCockpit(heading: number): void {
-    const ctx = this.cockpit.ctx;
-    ctx.fillStyle = '#e3dfc9'; ctx.fillRect(0, 0, 512, 512);
-    ctx.strokeStyle = '#52675d'; ctx.fillStyle = '#293d36'; ctx.lineWidth = 3;
+  private drawReadout(label: string): void {
+    this.lastLabel = label;
+    const ctx = this.readout.getContext('2d')!;
+    ctx.fillStyle = '#f2f0e0'; ctx.fillRect(0, 0, 256, 96);
+    ctx.fillStyle = '#1d2321'; ctx.font = 'bold 78px ui-monospace, monospace';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    for (let deg = 0; deg < 360; deg += 10) {
-      const angle = deg * DEG - heading;
-      const x = Math.sin(angle), y = -Math.cos(angle);
-      ctx.beginPath(); ctx.moveTo(256 + x * 205, 256 + y * 205);
-      ctx.lineTo(256 + x * (deg % 30 === 0 ? 181 : 192), 256 + y * (deg % 30 === 0 ? 181 : 192)); ctx.stroke();
-      if (deg % 30 === 0) {
-        ctx.font = deg % 90 === 0 ? 'bold 38px Georgia, serif' : '25px ui-monospace, monospace';
-        ctx.fillText(deg % 90 === 0 ? ['N', 'E', 'S', 'W'][deg / 90]! : String(deg), 256 + x * 155, 256 + y * 155);
-      }
-    }
-    ctx.fillStyle = '#a14632'; ctx.beginPath(); ctx.moveTo(256, 22); ctx.lineTo(246, 48); ctx.lineTo(266, 48); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#293d36'; ctx.font = 'bold 45px ui-monospace, monospace'; ctx.fillText(bearingLabel(heading), 256, 253);
-    ctx.font = '25px Georgia, serif'; ctx.fillText('TRUE HEADING', 256, 300);
-    this.cockpit.texture.needsUpdate = true;
+    ctx.fillText(label, 128, 50);
+    this.readoutTexture.needsUpdate = true;
+  }
+
+  /** Compile the compass's shaders and upload its textures now, so raising it never hitches a frame. */
+  prewarm(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera): void {
+    const wasVisible = this.group.visible;
+    this.group.visible = true;
+    this.drawReadout('000');
+    renderer.initTexture(this.readoutTexture);
+    renderer.initTexture((this.card.material as THREE.MeshBasicMaterial).map!);
+    renderer.compile(scene, camera);
+    this.group.visible = wasVisible;
   }
 }
