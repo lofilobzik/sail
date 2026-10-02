@@ -17,13 +17,13 @@ function run(cfg: SimConfig, s: BoatState, seconds: number, sheet = 0.3): BoatSt
 describe('sim integration', () => {
   it('settles and then stays still in zero wind (no jitter, no drift)', () => {
     const cfg = { ...defaultConfig(), wind: { speedKn: 0, fromDeg: 0 } };
-    // The sailor moves out to the side deck first, which heels and nudges the boat.
-    // Hull and foil drag are quadratic, so the residual drift decays slowly (~1/t).
+    // With the sail luffing in no wind the sailor sits at the centreline, so the boat should not move at all;
+    // with luff-centring off the sailor's offset heeled and nudged it, and the residual drift decayed slowly.
     const settled = run(cfg, initialState(0, 0), 120);
     const later = run(cfg, settled, 30);
     const speed = (s: BoatState) => Math.hypot(s.u, s.v);
     expect(speed(settled)).toBeLessThan(5e-3);
-    expect(speed(later)).toBeLessThan(speed(settled));
+    expect(speed(later)).toBeLessThanOrEqual(speed(settled));
     // Heeled by the sailor's weight, the hull's zero-lift drift turns the creeping boat very slowly.
     expect(Math.abs(later.r)).toBeLessThan(1e-4);
     expect(Math.abs(later.p)).toBeLessThan(1e-6);
