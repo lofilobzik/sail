@@ -220,7 +220,7 @@ from a configurable direction. Do not hardcode wind anywhere else.
   arms at the 19.47 degree half-angle. Decay exponents s^-1/3 (divergent) and s^-1/2 (transverse),
   envelope widths and age decay are TUNING GUESS. Footprint filtering matches the water grid (full at 8
   samples per wavelength, none below 4).
-- Bow wave height is `bowHeadFrac V^2/2g` (`bowHeadFrac = 0.2`, TUNING GUESS fraction of stagnation
+- Bow wave height is `bowHeadFrac V^2/2g` (`bowHeadFrac = 0.06`, TUNING GUESS fraction of stagnation
   head). The chevron and bow foam start at the foremost sampled hull/sea contact. Cached loft sections
   transform in the boat mesh's heel/pitch/yaw order; the search samples the local Gerstner surface at
   those transformed horizontal positions, including heave. The contact moves aft when the bow lifts,
@@ -242,7 +242,10 @@ from a configurable direction. Do not hardcode wind anywhere else.
   sea, so `wake.json` has a render-only `visualGain` (3) on the Kelvin amplitude and `bowHeadFrac` is 0.5.
   Both are TUNING GUESS, chosen for readability, not realism. Not yet checked: cockpit view, turns/tacks,
   other speeds, frame cost.
-- Current render gain is 1.5 and bowHeadFrac is 0.2, reduced after the original pass described above.
+- Current render gain is 0.4 and bowHeadFrac is 0.06. The isolated boat-wake screenshot still looked
+  oversized at 1.5/0.2, so Kelvin heights are reduced by about 73% and bow heights by 70%. These are
+  visual TUNING GUESS choices, not measured Laser wake calibration. Wave lengths, decay, foam settings,
+  hull-contact attachment, sailing physics and shader algorithms are unchanged.
 - Contact repair verification: actual `WakeView.update` exercised headlessly; at 2 m/s, 10 degrees
   bow-up moves the contact about 1.5 m aft with bow height unchanged at 0.0408 m. A deterministic
   240-frame 16-kn sea sweep retains wet contact throughout. Contact regressions cover lift/drop,
@@ -256,6 +259,11 @@ from a configurable direction. Do not hardcode wind anywhere else.
   covers the pinned attachment, positive/bounded aft-decaying displacement and spatial/time wrap
   continuity. Build, lint and all 95 tests pass. No browser checks were run at the user's request;
   these CPU maps do not verify final in-game lighting, foam appearance or GPU frame cost.
+- Smaller-wave verification: actual `WakeView.update` exercised on flat water at 1/2/3/4 m/s.
+  At 2 m/s the local bow height is 1.22 cm (previously 4.08 cm), and packed Kelvin source amplitude is
+  1.37 cm (previously 5.16 cm); this is source amplitude before spatial envelope/decay, not every crest's
+  height. Sampled Kelvin heights scale by 0.4/1.5. Contact lift, dry/re-entry and wake-disable paths pass.
+  Build, lint and all 95 tests pass. No browser checks were run; final visual appearance is unverified.
 
 **Rendering repair verification**
 - Isolated water-only scene, fixed camera and time: the original 2 cm crossing of a 5 m snap boundary

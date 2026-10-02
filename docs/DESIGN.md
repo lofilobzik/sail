@@ -104,6 +104,8 @@ fraction of a second and holds its position. Same idea for the sheet.
   heel: it moves aft when the bow lifts instead of fading at the design stem. Smooth world-anchored
   variation bends and strengthens the two crest arms differently; it fades in aft of contact to keep
   the attachment pinned. This is visual only and never changes the sim.
+  Subdued height tuning uses Kelvin `visualGain = 0.4` and `bowHeadFrac = 0.06`; both are render-only
+  TUNING GUESS values, not measured wake data. This changes no shader algorithms or sampling cost.
   Parameters in `data/wake.json`; math in `render/wake/` (no Three.js, tested);
   debug toggle "wake (visual)" and `?wake=0`.
 - **Sky:** Three.js analytic Sky shader. No screen-space reflections, no heavy post-processing.
