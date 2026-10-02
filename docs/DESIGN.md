@@ -31,7 +31,8 @@ Keep the boat data-driven so that is possible later.
 - Controls: mouse look, keyboard for tiller / sheet / hiking.
 - Navigation: compass plus a paper-style chart with a drifting dead-reckoning marker,
   corrected by bearings to buoys.
-- Visuals: as realistic as an integrated laptop GPU allows, with a quality setting.
+- Visuals: as realistic as an integrated laptop GPU allows, at one fixed quality level. There are no
+  quality tiers: every effect is built cheap enough to run everywhere.
 
 ## Non-goals for v1
 
@@ -116,7 +117,18 @@ fraction of a second and holds its position. Same idea for the sheet.
   Height, foam and lifetime/resolution parameters are explicit TUNING GUESS values in `wake.json`.
   Parameters in `data/wake.json`; math in `render/wake/` (no Three.js, tested);
   debug toggle "wake (visual)" and `?wake=0`.
-- **Sky:** Three.js analytic Sky shader. No screen-space reflections, no heavy post-processing.
+- **Sky:** one analytic sky function (`render/sky.ts`, adapted from three's examples Sky: Preetham
+  daylight scattering, sun disc, procedural clouds) is the sky for everything. The dome shades with
+  it, the water reflects it per pixel and the water's distance fog blends toward its horizon colour,
+  so the horizon, sun and clouds always agree. Pure atmosphere math, the horizon fog colour and sun
+  light tint are in `render/skyModel.ts` (tested); parameters in `data/sky.json`.
+  The sun is fixed in play (default elevation 59, bearing 124, the old light direction); set it with
+  `?sunElevation=`, `?sunAzimuth=` or the debug panel. Light colour and strength follow the sun
+  (warmer and dimmer low, off below the horizon). Clouds drift with the true wind (`?clouds=0..1`
+  coverage, debug panel) and are the only moving part. The cloud noise is a seeded 256 px tiling
+  texture read with hardware filtering rather than Sky.js's per-pixel hash, which cost about 2.8 ms
+  per frame on an M1; the whole sky is about 1 ms. The dome draws last at the far plane so water and
+  boat pixels skip it. No screen-space reflections, no heavy post-processing, no renderer tone mapping.
 - **Boat:** procedural hull lofted from a few cross-sections using class dimensions,
   plus spars and fittings. Low triangle count.
 - **Sail:** cloth-like visual (small Verlet grid, around 20x12 points, pinned along luff / foot).
@@ -124,7 +136,6 @@ fraction of a second and holds its position. Same idea for the sheet.
   `luffAmount` value (0 = trimmed, 1 = fully luffing) and the cloth reads it to flutter.
   The cloth never feeds back into forces.
 - **Sailor:** v1 shows hands, tiller extension and sheet. Full body and hiking pose come later.
-- **Quality setting** from the start (water grid resolution, cloth resolution, shadows).
 
 ## In-world cues (no HUD)
 
@@ -161,10 +172,10 @@ One milestone per session. Commit after each working one.
 5. **Water and sky:** shared Gerstner waves with physical rocking and orbital foil cross-flow implemented.
    Wind-responsive broad waves/ripples, separate layer controls and seeded magnitude variation implemented.
    Render-side floating origin and precision-safe world-anchored wave phases implemented.
-   Analytic sky and quality setting remain planned, outside the water/waves change.
+   Analytic sky (sun, clouds, water reflection, horizon fog) implemented.
 6. **Navigation:** compass, chart, buoys, dead reckoning with drift, bearing fixes.
 7. **Sailor body and hiking pose.**
-8. **Polish:** sound, quality settings, tuning against the polar.
+8. **Polish:** sound, tuning against the polar.
 
 Later: full wave/buoyancy response, gusts and wind shifts,
 capsize, planing and stronger wind, third-person camera, cruising / management layer.

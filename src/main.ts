@@ -6,7 +6,8 @@ import { MouseLook } from './input/mouseLook';
 import { Vector2 } from 'three';
 import { SceneView, type RenderPose } from './render/scene';
 import { ForceVectors } from './render/vectors';
-import { DEG, FixedStep, WAVE_PARAMETERS, buildBoat, clamp, defaultConfig, evaluate, initialState, setWaveParameters, setWaveWind, step, wrapPi, type BoatState, type Diagnostics } from './sim';
+import { DEG, FixedStep, WAVE_PARAMETERS, buildBoat, clamp, defaultConfig, evaluate, getWind, initialState, setWaveParameters, setWaveWind, step, wrapPi, type BoatState, type Diagnostics } from './sim';
+import { SKY } from './render/skyModel';
 
 const START_HEADING_DEG = 90; // TUNING GUESS: beam reach for the default wind from 0°
 const START_SPEED = 1; // TUNING GUESS: initial boat speed, m/s
@@ -37,6 +38,17 @@ const fixed = new FixedStep(cfg.dt);
 const view = new SceneView(boat, cfg.waves, cfg.env);
 // ?wake=0 starts with the boat wake and bow wave off.
 if (params.get('wake') === '0') view.wake.enabled = false;
+
+// Checking aids: ?sunElevation=<deg>, ?sunAzimuth=<compass deg>, ?clouds=<0..1 coverage>.
+const numberParam = (name: string): number | null => {
+  const raw = params.get(name);
+  return raw !== null && Number.isFinite(Number(raw)) ? Number(raw) : null;
+};
+let sunElevation = clamp(numberParam('sunElevation') ?? SKY.sunElevationDeg, -10, 90);
+let sunAzimuth = numberParam('sunAzimuth') ?? SKY.sunAzimuthDeg;
+view.sky.setSun(sunElevation, sunAzimuth);
+const clouds = numberParam('clouds');
+if (clouds !== null) view.sky.setCloudCoverage(clouds);
 const input = new ControlInput(view.renderer.domElement);
 const look = new MouseLook(view.renderer.domElement);
 const vectors = new ForceVectors(boat, view.scene, view.boat.yaw, view.boat.heel);
@@ -54,6 +66,20 @@ resetBoat();
 
 const overlay = new DebugOverlay(cfg, resetBoat);
 overlay.addToggle('wake (visual)', view.wake.enabled, (v) => (view.wake.enabled = v));
+overlay.addNumber('sun elevation ° (-10–90)', sunElevation, (v, el) => {
+  sunElevation = clamp(v, -10, 90);
+  view.sky.setSun(sunElevation, sunAzimuth);
+  el.value = String(sunElevation);
+});
+overlay.addNumber('sun azimuth ° (compass)', sunAzimuth, (v, el) => {
+  sunAzimuth = ((v % 360) + 360) % 360;
+  view.sky.setSun(sunElevation, sunAzimuth);
+  el.value = String(sunAzimuth);
+});
+overlay.addNumber('cloud coverage (0–1)', view.sky.cloudCoverage, (v, el) => {
+  view.sky.setCloudCoverage(v);
+  el.value = String(view.sky.cloudCoverage);
+});
 const hud = new TestHud(boat);
 
 // V: switch between the first-person view and an outside view for checking the model.
@@ -116,6 +142,9 @@ function frame(now: number): void {
     lookYaw: look.yaw,
     lookPitch: look.pitch,
   };
+  const wind = getWind({ x, z }, lastPose.t, cfg.wind);
+  view.wind.x = wind.x;
+  view.wind.z = wind.z;
   view.render(lastPose);
 
   if (overlay.visible) vectors.update(diagnostics, view.boat.yaw.position, overlay.arrows);

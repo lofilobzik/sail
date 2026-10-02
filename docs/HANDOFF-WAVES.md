@@ -139,7 +139,8 @@ V switches cockpit/outside view, H toggles test HUD, F3/Backquote opens wave con
 ## Remaining limits
 
 The far field is a deliberately filtered approximation, not the exact unfiltered CPU surface.
-The reflected sky is still a color gradient, not scene/environment reflections. No new empirical
+The reflected sky is the shared analytic sky (`render/sky.ts`: sun, clouds, haze), not scene/environment
+reflections: the boat, buoys and wake are not mirrored. No new empirical
 Laser calibration or target-laptop GPU performance qualification. Distant coordinates and long elapsed
 times were exercised synthetically, not through a multi-month session. CPU doubles remain finite;
 the floating origin is not an unlimited-distance guarantee.

@@ -1,0 +1,30 @@
+{
+  "sunElevationDeg": 59,
+  "sunAzimuthDeg": 124,
+  "turbidity": 2,
+  "rayleigh": 1,
+  "mieCoefficient": 0.005,
+  "mieDirectionalG": 0.8,
+  "exposure": 0.25,
+  "cloudScale": 0.0002,
+  "cloudSpeedPerWindMs": 0.0000055,
+  "cloudCoverage": 0.4,
+  "cloudDensity": 0.4,
+  "cloudElevation": 0.5,
+  "waterCloudOctaves": 3,
+  "waterCloudFresnelFrom": 0.02,
+  "waterCloudFresnelFull": 0.06,
+  "sunLightIntensity": 1.5,
+  "hemisphereIntensity": 1.2,
+  "hemisphereNightFrac": 0.15,
+  "sources": {
+    "scattering": "Preetham, Shirley and Smits, A Practical Analytic Model for Daylight (the model in three's examples Sky, node_modules/three/examples/jsm/objects/Sky.js, three 0.186.1). totalRayleigh, MieConst, K, the zenith optical lengths, the earth-shadow cutoff and the cloud noise/lighting come from that file; src/render/sky.ts adapts the fragment shader into a function shared by the dome and the water reflection. The sun-fade term is 1 for a unit sun vector and is omitted. One deliberate change: Sky.js evaluates its cloud noise with a per-pixel hash, which cost about +2.8 ms/frame on an Apple M1 at 1600x900 here; this sim reads a seeded 256x256 tiling lattice texture through hardware bilinear filtering instead (one fetch per noise, about +0.7 ms). NOISE_GAIN 0.63 matches the noise statistics (0.282 / 0.449 measured on 40000 samples) so coverage and density mean what they do in Sky.js.",
+    "sunElevationDeg/sunAzimuthDeg": "VISUAL ESTIMATE: the fixed direction the earlier hard-coded sun light used, (30, 60, 20) with +x east and +z south: elevation 59 degrees, compass bearing 124 degrees. Settable with ?sunElevation= and ?sunAzimuth= and in the debug panel.",
+    "turbidity/rayleigh/mieCoefficient/mieDirectionalG": "Sky.js defaults (2, 1, 0.005, 0.8), a clear sky. TUNING GUESS for this sim.",
+    "exposure": "TUNING GUESS: scale in the 1 - exp(-exposure * radiance) tone curve applied inside the shared sky function, so the dome, water reflection and horizon fog stay in the same display range without enabling renderer tone mapping (which would change the boat and water).",
+    "cloudScale/cloudElevation/cloudCoverage/cloudDensity": "Sky.js defaults. TUNING GUESS for this sim. Coverage is also set by ?clouds= and the debug panel.",
+    "cloudSpeedPerWindMs": "TUNING GUESS: clouds drift with the true wind. Sky.js cloudSpeed 0.00002 per second divided by 3.6 m/s (7 kn), so the pattern moves at the Sky.js rate in the default wind and not at all in a calm. Drift is integrated per frame so changing the wind never jumps the clouds.",
+    "waterCloudOctaves/waterCloudFresnelFrom/waterCloudFresnelFull": "TUNING GUESS, cost control: the water reflection uses 3 of the dome's 4 cloud octaves and blends clouds in from a Fresnel reflectance of 0.02 to full weight at 0.06, so weakly reflecting steep views skip the cloud noise. The horizon fog uses the clear sky.",
+    "sunLightIntensity/hemisphereIntensity/hemisphereNightFrac": "TUNING GUESS: the earlier fixed light intensities (1.5 and 1.2). The sun light is scaled by the Sky.js day factor smoothstep(-0.08, 0.3, sin(elevation)) and tinted by the atmosphere's transmittance toward the sun; the hemisphere light keeps hemisphereNightFrac of its strength when the sun is down."
+  }
+}

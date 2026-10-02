@@ -6,7 +6,8 @@ import * as THREE from 'three';
 import type { BoatModel, EnvironmentConfig, Vec2 } from '../sim';
 import { createWaveSample, sampleWaves, waveAmplitude, type WaveConfig } from '../sim/waves';
 import { createBoatMesh, type BoatMesh, type BoatPose } from './boatMesh';
-import { SKY_HORIZON, createBuoys, createSky } from './environment';
+import { createBuoys } from './environment';
+import { SkyView } from './sky';
 import { WakeView } from './wake';
 import { createWater, type WaterView } from './water';
 
@@ -42,12 +43,14 @@ export class SceneView {
   readonly outsideCamera: THREE.PerspectiveCamera;
   readonly boat: BoatMesh;
   readonly wake: WakeView;
+  readonly sky: SkyView;
+  /** True wind velocity, m/s world x/z; drives cloud drift. Set by the caller each frame. */
+  readonly wind: Vec2 = { x: 0, z: 0 };
   /** Logical position of render-local zero, continuously following the interpolated boat. */
   readonly origin: Vec2 = { x: 0, z: 0 };
   mode: CameraMode = 'cockpit';
   private readonly water: WaterView;
   private readonly grid: THREE.GridHelper;
-  private readonly sky: THREE.Mesh;
   private readonly buoys = createBuoys();
   private readonly surface = createWaveSample();
 
@@ -55,17 +58,16 @@ export class SceneView {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     document.body.appendChild(this.renderer.domElement);
-    this.scene.background = new THREE.Color(SKY_HORIZON);
-    this.scene.fog = new THREE.Fog(SKY_HORIZON, FOG_NEAR, FOG_FAR);
+    this.scene.fog = new THREE.Fog(0xffffff, FOG_NEAR, FOG_FAR); // colour set by the sky
 
-    const hemisphere = new THREE.HemisphereLight(0xdfefff, 0x203040, 1.2); // TUNING GUESS
+    // Strengths and the sun direction are set by the sky (data/sky.json, ?sunElevation=).
+    const hemisphere = new THREE.HemisphereLight(0xdfefff, 0x203040);
     this.scene.add(hemisphere);
-    const sun = new THREE.DirectionalLight(0xffffff, 1.5); // TUNING GUESS
-    sun.position.set(30, 60, 20);
+    const sun = new THREE.DirectionalLight(0xffffff);
     this.scene.add(sun);
 
-    this.sky = createSky();
-    this.scene.add(this.sky);
+    this.sky = new SkyView(sun, hemisphere, this.scene);
+    this.scene.add(this.sky.mesh);
 
     this.boat = createBoatMesh(model);
     this.wake = new WakeView(model, this.boat.layout, env);
@@ -143,7 +145,8 @@ export class SceneView {
       c.lookAt(0, this.surface.y + OUTSIDE_TARGET_HEIGHT, 0);
       cam = c;
     }
-    cam.getWorldPosition(this.sky.position);
+    this.sky.update(pose.t, this.wind);
+    this.sky.follow(cam);
     this.renderer.render(this.scene, cam);
   }
 }

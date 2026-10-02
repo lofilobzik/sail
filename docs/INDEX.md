@@ -58,6 +58,7 @@ tables, so transcribe any number you use from the **page image**, then copy it i
 | `src/data/laser.json` `visual` block | Render-only boat geometry: hull section table (plan from ILCA p27), cockpit, spars and blocks (p33-34), sail widths (p36), visual estimates marked in `sources` | done (milestone 3) |
 | `src/data/buoys.json` | Test buoy positions (not a course) | done (milestone 3) |
 | `src/data/waves.json` | Shared broad-wave/ripple bands, wind scaling, seeded strength/phase variation plus ripple wavelength/direction variation, amplitude/period bounds, pitch response, water grid and sampling filters; sources and TUNING GUESS labels | implemented; layered-sea and ripple repair checks in `PHYSICS.md` |
+| `src/data/sky.json` | Sun direction, Preetham scattering and cloud parameters, tone exposure, cloud drift and water-reflection cost controls, light strengths; per-parameter sources and TUNING GUESS labels in its `sources` block | implemented (milestone 5) |
 
 ## Wave references (web)
 
@@ -76,6 +77,15 @@ and assumptions are in `wake.json` `sources`; implementation is `render/wake/bow
   particle displacement; multiple waves and boat coupling remain approximations.
 - No measured Laser roll/pitch/course response in a known wave field is available here.
   Spectrum and response defaults are **TUNING GUESS**; sanity checks are recorded in `PHYSICS.md` L7.
+
+## Sky reference
+
+Preetham, Shirley, Smits, "A Practical Analytic Model for Daylight" is implemented in three's examples Sky
+(`node_modules/three/examples/jsm/objects/Sky.js`, three 0.186.1). The scattering constants, optical
+lengths, earth-shadow cutoff and cloud lighting come from that file; no separate PDF is stored in `docs/`.
+`render/sky.ts` adapts its fragment shader into one function shared by the dome and the water.
+Exposure, cloud drift, cloud-noise gain and cost controls are **TUNING GUESS** (see `sky.json` `sources`).
+No measured Laser-sailing sky or photo calibration exists here.
 
 ## Not downloaded
 

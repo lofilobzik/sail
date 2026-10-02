@@ -4,6 +4,8 @@ import { gerstnerGLSL, waveAmplitude, wavePhaseAt, WAVE_PARAMETERS, type WaveCon
 import type { Vec2 } from '../sim/frames';
 import type { WakeView } from './wake';
 import { WAKE, wakeFrameGLSL, wakeShadeGLSL } from './wake/kelvin';
+import { skyGLSL, type SkyView } from './sky';
+import { SKY } from './skyModel';
 
 const WATER_COLOR = 0x1f4f6e; // TUNING GUESS: deep-water body colour
 const WATER_REFRACTIVE_INDEX = 1.333; // Water/air index; https://en.wikipedia.org/wiki/Refractive_index
@@ -77,26 +79,10 @@ function createWaterGrid(): THREE.BufferGeometry {
   return geometry;
 }
 
-/** Read the existing dome's endpoint colours rather than introducing another sky. */
-function skyColours(sky: THREE.Mesh): { horizon: THREE.Color; zenith: THREE.Color } {
-  const positions = sky.geometry.getAttribute('position');
-  const colours = sky.geometry.getAttribute('color');
-  let highest = 0, lowest = 0;
-  for (let i = 1; i < positions.count; i++) {
-    if (positions.getY(i) > positions.getY(highest)) highest = i;
-    if (positions.getY(i) < positions.getY(lowest)) lowest = i;
-  }
-  return {
-    horizon: new THREE.Color().fromBufferAttribute(colours, lowest),
-    zenith: new THREE.Color().fromBufferAttribute(colours, highest),
-  };
-}
-
 export function createWater(
-  cfg: WaveConfig, sky: THREE.Mesh, sun: THREE.DirectionalLight,
+  cfg: WaveConfig, sky: SkyView, sun: THREE.DirectionalLight,
   hemisphere: THREE.HemisphereLight, wake: WakeView,
 ): WaterView {
-  const colours = skyColours(sky);
   let components = cfg.components;
   const waveCode = gerstnerGLSL(components);
   const wakeShade = wakeShadeGLSL();
@@ -110,14 +96,12 @@ export function createWater(
         waveShape: { value: components.map((w) => new THREE.Vector4(w.dx, w.dz, w.k, w.amplitude)) },
         waveMotion: { value: components.map((w) => new THREE.Vector2(w.phase, w.choppiness)) },
         waterColour: { value: new THREE.Color(WATER_COLOR) },
-        skyHorizon: { value: colours.horizon },
-        skyZenith: { value: colours.zenith },
         sunDirection: { value: sun.position.clone().sub(sun.target.position).normalize() },
         sunColour: { value: sun.color.clone().multiplyScalar(sun.intensity) },
         hemisphereSky: { value: hemisphere.color.clone().multiplyScalar(hemisphere.intensity) },
         hemisphereGround: { value: hemisphere.groundColor.clone().multiplyScalar(hemisphere.intensity) },
       },
-    ]), wake.uniforms),
+    ]), wake.uniforms, sky.uniforms),
     vertexShader: `
       uniform float waveScale;
       attribute vec2 cellFootprint;
@@ -150,8 +134,6 @@ export function createWater(
     `,
     fragmentShader: `
       uniform vec3 waterColour;
-      uniform vec3 skyHorizon;
-      uniform vec3 skyZenith;
       uniform vec3 sunDirection;
       uniform vec3 sunColour;
       uniform vec3 hemisphereSky;
@@ -164,6 +146,7 @@ export function createWater(
       #include <fog_pars_fragment>
       ${waveCode}
       ${wakeShade}
+      ${skyGLSL()}
       void main() {
         // Fragment normals retain detail that the distant geometry cannot resolve.
         // Pixel-footprint filtering prevents that detail aliasing at grazing angles.
@@ -197,11 +180,13 @@ export function createWater(
 
         vec3 view = normalize(cameraPosition - waterPosition);
         vec3 reflection = reflect(-view, normal);
-        // Same square-root horizon-to-zenith gradient as createSky's current dome.
-        vec3 reflectedSky = mix(skyHorizon, skyZenith, sqrt(max(reflection.y, 0.0)));
         // Schlick Fresnel: water/air normal-incidence reflectance from their indices.
         float fresnel = ${WATER_F0.toExponential(16)} + (1.0 - ${WATER_F0.toExponential(16)})
           * pow(1.0 - max(dot(normal, view), 0.0), 5.0);
+        // The same sky function as the dome. Clouds fade in with the reflectance (TUNING GUESS,
+        // data/sky.json) so steep, weakly reflecting views skip the cloud noise.
+        vec3 reflectedSky = skyRadiance(reflection, ${SKY.waterCloudOctaves}, 0.0,
+          smoothstep(${SKY.waterCloudFresnelFrom}, ${SKY.waterCloudFresnelFull}, fresnel));
         vec3 ambient = mix(hemisphereGround, hemisphereSky, normal.y * 0.5 + 0.5);
         vec3 diffuse = waterColour * (ambient + sunColour * max(dot(normal, sunDirection), 0.0));
         // TUNING GUESS: broaden the specular lobe by the pixel's normal variance;
@@ -217,10 +202,17 @@ export function createWater(
         float foam = wakeFoamAmount(wakePos, wakeSN, wakeProps, bow, bowSample.g, bowSample.b, pixel);
         vec3 foamColour = ${FOAM_ALBEDO.toFixed(3)} * (ambient + sunColour * max(dot(normal, sunDirection), 0.0));
         colour = mix(colour, foamColour, foam * ${WAKE.foamOpacity.toFixed(3)});
+        // Fog toward the clear sky in this direction, in linear light like the dome, so the
+        // water meets the horizon without a seam.
+        float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
+        if (fogFactor > 0.0) {
+          vec2 away = -view.xz;
+          vec3 horizonDirection = vec3(away.x, 0.0, away.y) / max(length(away), 1e-4);
+          colour = mix(colour, skyRadiance(horizonDirection, 0, 0.0, 0.0), fogFactor);
+        }
         gl_FragColor = vec4(colour, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
-        #include <fog_fragment>
       }
     `,
   });
@@ -230,6 +222,11 @@ export function createWater(
   return {
     mesh,
     update(origin, t) {
+      const u = material.uniforms;
+      (u.sunDirection!.value as THREE.Vector3).copy(sun.position).sub(sun.target.position).normalize();
+      (u.sunColour!.value as THREE.Color).copy(sun.color).multiplyScalar(sun.intensity);
+      (u.hemisphereSky!.value as THREE.Color).copy(hemisphere.color).multiplyScalar(hemisphere.intensity);
+      (u.hemisphereGround!.value as THREE.Color).copy(hemisphere.groundColor).multiplyScalar(hemisphere.intensity);
       if (components !== cfg.components) {
         components = cfg.components;
         const shapes = material.uniforms.waveShape!.value as THREE.Vector4[];

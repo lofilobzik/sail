@@ -199,6 +199,11 @@ export class DebugOverlay {
     this.checkbox(this.root, label, initial, onChange);
   }
 
+  /** Extra render-side number field appended at the end of the panel (e.g. the sun position). */
+  addNumber(label: string, initial: number, onChange: (v: number, el: HTMLInputElement) => void): void {
+    this.numberInput(this.root, label, initial, onChange);
+  }
+
   private checkbox(parent: HTMLElement, label: string, initial: boolean, onChange: (v: boolean) => void): HTMLLabelElement {
     const el = document.createElement('label');
     el.style.display = 'block';
