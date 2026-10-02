@@ -166,13 +166,16 @@ float wakeHullMask(vec2 p) {
   return smoothstep(c - 0.03, c + 0.03, ab.y);
 }
 
-// Bow wave: a crest hugging the waterline from the stem, decaying aft.
+// Bow wave: a > shaped chevron. Two crests leave the stem and sweep aft and outward at
+// bowAngleDeg to the centreline, widening and decaying along their length.
 float wakeBow(vec2 p) {
   float height = wakeHull.x;
   if (height <= 0.0) return 0.0;
   vec2 ab = wakeHullCoords(p);
-  float along = smoothstep(-${f(wake.bowAhead)}, 0.0, ab.x) * exp(-max(ab.x, 0.0) / ${f(wake.bowLength)});
-  float u = (ab.y - wakeHalfBeam(ab.x) - ${f(wake.bowOffset)}) / ${f(wake.bowWidth)};
+  float a = max(ab.x, 0.0);
+  float along = smoothstep(-${f(wake.bowAhead)}, 0.0, ab.x) * exp(-a / ${f(wake.bowLength)});
+  float crest = ${f(wake.bowOffset)} + a * ${f(Math.tan(wake.bowAngleDeg * DEG))};
+  float u = (ab.y - crest) / (${f(wake.bowWidth)} + ${f(wake.bowWidthGrowth)} * a);
   return height * along * exp(-u * u);
 }
 
