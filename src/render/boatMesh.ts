@@ -42,6 +42,7 @@ export interface BoatMesh {
   pitch: THREE.Group;
   heel: THREE.Group;
   sailor: Sailor;
+  sail: SailView;
   layout: BoatLayout;
   update(pose: BoatPose): void;
 }
@@ -91,6 +92,7 @@ export function createBoatMesh(model: BoatModel): BoatMesh {
     pitch,
     heel,
     sailor,
+    sail,
     layout,
     update(pose) {
       pitch.rotation.x = pose.pitch;

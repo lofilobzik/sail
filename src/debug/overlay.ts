@@ -210,6 +210,20 @@ export class DebugOverlay {
     this.numberInput(this.root, label, initial, onChange);
   }
 
+  /** Extra render-side dropdown appended at the end of the panel (e.g. the sail design). */
+  addSelect(label: string, options: readonly { value: string; label: string }[], initial: string, onChange: (value: string) => void): void {
+    const el = document.createElement('label');
+    el.style.display = 'block';
+    const input = document.createElement('select');
+    for (const o of options) input.add(new Option(o.label, o.value, o.value === initial, o.value === initial));
+    input.addEventListener('change', () => {
+      onChange(input.value);
+      input.blur(); // hand the keyboard back to the boat
+    });
+    el.append(`${label} `, input);
+    this.root.appendChild(el);
+  }
+
   private checkbox(parent: HTMLElement, label: string, initial: boolean, onChange: (v: boolean) => void): HTMLLabelElement {
     const el = document.createElement('label');
     el.style.display = 'block';

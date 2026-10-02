@@ -1,0 +1,167 @@
+{
+  "default": "white",
+  "textureWidth": 768,
+  "finish": {
+    "seams": 5,
+    "seamAlpha": 0.1,
+    "seamSlope": -0.035,
+    "grain": 9000,
+    "grainAlpha": 0.045,
+    "seed": 1987
+  },
+  "designs": [
+    {
+      "id": "white",
+      "name": "Class white",
+      "layers": [{ "type": "fill", "color": "#ffffff" }]
+    },
+    {
+      "id": "tide",
+      "name": "Tide lines",
+      "opacity": 0.85,
+      "glow": 0.3,
+      "layers": [
+        { "type": "fill", "color": "#e8dcc2" },
+        {
+          "type": "stripes",
+          "color": "#27405e",
+          "bands": [[0.07, 0.125], [0.165, 0.195], [0.235, 0.255]],
+          "wave": { "amplitude": 0.012, "cycles": 1.5 }
+        }
+      ]
+    },
+    {
+      "id": "sunburst",
+      "name": "Sunburst",
+      "opacity": 0.85,
+      "glow": 0.3,
+      "layers": [
+        { "type": "fill", "color": "#2e3459" },
+        { "type": "rays", "cx": 0.0, "cy": 0.0, "count": 12, "duty": 0.4, "rotation": 5, "color": "#d6a04a" },
+        { "type": "circle", "cx": 0.0, "cy": 0.0, "r": 0.2, "color": "#f1e6c8" }
+      ]
+    },
+    {
+      "id": "regatta",
+      "name": "Regatta checks",
+      "opacity": 0.85,
+      "glow": 0.3,
+      "layers": [
+        { "type": "fill", "color": "#2f5d4b" },
+        {
+          "type": "pattern",
+          "shape": "square",
+          "colors": ["#efe8d4", "#2f5d4b"],
+          "cell": 0.07,
+          "size": 1,
+          "region": [-0.1, 0.56, 1.1, 0.672]
+        },
+        { "type": "stripes", "color": "#efe8d4", "bands": [[0.535, 0.548]] }
+      ]
+    },
+    {
+      "id": "harlequin",
+      "name": "Harlequin",
+      "opacity": 0.85,
+      "glow": 0.3,
+      "layers": [
+        { "type": "fill", "color": "#e7d2c0" },
+        { "type": "pattern", "shape": "diamond", "colors": ["#b4506a"], "cell": 0.17, "size": 1 }
+      ]
+    },
+    {
+      "id": "split",
+      "name": "Split",
+      "opacity": 0.85,
+      "glow": 0.3,
+      "layers": [
+        { "type": "fill", "color": "#1f5560" },
+        {
+          "type": "polygon",
+          "color": "#d6a73d",
+          "points": [[0.388, -0.02], [1.2, -0.02], [1.2, 1.1], [-0.06, 1.1]]
+        },
+        {
+          "type": "polygon",
+          "color": "#f0e8d2",
+          "points": [[0.373, -0.02], [0.403, -0.02], [-0.045, 1.1], [-0.075, 1.1]]
+        }
+      ]
+    },
+    {
+      "id": "compass",
+      "name": "Compass star",
+      "opacity": 0.85,
+      "glow": 0.3,
+      "layers": [
+        { "type": "fill", "color": "#3b4650" },
+        { "type": "star", "cx": 0.3, "cy": 0.33, "r": 0.27, "points": 8, "inner": 0.36, "color": "#efe6cf" },
+        { "type": "circle", "cx": 0.3, "cy": 0.33, "r": 0.04, "color": "#3f9a9a" }
+      ]
+    },
+    {
+      "id": "dusk",
+      "name": "Dusk",
+      "opacity": 0.85,
+      "glow": 0.3,
+      "layers": [
+        {
+          "type": "gradient",
+          "stops": [[0, "#3a2f5b"], [0.45, "#a8567a"], [0.8, "#e58a5c"], [1, "#f2c27a"]],
+          "wave": { "amplitude": 0.018, "cycles": 2 }
+        },
+        { "type": "circle", "cx": 0.3, "cy": 0.2, "r": 0.12, "color": "#f6e7c4", "alpha": 0.9 },
+        { "type": "stripes", "color": "#f6e7c4", "bands": [[0.1, 0.112], [0.065, 0.075]], "wave": { "amplitude": 0.006, "cycles": 3 } }
+      ]
+    },
+    {
+      "id": "tiles",
+      "name": ":3 tiles",
+      "opacity": 0.85,
+      "glow": 0.3,
+      "layers": [
+        { "type": "fill", "color": "#a3d6c6" },
+        {
+          "type": "pattern",
+          "shape": "text",
+          "text": ":3",
+          "colors": ["#fbf6e8"],
+          "cell": 0.27,
+          "size": 0.62,
+          "brick": true
+        }
+      ]
+    },
+    {
+      "id": "zigzag",
+      "name": "Zigzag",
+      "opacity": 0.85,
+      "glow": 0.3,
+      "layers": [
+        { "type": "fill", "color": "#ece0c8" },
+        {
+          "type": "polygon",
+          "color": "#c8553d",
+          "points": [
+            [-0.05, 0.41], [0.2, 0.47], [0.45, 0.41], [0.7, 0.47], [0.95, 0.41], [1.2, 0.47],
+            [1.2, 0.42], [0.95, 0.36], [0.7, 0.42], [0.45, 0.36], [0.2, 0.42], [-0.05, 0.36]
+          ]
+        },
+        {
+          "type": "polygon",
+          "color": "#27405e",
+          "points": [
+            [-0.05, 0.325], [0.2, 0.385], [0.45, 0.325], [0.7, 0.385], [0.95, 0.325], [1.2, 0.385],
+            [1.2, 0.355], [0.95, 0.295], [0.7, 0.355], [0.45, 0.295], [0.2, 0.355], [-0.05, 0.295]
+          ]
+        }
+      ]
+    }
+  ],
+  "sources": {
+    "coordinates": "Design space, VISUAL: x runs 0 to 1 from the luff to a full foot length of cloth, y runs 0 to 1 from the foot to the head, so the sail is a triangle with its luff on the left edge (the leech runs from about (1, 0) through (0.85, 0.25), (0.63, 0.5) and (0.35, 0.75) to the head). Anything beyond the leech is simply not on the sail. Sizes that must stay round (circle radius, star radius, pattern cell) are fractions of the sail width, not of its height, so a circle is a circle on the cloth.",
+    "layers": "fill {color} | gradient {stops [[0=head .. 1=foot, color]], wave {amplitude (of height), cycles}} | polygon {points, color, alpha} | stripes {color, bands [[y0, y1]], slope, wave} | rays {cx, cy, count, duty 0..1, rotation deg, color} | star {cx, cy, r, points, inner 0..1, rotation, color} | circle {cx, cy, r, color, alpha} | pattern {shape text|circle|diamond|square, text, colors (cycled by (column + row) mod n), cell, size (fraction of the cell), brick, rotation, region [x0, y0, x1, y1]}. The first layer must cover the whole sail (fill or gradient). A design may set an opacity value (0..1); without it the sail keeps its default translucency (0.72), which lets the leeward telltales show through. Printed designs use 0.85 so their colours are not washed by the sky behind the cloth. A design may also set a glow value (0..1): the design is added as emission at that strength, standing in for light scattered through the cloth, so the shaded side of the sail keeps its colour; without it the sail only reflects the scene light.",
+    "finish": "TUNING GUESS, applied over every design: cross-cut panel seams, drawn as a faint dark line with a lighter line beside it, and sparse seeded speckle standing in for weave. Not measured Laser sailcloth.",
+    "palette": "VISUAL ESTIMATE: muted, slightly desaturated flat colours in the style of printed dinghy sails; every design is original to this project."
+  }
+}

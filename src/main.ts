@@ -85,6 +85,15 @@ overlay.addNumber('cloud coverage (0–1)', view.sky.cloudCoverage, (v, el) => {
   view.sky.setCloudCoverage(v);
   el.value = String(view.sky.cloudCoverage);
 });
+
+// ?sail=<id> picks a printed sail design (data/sail-designs.json); the debug panel lists them all.
+const sail = view.boat.sail;
+const sailParam = params.get('sail');
+if (sailParam !== null) {
+  if (sail.designs.some((d) => d.id === sailParam)) sail.setDesign(sailParam);
+  else console.warn(`unknown ?sail=${sailParam}; known: ${sail.designs.map((d) => d.id).join(', ')}`);
+}
+overlay.addSelect('sail design', sail.designs.map((d) => ({ value: d.id, label: d.name })), sail.design, (id) => sail.setDesign(id));
 const hud = new TestHud(boat);
 
 // V: switch between the first-person view and an outside view for checking the model.

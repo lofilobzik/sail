@@ -142,6 +142,15 @@ fraction of a second and holds its position. Same idea for the sheet.
   **It is visual only.** Sail forces come from the foil model in `sim/`. The sim exposes a
   `luffAmount` value (0 = trimmed, 1 = fully luffing) and the cloth reads it to flutter.
   The cloth never feeds back into forces.
+  **Sail designs:** printed sails are generated procedurally, never loaded from an image. Each design in
+  `data/sail-designs.json` is a stack of layers (fill, gradient, polygon, stripes, rays, star, circle,
+  tiled pattern) in sail space (x across from the luff, y from the foot up), drawn once onto a canvas by
+  `render/sailDesign.ts` and cached by `render/sailPaint.ts`. The cloth grid carries UVs in true cloth
+  metres, so a circle stays round as the cloth moves. A design may set its own opacity and glow; a seeded
+  panel-seam and speckle finish goes over all of them. Pick one with the debug panel's "sail design"
+  dropdown or `?sail=<id>`; edit or add designs in the JSON (a typo throws an error naming the design and
+  layer). Printed cloth is mirrored on its reverse side, as real printed sailcloth is, so text such as
+  `:3` reads backwards when seen from the other side. The default is the plain white class sail.
 - **Sailor:** v1 shows hands, tiller extension and sheet. Full body and hiking pose come later.
 
 ## In-world cues (no HUD)

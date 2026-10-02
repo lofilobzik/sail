@@ -12,6 +12,8 @@ import { Cloth } from './cloth/cloth';
 import { buildPlanform } from './cloth/planform';
 import { telltalePoints, type V3 } from './cloth/telltale';
 import type { BoatLayout } from './boatLayout';
+import { SAIL_DESIGNS, SailPaint } from './sailPaint';
+import type { DesignInfo } from './sailDesign';
 
 const SAIL_COLOR = 0xfbfbf6; // visual estimate: white Dacron
 const SAIL_OPACITY = 0.72; // visual estimate: translucent enough to see the leeward telltales through the cloth
@@ -31,6 +33,11 @@ export interface SailInput {
 
 export interface SailView {
   object: THREE.Object3D;
+  /** Available printed designs (data/sail-designs.json). */
+  designs: readonly DesignInfo[];
+  /** Id of the design currently shown. */
+  readonly design: string;
+  setDesign(id: string): void;
   update(input: SailInput): void;
 }
 
@@ -66,6 +73,29 @@ export function createSail(layout: BoatLayout): SailView {
   const position = new THREE.BufferAttribute(cloth.positions, 3);
   position.setUsage(THREE.DynamicDrawUsage);
   geom.setAttribute('position', position);
+
+  // Texture coordinates in cloth metres, so a printed design keeps its proportions: u is the
+  // distance aft of the luff line over the widest chord, v the height along the luff over its length.
+  const sinRake = Math.sin(layout.mastRake);
+  const cosRake = Math.cos(layout.mastRake);
+  const aft = new Float32Array(cols * rows);
+  const up = new Float32Array(cols * rows);
+  let sailWidth = 0;
+  for (let n = 0; n < aft.length; n++) {
+    const y = planform.flat[n * 3 + 1]!;
+    const z = planform.flat[n * 3 + 2]!;
+    aft[n] = z * cosRake - y * sinRake;
+    up[n] = z * sinRake + y * cosRake;
+    sailWidth = Math.max(sailWidth, aft[n]!);
+  }
+  const uv = new Float32Array(aft.length * 2);
+  for (let n = 0; n < aft.length; n++) {
+    uv[n * 2] = aft[n]! / sailWidth;
+    uv[n * 2 + 1] = up[n]! / rig.luff;
+  }
+  geom.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  const paint = new SailPaint(sailWidth / rig.luff);
+  let design: string = SAIL_DESIGNS.default;
   const idx: number[] = [];
   for (let k = 0; k < rows - 1; k++) {
     for (let i = 0; i < cols - 1; i++) {
@@ -75,10 +105,21 @@ export function createSail(layout: BoatLayout): SailView {
     }
   }
   geom.setIndex(idx);
-  const mesh = new THREE.Mesh(
-    geom,
-    new THREE.MeshStandardMaterial({ color: SAIL_COLOR, side: THREE.DoubleSide, transparent: true, opacity: SAIL_OPACITY, roughness: 0.9 }),
-  );
+  const material = new THREE.MeshStandardMaterial({
+    color: SAIL_COLOR, side: THREE.DoubleSide, transparent: true, roughness: 0.9, emissive: 0xffffff,
+  });
+  // Map, glow and opacity come from the selected design (data/sail-designs.json).
+  const applyDesign = (id: string): void => {
+    const texture = paint.texture(id);
+    const info = paint.designs.find((d) => d.id === id);
+    material.map = texture;
+    material.emissiveMap = texture;
+    material.emissiveIntensity = info?.glow ?? 0;
+    material.opacity = info?.opacity ?? SAIL_OPACITY;
+    design = id;
+  };
+  applyDesign(design);
+  const mesh = new THREE.Mesh(geom, material);
   mesh.frustumCulled = false; // bounds change every frame
   group.add(mesh);
 
@@ -120,6 +161,13 @@ export function createSail(layout: BoatLayout): SailView {
 
   return {
     object: group,
+    designs: paint.designs,
+    get design() {
+      return design;
+    },
+    setDesign(id) {
+      applyDesign(id);
+    },
     update(input) {
       time += input.dt;
       const leeward = Math.max(-1, Math.min(1, input.windDir.x * LEEWARD_GAIN));
