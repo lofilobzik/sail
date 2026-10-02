@@ -206,8 +206,13 @@ from a configurable direction. Do not hardcode wind anywhere else.
   waterline half-beam. Foam = noisy world-anchored pattern behind the transom and on the bow crest.
 - The trail is a 30 m world-anchored polyline of the stem (a point per 0.75 m). The wake is straight
   segments between points, so it follows turns but is not a fluid simulation; it cannot interact with waves.
-- Status: written without a browser run (user request). Unit tests cover the trail, the pattern geometry
-  and the source balance; the GLSL mirrors the TS formula but its on-screen appearance is untested.
+- Status: unit tests cover the trail, the pattern geometry and the source balance. A browser pass (outside
+  views from the side, bow quarter and behind; 4.4 kn, wave amplitude 0.4) showed the shader compiles
+  without console errors. Two fixes came out of it: the foam was a string of blobs (now boosted to a
+  continuous streak) and the physical 1-3 cm Kelvin waves and bow wave were nearly invisible next to the
+  sea, so `wake.json` has a render-only `visualGain` (3) on the Kelvin amplitude and `bowHeadFrac` is 0.5.
+  Both are TUNING GUESS, chosen for readability, not realism. Not yet checked: cockpit view, turns/tacks,
+  other speeds, frame cost.
 
 **Rendering repair verification**
 - Isolated water-only scene, fixed camera and time: the original 2 cm crossing of a 5 m snap boundary

@@ -208,7 +208,9 @@ float wakeFoamAmount(vec2 p, vec4 sn, vec4 props, float bow, float footprint) {
   float crest = smoothstep(${f(wake.foamBowThreshold)}, 1.0, bow / max(wakeHull.x, 1e-4));
   float coverage = speedFactor * max(turbulent, crest);
   float noise = wakeNoise(p, footprint);
-  return smoothstep(1.0 - coverage, 1.0 - coverage + 0.3, noise) * coverage;
+  // Boost so the turbulent core is a continuous streak and only its edges break up into patches.
+  float boosted = min(coverage * 1.8, 1.0);
+  return smoothstep(1.0 - boosted, 1.0 - boosted + 0.3, noise) * boosted;
 }
 `;
 }

@@ -65,7 +65,7 @@ export class WakeView {
     const stemZ = pose.z + fz * this.stemX;
     const speed = this.enabled && pose.surge > WAKE.minSpeed ? pose.surge : 0;
     const residuary = speed > 0 ? delftUpright(this.model, speed, this.env).residuary : 0;
-    const amplitude = wakeSourceAmplitude(residuary, this.env.rhoWater, this.model.cfg.hull.beam);
+    const amplitude = WAKE.visualGain * wakeSourceAmplitude(residuary, this.env.rhoWater, this.model.cfg.hull.beam);
 
     if (this.enabled) {
       this.trail.update({ x: stemX, z: stemZ, speed, amplitude, time: pose.t });
