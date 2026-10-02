@@ -2,11 +2,15 @@
 import * as THREE from 'three';
 import { gerstnerGLSL, waveAmplitude, wavePhaseAt, WAVE_PARAMETERS, type WaveConfig } from '../sim/waves';
 import type { Vec2 } from '../sim/frames';
+import type { WakeView } from './wake';
+import { WAKE, wakeFrameGLSL, wakeShadeGLSL } from './wake/kelvin';
 
 const WATER_COLOR = 0x1f4f6e; // TUNING GUESS: deep-water body colour
 const WATER_REFRACTIVE_INDEX = 1.333; // Water/air index; https://en.wikipedia.org/wiki/Refractive_index
 const WATER_F0 = ((WATER_REFRACTIVE_INDEX - 1) / (WATER_REFRACTIVE_INDEX + 1)) ** 2;
 const SUN_SHININESS = 96; // TUNING GUESS: broad water glint, no measured roughness
+const FOAM_ALBEDO = 0.85; // TUNING GUESS: whitewater diffuse reflectance
+const BOW_SLOPE_STEP = 0.04; // m, central-difference step for the bow-wave normal
 
 export interface WaterView {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
@@ -91,14 +95,16 @@ function skyColours(sky: THREE.Mesh): { horizon: THREE.Color; zenith: THREE.Colo
 
 export function createWater(
   cfg: WaveConfig, sky: THREE.Mesh, sun: THREE.DirectionalLight,
-  hemisphere: THREE.HemisphereLight,
+  hemisphere: THREE.HemisphereLight, wake: WakeView,
 ): WaterView {
   const colours = skyColours(sky);
   let components = cfg.components;
   const waveCode = gerstnerGLSL(components);
+  const wakeShade = wakeShadeGLSL();
   const material = new THREE.ShaderMaterial({
     fog: true,
-    uniforms: THREE.UniformsUtils.merge([
+    // Wake uniforms are attached by reference after the merge (merge clones values).
+    uniforms: Object.assign(THREE.UniformsUtils.merge([
       THREE.UniformsLib.fog,
       {
         waveScale: { value: waveAmplitude(cfg) },
@@ -112,19 +118,28 @@ export function createWater(
         hemisphereSky: { value: hemisphere.color.clone().multiplyScalar(hemisphere.intensity) },
         hemisphereGround: { value: hemisphere.groundColor.clone().multiplyScalar(hemisphere.intensity) },
       },
-    ]),
+    ]), wake.uniforms),
     vertexShader: `
       uniform float waveScale;
       attribute vec2 cellFootprint;
       varying vec3 waterPosition;
       varying vec2 waterLabel;
+      varying vec4 wakeSN;
+      varying vec4 wakeProps;
       #include <fog_pars_vertex>
       ${waveCode}
+      ${wakeShade}
+      ${wakeFrameGLSL()}
       void main() {
         // Only small render-local coordinates enter the GPU; uniforms restore world phase.
         waterLabel = position.xz + modelMatrix[3].xz;
         vec3 unusedNormal;
         gerstnerWave(waterLabel, waveScale, cellFootprint, waterPosition, unusedNormal);
+        // Boat wake and bow wave add height on top of the shared Gerstner sea (visual only).
+        wakeFrame(waterLabel, wakeSN, wakeProps);
+        float cell = max(cellFootprint.x, cellFootprint.y);
+        waterPosition.y += kelvinWake(wakeSN, wakeProps, cell).x * wakeHullMask(waterLabel)
+          + wakeBow(waterLabel) * wakeBowFilter(cell);
         vec4 mvPosition = viewMatrix * vec4(waterPosition, 1.0);
         gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
@@ -141,14 +156,33 @@ export function createWater(
       uniform float waveScale;
       varying vec3 waterPosition;
       varying vec2 waterLabel;
+      varying vec4 wakeSN;
+      varying vec4 wakeProps;
       #include <fog_pars_fragment>
       ${waveCode}
+      ${wakeShade}
       void main() {
         // Fragment normals retain detail that the distant geometry cannot resolve.
         // Pixel-footprint filtering prevents that detail aliasing at grazing angles.
         vec2 footprint = max(abs(dFdx(waterLabel)), abs(dFdy(waterLabel)));
         vec3 unusedPosition, normal;
         gerstnerWave(waterLabel, waveScale, footprint, unusedPosition, normal);
+
+        // Wake: add its height gradient to the sea's surface gradient.
+        float pixel = max(footprint.x, footprint.y);
+        float hullMask = wakeHullMask(waterLabel);
+        vec3 kelvin = kelvinWake(wakeSN, wakeProps, pixel) * hullMask;
+        vec2 tangent = wakeSN.zw / max(length(wakeSN.zw), 1e-6);
+        vec2 slope = -normal.xz / normal.y
+          + kelvin.y * tangent + kelvin.z * vec2(-tangent.y, tangent.x);
+        float bow = wakeBow(waterLabel);
+        float bowFilter = wakeBowFilter(pixel);
+        const float bowStep = ${BOW_SLOPE_STEP.toFixed(4)};
+        slope += bowFilter / (2.0 * bowStep) * vec2(
+          wakeBow(waterLabel + vec2(bowStep, 0.0)) - wakeBow(waterLabel - vec2(bowStep, 0.0)),
+          wakeBow(waterLabel + vec2(0.0, bowStep)) - wakeBow(waterLabel - vec2(0.0, bowStep)));
+        normal = normalize(vec3(-slope.x, 1.0, -slope.y));
+
         vec3 view = normalize(cameraPosition - waterPosition);
         vec3 reflection = reflect(-view, normal);
         // Same square-root horizon-to-zenith gradient as createSky's current dome.
@@ -167,6 +201,10 @@ export function createWater(
         float glint = pow(max(dot(reflection, sunDirection), 0.0), glintPower)
           * (glintPower + 1.0) / ${(SUN_SHININESS + 1).toFixed(1)};
         vec3 colour = mix(diffuse, reflectedSky + sunColour * glint, fresnel);
+        // Whitewater: diffuse, unpolished, so it replaces the reflective water colour.
+        float foam = wakeFoamAmount(waterLabel, wakeSN, wakeProps, bow * bowFilter, pixel) * hullMask;
+        vec3 foamColour = ${FOAM_ALBEDO.toFixed(3)} * (ambient + sunColour * max(dot(normal, sunDirection), 0.0));
+        colour = mix(colour, foamColour, foam * ${WAKE.foamOpacity.toFixed(3)});
         gl_FragColor = vec4(colour, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>

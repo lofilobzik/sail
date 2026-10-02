@@ -35,10 +35,10 @@ export default tseslint.config(
     },
   },
   {
-    // Cloth and telltale math stays testable under Node without Three.js.
-    files: ['src/render/cloth/**/*.ts'],
+    // Cloth, telltale and wake math stays testable under Node without Three.js.
+    files: ['src/render/cloth/**/*.ts', 'src/render/wake/**/*.ts'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: [{ group: ['three', 'three/*'], message: 'render/cloth must not import Three.js.' }] }],
+      'no-restricted-imports': ['error', { patterns: [{ group: ['three', 'three/*'], message: 'render/cloth and render/wake must not import Three.js.' }] }],
     },
   },
 );

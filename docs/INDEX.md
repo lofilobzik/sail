@@ -61,6 +61,9 @@ tables, so transcribe any number you use from the **page image**, then copy it i
 
 ## Wave references (web)
 
+Wake: Kelvin wake pattern, https://en.wikipedia.org/wiki/Kelvin_wake_pattern (angles, wavenumbers);
+energy balance as in `data/wake.json` `sources`. Parameters: `src/data/wake.json`.
+
 - [GPU Gems chapter 1, Effective Water Simulation from Physical Models](https://developer.nvidia.com/gpugems/gpugems/part-i-natural-effects/chapter-1-effective-water-simulation-physical-models),
   section 1.2.3: Gerstner displacement (Eq. 9), analytic orientation, steepness constraint and deep-water
   dispersion (Eq. 13). Equation images checked when implementing `sim/waves.ts`.

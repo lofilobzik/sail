@@ -3,10 +3,11 @@
  * cameras (first-person, plus an outside view for checking). Reads state only.
  */
 import * as THREE from 'three';
-import type { BoatModel, Vec2 } from '../sim';
+import type { BoatModel, EnvironmentConfig, Vec2 } from '../sim';
 import { createWaveSample, sampleWaves, waveAmplitude, type WaveConfig } from '../sim/waves';
 import { createBoatMesh, type BoatMesh, type BoatPose } from './boatMesh';
 import { SKY_HORIZON, createBuoys, createSky } from './environment';
+import { WakeView } from './wake';
 import { createWater, type WaterView } from './water';
 
 const GRID_CELL = 5; // TUNING GUESS: grid cell size, m (grid snaps to multiples of this)
@@ -28,6 +29,8 @@ export interface RenderPose extends BoatPose {
   x: number;
   z: number;
   heading: number;
+  /** Interpolated surge speed through the water, m/s (drives the wake). */
+  surge: number;
   lookYaw: number;
   lookPitch: number;
 }
@@ -38,6 +41,7 @@ export class SceneView {
   readonly camera: THREE.PerspectiveCamera;
   readonly outsideCamera: THREE.PerspectiveCamera;
   readonly boat: BoatMesh;
+  readonly wake: WakeView;
   /** Logical position of render-local zero, continuously following the interpolated boat. */
   readonly origin: Vec2 = { x: 0, z: 0 };
   mode: CameraMode = 'cockpit';
@@ -47,7 +51,7 @@ export class SceneView {
   private readonly buoys = createBuoys();
   private readonly surface = createWaveSample();
 
-  constructor(model: BoatModel, private readonly waves: WaveConfig) {
+  constructor(model: BoatModel, private readonly waves: WaveConfig, env: EnvironmentConfig) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     document.body.appendChild(this.renderer.domElement);
@@ -63,7 +67,9 @@ export class SceneView {
     this.sky = createSky();
     this.scene.add(this.sky);
 
-    this.water = createWater(waves, this.sky, sun, hemisphere);
+    this.boat = createBoatMesh(model);
+    this.wake = new WakeView(model, this.boat.layout, env);
+    this.water = createWater(waves, this.sky, sun, hemisphere, this.wake);
     this.scene.add(this.water.mesh);
 
     this.grid = new THREE.GridHelper(GRID_CELL * GRID_CELLS, GRID_CELLS, 0x6f9fbf, 0x4a7a9a);
@@ -72,7 +78,6 @@ export class SceneView {
 
     this.scene.add(this.buoys);
 
-    this.boat = createBoatMesh(model);
     this.scene.add(this.boat.yaw);
 
     this.camera = new THREE.PerspectiveCamera(FOV_DEG, 1, 0.05, 5000);
@@ -115,6 +120,7 @@ export class SceneView {
 
     // Fixed buoy transforms compose in JS doubles before GPU matrix upload/culling.
     this.buoys.position.set(-this.origin.x, 0, -this.origin.z);
+    this.wake.update(pose, this.origin);
     this.water.update(this.origin, pose.t);
     this.grid.visible = this.water.mesh.visible && !wavesActive;
     this.grid.position.x = Math.round(pose.x / GRID_CELL) * GRID_CELL - this.origin.x;

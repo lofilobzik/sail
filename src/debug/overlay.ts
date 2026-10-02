@@ -194,6 +194,11 @@ export class DebugOverlay {
     sec.appendChild(btn);
   }
 
+  /** Extra render-side toggle appended at the end of the panel (e.g. the visual wake). */
+  addToggle(label: string, initial: boolean, onChange: (v: boolean) => void): void {
+    this.checkbox(this.root, label, initial, onChange);
+  }
+
   private checkbox(parent: HTMLElement, label: string, initial: boolean, onChange: (v: boolean) => void): HTMLLabelElement {
     const el = document.createElement('label');
     el.style.display = 'block';

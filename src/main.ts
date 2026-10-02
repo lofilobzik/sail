@@ -34,7 +34,9 @@ setWaveParameters(
 );
 const fixed = new FixedStep(cfg.dt);
 
-const view = new SceneView(boat, cfg.waves);
+const view = new SceneView(boat, cfg.waves, cfg.env);
+// ?wake=0 starts with the boat wake and bow wave off.
+if (params.get('wake') === '0') view.wake.enabled = false;
 const input = new ControlInput(view.renderer.domElement);
 const look = new MouseLook(view.renderer.domElement);
 const vectors = new ForceVectors(boat, view.scene, view.boat.yaw, view.boat.heel);
@@ -51,6 +53,7 @@ function resetBoat(): void {
 resetBoat();
 
 const overlay = new DebugOverlay(cfg, resetBoat);
+overlay.addToggle('wake (visual)', view.wake.enabled, (v) => (view.wake.enabled = v));
 const hud = new TestHud(boat);
 
 // V: switch between the first-person view and an outside view for checking the model.
@@ -98,6 +101,7 @@ function frame(now: number): void {
     x,
     z,
     heading: prev.heading + wrapPi(curr.heading - prev.heading) * a,
+    surge: lerp(prev.u, curr.u, a),
     heel: lerp(prev.heel, curr.heel, a),
     pitch: lerp(prev.pitch, curr.pitch, a),
     boom: lerp(prev.boom, curr.boom, a),

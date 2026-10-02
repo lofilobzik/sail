@@ -69,7 +69,8 @@ Rules:
   Simulation/navigation coordinates stay in logical-world doubles. Boat, cameras, water and debug
   arrows use small render-local coordinates; fixed buoy transforms are rebased before GPU upload.
   Reduce each wave's origin/time phase in double precision before the shader adds local spatial phase.
-  Future wake history must stay world-anchored: subtract this same origin before writing GPU vertices.
+  Wake history is world-anchored: `render/wake/trail.ts` stores logical-world doubles and subtracts this
+  same origin only when packing GPU uniforms.
 
 ## Controls
 
@@ -94,6 +95,10 @@ fraction of a second and holds its position. Same idea for the sheet.
   unresolved displacement; per-pixel normals and footprint/specular filtering prevent distant shimmer.
   Physics responds to slope and foil orbital flow; visual heave follows surface height, without a
   vertical buoyancy-force simulation.
+- **Wake and bow wave (visual only):** the water shader adds a Kelvin wake (transverse and divergent
+  waves, 19.47 degree cusp), a bow wave hugging the waterline, and turbulent foam behind the transom
+  and on the bow crest. It reads speed and heading, never changes the sim. Parameters in `data/wake.json`;
+  math in `render/wake/` (no Three.js, tested); debug toggle "wake (visual)" and `?wake=0`.
 - **Sky:** Three.js analytic Sky shader. No screen-space reflections, no heavy post-processing.
 - **Boat:** procedural hull lofted from a few cross-sections using class dimensions,
   plus spars and fittings. Low triangle count.

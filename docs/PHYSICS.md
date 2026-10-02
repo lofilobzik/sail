@@ -190,6 +190,25 @@ from a configurable direction. Do not hardcode wind anywhere else.
   These initial checks did not include distant coordinates; see the floating-origin checks below.
   No measured Laser wave-response validation or target-laptop GPU qualification has been done.
 
+**Boat wake and bow wave (render only; not part of the physics)**
+- The boat's own wake does not feed back: no added resistance, no forces on the boat or other objects.
+  It only displaces the water surface and normals in `render/water.ts` on top of the shared Gerstner sea.
+- Source strength comes from energy balance with the sim's own wave-making resistance: the Delft residuary
+  `R_rc` at the boat's surge speed (`hull.ts` `delftUpright`) equals the energy density `1/2 rho g A^2`
+  left per metre of track times an effective width (1.0 x beam, TUNING GUESS). R_rc also contains viscous
+  pressure drag, so this is an upper estimate.
+- Pattern: stationary Kelvin wake in trail coordinates (s behind the waterline stem, n off the track).
+  Deep-water dispersion gives transverse `k = g/V^2` and cusp waves `k = g/(V cos 35.26 deg)^2`, with
+  arms at the 19.47 degree half-angle. Decay exponents s^-1/3 (divergent) and s^-1/2 (transverse),
+  envelope widths and age decay are TUNING GUESS. Footprint filtering matches the water grid (full at 8
+  samples per wavelength, none below 4).
+- Bow wave height is `0.25 V^2/2g` (TUNING GUESS fraction of the stagnation head), following the lofted
+  waterline half-beam. Foam = noisy world-anchored pattern behind the transom and on the bow crest.
+- The trail is a 30 m world-anchored polyline of the stem (a point per 0.75 m). The wake is straight
+  segments between points, so it follows turns but is not a fluid simulation; it cannot interact with waves.
+- Status: written without a browser run (user request). Unit tests cover the trail, the pattern geometry
+  and the source balance; the GLSL mirrors the TS formula but its on-screen appearance is untested.
+
 **Rendering repair verification**
 - Isolated water-only scene, fixed camera and time: the original 2 cm crossing of a 5 m snap boundary
   changed 25,002 pixels by more than 2 RGB levels at default chop (mean RGB difference 0.669 on a
