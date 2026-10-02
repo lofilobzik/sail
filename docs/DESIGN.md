@@ -110,7 +110,7 @@ fraction of a second and holds its position. Same idea for the sheet.
   pitch and heel. Each emitted front retains its birth contact in logical-world doubles, propagates
   outward and fades independently; lifting/dropping the bow cannot relocate the older V. Smooth
   birth/expiry and bounded overlap blend successive contributions without a live-anchored V fallback.
-  Kelvin stays subdued at `visualGain = 0.4`; bow height uses `bowHeadFrac = 0.30` and `bowLength = 5` for a more prominent
+  Kelvin sits at `visualGain = 0.8`; bow height uses `bowHeadFrac = 0.30` and `bowLength = 5` for a more prominent
   bow V (1.875x the previous 0.16 height, arms attenuate more slowly). Both are visual TUNING GUESS values; no sim forces change.
   Bow fronts are circular crest/trough packets whose steady-motion envelope forms a V. This is a
   nondispersive visual approximation, not calibrated pressure-wave physics or shoreline breaking.
