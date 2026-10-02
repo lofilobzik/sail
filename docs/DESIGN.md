@@ -100,15 +100,20 @@ fraction of a second and holds its position. Same idea for the sheet.
   vertical buoyancy-force simulation.
 - **Wake and bow wave (visual only):** the water shader adds a Kelvin wake (transverse and divergent
   waves, 19.47 degree cusp), a bow wave hugging the waterline, and turbulent foam behind the transom
-  and on the bow crest. The bow chevron follows the foremost hull/sea contact using heave, pitch and
-  heel: it moves aft when the bow lifts instead of fading at the design stem. Smooth world-anchored
-  variation bends and strengthens the two crest arms differently; it fades in aft of contact to keep
-  the attachment pinned. This is visual only and never changes the sim.
-  Subdued height tuning uses Kelvin `visualGain = 0.4` and `bowHeadFrac = 0.06`; both are render-only
-  TUNING GUESS values, not measured wake data. Bow arms spread in a V with a crest and flanking
-  troughs, widening with distance and fading as `1/sqrt(1 + aft/3m)` instead of disappearing beside
-  the hull. Sampling filters use the local arm width. This is a boat-relative visual approximation,
-  not independently propagated waves or shore breaking; no per-pixel wake-trail search is added.
+  and on the bow crest. Only new bow emissions follow the foremost hull/sea contact using heave,
+  pitch and heel. Each emitted front retains its birth contact in logical-world doubles, propagates
+  outward and fades independently; lifting/dropping the bow cannot relocate the older V. Smooth
+  birth/expiry and bounded overlap blend successive contributions without a live-anchored V fallback.
+  Kelvin stays subdued at `visualGain = 0.4`; bow height uses `bowHeadFrac = 0.16` for more prominent
+  crests (2.67x the previous 0.06 height). Both are visual TUNING GUESS values; no sim forces change.
+  Bow fronts are circular crest/trough packets whose steady-motion envelope forms a V. This is a
+  nondispersive visual approximation, not calibrated pressure-wave physics or shoreline breaking.
+  `render/wake/bowField.ts` rasterizes a bounded world-grid cache to a reusable float texture; water
+  samples it at constant cost, with screen-derivative normals and no per-pixel history search.
+  Bow foam uses its emitted front's source height/speed, with continuous crest coverage and up to
+  25% noise modulation of opacity instead of on/off breakup. It starts at the bow emission speed
+  threshold independently of stern turbulence. Stern foam appearance remains unchanged.
+  Height, foam and lifetime/resolution parameters are explicit TUNING GUESS values in `wake.json`.
   Parameters in `data/wake.json`; math in `render/wake/` (no Three.js, tested);
   debug toggle "wake (visual)" and `?wake=0`.
 - **Sky:** Three.js analytic Sky shader. No screen-space reflections, no heavy post-processing.

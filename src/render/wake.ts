@@ -1,7 +1,7 @@
 /**
- * Boat wake and bow wave for the water shader (visual only, reads sim state). Keeps a
- * world-anchored trail of the waterline stem and fills the uniforms used by the GLSL in
- * render/wake/kelvin.ts. Source amplitude comes from the sim's Delft residuary resistance.
+ * Boat wake and emitted bow fronts for the water shader (visual only, reads sim state).
+ * Keeps a world-anchored Kelvin trail and scalar bow field for render/wake/kelvin.ts.
+ * Kelvin source amplitude comes from the sim's Delft residuary resistance.
  */
 import * as THREE from 'three';
 import { delftUpright, type BoatModel, type EnvironmentConfig, type Vec2 } from '../sim';
@@ -9,6 +9,7 @@ import type { WaveConfig } from '../sim/waves';
 import type { BoatLayout } from './boatLayout';
 import { WAKE, bowWaveHeight, wakeSourceAmplitude } from './wake/kelvin';
 import { BowContact, type ContactPose } from './wake/contact';
+import { BowWaveField, type BowEmitter } from './wake/bowField';
 import { WakeTrail } from './wake/trail';
 
 export interface WakePose extends ContactPose {
@@ -21,13 +22,21 @@ const mod = (v: number, m: number) => ((v % m) + m) % m;
 
 export class WakeView {
   enabled = true;
+  private readonly bowField = new BowWaveField(WAKE);
+  private readonly bowEmitter: BowEmitter = { x: 0, z: 0, time: 0, height: 0, speed: 0, foam: 0 };
+  private readonly bowTexture = new THREE.DataTexture(
+    this.bowField.data, this.bowField.resolution, this.bowField.resolution, THREE.RGBAFormat, THREE.FloatType,
+  );
   readonly uniforms = {
     wakeA: { value: new Float32Array(WAKE.trailPoints * 4) },
     wakeB: { value: new Float32Array(WAKE.trailPoints * 4) },
     wakeCount: { value: 0 },
     wakeStem: { value: new THREE.Vector4(0, 0, 0, -1) },
     wakeHull: { value: new THREE.Vector4() },
-    wakeWet: { value: new THREE.Vector2() },
+    bowField: { value: this.bowTexture },
+    bowFieldOrigin: { value: new THREE.Vector2() },
+    bowFieldCell: { value: this.bowField.cellSize },
+    bowFieldResolution: { value: this.bowField.resolution },
     wakeProfile: { value: new Float32Array(WAKE.hullProfileSamples) },
     wakeFoam: { value: new THREE.Vector4() },
     wakeFoamPhase: { value: new THREE.Vector3() },
@@ -43,6 +52,10 @@ export class WakeView {
     private readonly env: EnvironmentConfig,
   ) {
     this.contact = new BowContact(layout, WAKE.contactSamples);
+    this.bowTexture.minFilter = THREE.NearestFilter;
+    this.bowTexture.magFilter = THREE.NearestFilter;
+    this.bowTexture.generateMipmaps = false;
+    this.bowTexture.needsUpdate = true;
     // Waterline stem: first station from the bow whose keel is below the waterline.
     let stem = layout.bowX;
     const step = layout.loa / 400;
@@ -75,13 +88,25 @@ export class WakeView {
     }
     u.wakeStem.value.set(stemX - origin.x, stemZ - origin.z, fx, fz);
 
-    // The bow wave sits where the hull actually meets the water: it slides aft when the bow lifts
-    // and forward when the bow plunges, and is absent only if the whole hull is clear of the water.
+    // Only a new front follows the current wet contact; already-emitted fronts stay in world space.
     const inWater = speed > 0 && this.contact.update(pose, waves, hullY, pitch);
     const hull = u.wakeHull.value;
-    hull.x = inWater ? bowWaveHeight(speed) : 0;
-    if (inWater) u.wakeWet.value.set(this.stemX - this.contact.forward, this.contact.starboard);
     hull.z = Math.min(Math.max((speed - WAKE.foamMinSpeed) / WAKE.foamSpeedRange, 0), 1);
+    const emitter = this.bowEmitter;
+    emitter.x = inWater ? pose.x + fx * this.contact.forward - fz * this.contact.starboard : pose.x;
+    emitter.z = inWater ? pose.z + fz * this.contact.forward + fx * this.contact.starboard : pose.z;
+    emitter.time = pose.t;
+    emitter.height = inWater ? bowWaveHeight(speed) : 0;
+    emitter.speed = speed;
+    // Bow crest foam starts with bow emission; the higher stern-turbulence threshold stays separate.
+    emitter.foam = Math.min(Math.max((speed - WAKE.minSpeed) / WAKE.foamSpeedRange, 0), 1);
+    if (this.enabled) {
+      if (this.bowField.update(emitter, pose)) this.bowTexture.needsUpdate = true;
+    } else {
+      this.bowField.clear();
+      this.bowTexture.needsUpdate = true;
+    }
+    u.bowFieldOrigin.value.set(this.bowField.originX - origin.x, this.bowField.originZ - origin.z);
 
     // Foam noise stays world-anchored: reduce the origin modulo its period in doubles.
     const period = WAKE.foamNoisePeriod;

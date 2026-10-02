@@ -220,30 +220,44 @@ from a configurable direction. Do not hardcode wind anywhere else.
   arms at the 19.47 degree half-angle. Decay exponents s^-1/3 (divergent) and s^-1/2 (transverse),
   envelope widths and age decay are TUNING GUESS. Footprint filtering matches the water grid (full at 8
   samples per wavelength, none below 4).
-- Bow wave height is `bowHeadFrac V^2/2g` (`bowHeadFrac = 0.06`, TUNING GUESS fraction of stagnation
-  head). The chevron and bow foam start at the foremost sampled hull/sea contact. Cached loft sections
-  transform in the boat mesh's heel/pitch/yaw order; the search samples the local Gerstner surface at
-  those transformed horizontal positions, including heave. The contact moves aft when the bow lifts,
-  forward when it drops and sideways under heel; no clearance fade. Entirely dry sampled hulls produce
-  no bow wave; a submerged stem still produces one. The stern/Kelvin trail is unchanged.
-  Foam = noisy world-anchored pattern behind the transom and on the bow crest; the upright hull mask
-  applies to stern foam, not the moving bow crest.
-- Bow crest irregularity is render-only: two smooth world-anchored spatial modes reuse the periodic
-  foam origin and slow foam phases. They vary crest position by up to 0.10 m and strength by +/-35%,
-  fading in over 0.45 m aft of contact. Port/starboard sample different world locations, rather than
-  mirroring the same perturbation. All are TUNING GUESS in `wake.json`, not pressure-wave measurements.
-  The existing finite-difference bow normal includes these changes; bow foam follows the same height.
-- Spreading bow V: replace the short positive Gaussian ridge with a crest/trough profile
-  `(1 - 2 u^2) exp(-u^2)` across each arm, where `u` is distance from its crest divided by local width.
-  Arms retain the existing 30-degree visual angle, contact pinning and smooth irregularity, widen
-  as `bowWidth + bowWidthGrowth * aft`, and fade as `1/sqrt(1 + aft/bowLength)`, with `bowLength = 3 m`
-  (half amplitude at 9 m). Profile, angle and fade are TUNING GUESS, not measured pressure-wave data.
-  This extends the existing bow wave, not an extra amplified wave layer. `bowHeadFrac` stays 0.06.
-  Vertex and pixel filters use local spreading width; the nearest-trail search remains vertex-only.
-  The arms are a boat-relative approximation: they do not detach on stopping, persist independently
-  after manoeuvres, or propagate to/break on a shoreline. No sim forces or foil orbital flow are added.
+- Bow wave height is `bowHeadFrac V^2/2g` (`bowHeadFrac = 0.16`, TUNING GUESS fraction of stagnation
+  head). The existing sampled hull/sea contact calculation is unchanged: cached loft sections
+  transform in the boat mesh's heel/pitch/yaw order, intersecting the local Gerstner surface including
+  heave. Contact moves aft on bow lift, forward on drop and sideways under heel; no clearance fade.
+  It controls NEW emissions only. Dry/stopped hulls stop emitting; older fronts continue propagating
+  and fading. Re-entry forms a new contribution rather than moving or reconnecting an old V.
+- Emitted bow fronts (`render/wake/bowField.ts`): immutable logical-world birth x/z, height, speed,
+  foam speed factor and period. Each signed circular packet has radius `bowOffset + c * age`,
+  with `c = birth surge * sin(bowAngleDeg)`. The envelope of successive expanding circles forms the
+  existing 30-degree V in steady straight motion. This is a nondispersive geometric approximation,
+  NOT a measured Laser wake or a full dispersive/fluid solver. Emission period is `2 pi c / g`
+  (from deep-water `omega^2 = g k`, `c = omega/k`; INDEX wave references). Birth scheduling is based
+  on simulation time, not frame count; source interpolation never bridges dry intervals.
+  The radial crest/trough profile is `(1 - 2 u^2) exp(-u^2)`, with width growing with radius.
+  Amplitude decays by age and `1/sqrt(1 + radius/bowLength)`; smooth birth/expiry prevent front popping.
+  Gaussian cell-averaging broadening suppresses numerical undersampling. Overlap normalization
+  uses envelope AND absolute signed-profile mass to bound crests and dense overlapping troughs by
+  the source scale without clipping height. A slow-speed overlap regression covers that boundary.
+- Bow field parameters are TUNING GUESS: 7 s age e-folding, 12 s expiry, 128 front slots, a 256-square
+  64 m world-grid cache and quarter-period birth rise. Old source positions never shift with cache
+  movement or render-origin rebasing. Cache boundaries fade over four cells; fronts outside the
+  bounded cache are not rendered. Time rewind, boat teleport and wake-disable clear emitted history.
+  Water uses manual bilinear float-texture sampling in vertex/fragment shaders; normal gradients
+  invert the screen-to-horizontal Jacobian of filtered height. No per-pixel packet/trail search.
+- Bow foam follows emitted height/reference height and stored birth-speed coverage, preserving
+  its history through dry/stop transitions. Birth coverage starts at the bow emission `minSpeed`,
+  using `foamSpeedRange`, independently of stern foam's higher `foamMinSpeed`. Crest coverage
+  rises smoothly from 0.18 to 0.65 of source height, with gain 1.4 (TUNING GUESS). World-space noise
+  only modulates opacity by at most 25%; it cannot gate an eligible crest off. Stern foam's existing
+  noise threshold/boost/colour and all Kelvin trail/math/settings are unchanged. The upright
+  hull mask still applies only to stern foam/Kelvin, not to emitted bow fronts. No sim forces or foil
+  orbital flow are added; packets follow the shared water surface but do not model fluid interaction.
 - The trail is a 30 m world-anchored polyline of the stem (a point per 0.75 m). The wake is straight
   segments between points, so it follows turns but is not a fluid simulation; it cannot interact with waves.
+
+**Verification history:** the emitted-front replacement below is the current model; earlier
+numbers and appearance checks describe the implementations that existed at those stages.
+
 - Status: unit tests cover the trail, the pattern geometry and the source balance. A browser pass (outside
   views from the side, bow quarter and behind; 4.4 kn, wave amplitude 0.4) showed the shader compiles
   without console errors. Two fixes came out of it: the foam was a string of blobs (now boosted to a
@@ -281,6 +295,34 @@ from a configurable direction. Do not hardcode wind anywhere else.
   Dry/re-entry and rest paths pass. Regressions cover both spreading arms, flanking troughs, height
   bounds, contact pinning and adaptive-filter resolution. Build, lint and all 97 tests pass.
   No browser checks were run; CPU maps do not verify actual lighting, shader compilation or GPU cost.
+- Emitted-front replacement verification: actual `WakeView.update` and an independent field driver
+  exercised headlessly. At 2 m/s, 10-degree bow lift moves the emitter 1.503 m aft; the full field is
+  unchanged at fixed time on lift AND drop, versus a 0.814 m sideways shift of the legacy far crest.
+  Advancing time forms successive fronts at the new contacts; signed crests/troughs, dry/stop
+  persistence, re-entry, expiry, disable and rebasing pass. Source height remains 12.23 mm; the
+  smoke's maximum crest/trough were +9.56/-8.96 mm, with overlap bounded by source height.
+  Whole bow-field updates averaged 0.60/1.07/0.94 ms at 0.31/2/4 m/s in the Node smoke.
+  Build/typecheck, lint and all 104 tests pass; build retains the existing >500 kB bundle warning.
+  A controlled headless Chromium scene compiled/rendered the actual water shader on Apple M1.
+  With boat hidden and time fixed, lift/drop each changed zero water pixels (1280x720 readback).
+  False-colour views of the real GPU field showed successive up/down fronts; disabling cleared both
+  height and foam to zero on GPU. No WebGL/console errors. A synchronized 90-frame surface benchmark
+  measured 4.45 ms frozen versus 8.18 ms with emission/propagation at 1280x720, 133,549 triangles.
+  These are controlled flat-water diagnostics, not a full-game FPS guarantee or user confirmation
+  of natural appearance. At that stage the retained small bow height was subtle; the user subsequently
+  confirmed the two-dot/blinking issue fixed, before requesting the prominence/foam changes below.
+- Bow prominence/foam verification: increased `bowHeadFrac` from 0.06 to 0.16 at the user's request,
+  keeping propagation, history, width, wavelength and Kelvin gain unchanged. Source height is now
+  32.62 mm at 2 m/s (previously 12.23 mm). In a controlled actual-water-material snapshot, maximum
+  field crest rose from 9.36 to 24.96 mm, exactly 2.67x. A bow-only foam-mask GPU readback at
+  1280x720 showed 13,304 pixels above RGB 20, versus zero in the same prior snapshot; foam was also
+  present at 1 m/s while stern birth coverage was zero. Normal-material outside views were inspected
+  on flat water and the shared 7-kn Gerstner sea, with visible foamy bow fronts.
+  An isolated stern-foam A/B render using the previous shader body changed zero pixels across 6,448
+  visible stern pixels. With the boat hidden/time frozen, lift and drop again changed zero water
+  pixels. Stopped/dry sources retained 12,359 visible bow-foam pixels; wake-disable cleared all foam.
+  No WebGL/console errors. Build/typecheck, lint and all 104 tests pass; the existing bundle-size
+  warning remains. This is visual tuning, not measured breaking-wave calibration or a FPS guarantee.
 
 **Rendering repair verification**
 - Isolated water-only scene, fixed camera and time: the original 2 cm crossing of a 5 m snap boundary

@@ -10,7 +10,6 @@ const WATER_REFRACTIVE_INDEX = 1.333; // Water/air index; https://en.wikipedia.o
 const WATER_F0 = ((WATER_REFRACTIVE_INDEX - 1) / (WATER_REFRACTIVE_INDEX + 1)) ** 2;
 const SUN_SHININESS = 96; // TUNING GUESS: broad water glint, no measured roughness
 const FOAM_ALBEDO = 0.85; // TUNING GUESS: whitewater diffuse reflectance
-const BOW_SLOPE_STEP = 0.04; // m, central-difference step for the bow-wave normal
 
 export interface WaterView {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
@@ -141,8 +140,9 @@ export function createWater(
         vec2 wakePos = waterPosition.xz;
         wakeFrame(wakePos, wakeSN, wakeProps);
         float cell = max(cellFootprint.x, cellFootprint.y);
+        vec4 bowSample = wakeBowSample(wakePos);
         waterPosition.y += kelvinWake(wakeSN, wakeProps, cell).x * wakeHullMask(wakePos)
-          + wakeBow(wakePos) * wakeBowFilter(wakePos, cell);
+          + bowSample.r * wakeBowFilter(bowSample, cell);
         vec4 mvPosition = viewMatrix * vec4(waterPosition, 1.0);
         gl_Position = projectionMatrix * mvPosition;
         #include <fog_vertex>
@@ -179,12 +179,20 @@ export function createWater(
         vec2 tangent = wakeSN.zw / max(length(wakeSN.zw), 1e-6);
         vec2 slope = -normal.xz / normal.y
           + kelvin.y * tangent + kelvin.z * vec2(-tangent.y, tangent.x);
-        float bow = wakeBow(wakePos);
-        float bowFilter = wakeBowFilter(wakePos, pixel);
-        const float bowStep = ${BOW_SLOPE_STEP.toFixed(4)};
-        slope += bowFilter / (2.0 * bowStep) * vec2(
-          wakeBow(wakePos + vec2(bowStep, 0.0)) - wakeBow(wakePos - vec2(bowStep, 0.0)),
-          wakeBow(wakePos + vec2(0.0, bowStep)) - wakeBow(wakePos - vec2(0.0, bowStep)));
+        vec4 bowSample = wakeBowSample(wakePos);
+        float bow = bowSample.r * wakeBowFilter(bowSample, pixel);
+        // Invert the screen-to-horizontal Jacobian, not just a directional derivative.
+        // All derivatives are evaluated unconditionally, before the determinant guard.
+        vec2 bowDx = dFdx(wakePos), bowDy = dFdy(wakePos);
+        float heightDx = dFdx(bow), heightDy = dFdy(bow);
+        float determinant = bowDx.x * bowDy.y - bowDx.y * bowDy.x;
+        vec2 bowGradient = vec2(0.0);
+        if (abs(determinant) > max(1e-12, 1e-5 * length(bowDx) * length(bowDy))) {
+          bowGradient = vec2(
+            heightDx * bowDy.y - heightDy * bowDx.y,
+            heightDy * bowDx.x - heightDx * bowDy.x) / determinant;
+        }
+        slope += bowGradient;
         normal = normalize(vec3(-slope.x, 1.0, -slope.y));
 
         vec3 view = normalize(cameraPosition - waterPosition);
@@ -206,7 +214,7 @@ export function createWater(
           * (glintPower + 1.0) / ${(SUN_SHININESS + 1).toFixed(1)};
         vec3 colour = mix(diffuse, reflectedSky + sunColour * glint, fresnel);
         // Whitewater: diffuse, unpolished, so it replaces the reflective water colour.
-        float foam = wakeFoamAmount(wakePos, wakeSN, wakeProps, bow * bowFilter, pixel);
+        float foam = wakeFoamAmount(wakePos, wakeSN, wakeProps, bow, bowSample.g, bowSample.b, pixel);
         vec3 foamColour = ${FOAM_ALBEDO.toFixed(3)} * (ambient + sunColour * max(dot(normal, sunDirection), 0.0));
         colour = mix(colour, foamColour, foam * ${WAKE.foamOpacity.toFixed(3)});
         gl_FragColor = vec4(colour, 1.0);

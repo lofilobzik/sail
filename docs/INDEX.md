@@ -63,6 +63,10 @@ tables, so transcribe any number you use from the **page image**, then copy it i
 
 Wake: Kelvin wake pattern, https://en.wikipedia.org/wiki/Kelvin_wake_pattern (angles, wavenumbers);
 energy balance as in `data/wake.json` `sources`. Parameters: `src/data/wake.json`.
+The independently emitted bow fronts use the same deep-water period/phase-speed identity, but their
+expanding-circle propagation speed, profile, decay and sampling resolution are a **TUNING GUESS**
+visual approximation, not a measured Laser wake or a complete dispersive/fluid model. Parameters
+and assumptions are in `wake.json` `sources`; implementation is `render/wake/bowField.ts`.
 
 - [GPU Gems chapter 1, Effective Water Simulation from Physical Models](https://developer.nvidia.com/gpugems/gpugems/part-i-natural-effects/chapter-1-effective-water-simulation-physical-models),
   section 1.2.3: Gerstner displacement (Eq. 9), analytic orientation, steepness constraint and deep-water

@@ -43,41 +43,6 @@ function smoothstep(e0: number, e1: number, x: number): number {
 
 const filterWeight = (phaseStep: number) => 1 - smoothstep(FILTER_FULL, FILTER_ZERO, phaseStep);
 
-const BOW_K = 2 * Math.PI / wake.foamNoisePeriod;
-const BOW_MODE_A = wake.bowVariationModes[0]!;
-const BOW_MODE_B = wake.bowVariationModes[1]!;
-
-/**
- * Headless reference for wakeBow's height: aft/side are relative to the current hull contact.
- * noiseX/Z are world coordinates reduced modulo foamNoisePeriod, phases are the slow foam phases.
- * TUNING GUESS (wake.json): irregular crest/strength fade in aft, leaving the attachment pinned.
- * A zero-integral crest/trough wavelet spreads into V arms with inverse-root attenuation.
- * Profile and spreading scale are visual TUNING GUESS values, not a fluid wake solution.
- */
-export function bowWave(
-  aft: number, side: number, height: number,
-  noiseX: number, noiseZ: number, phaseA: number, phaseB: number,
-): number {
-  if (height <= 0) return 0;
-  const a = Math.max(aft, 0);
-  const blend = smoothstep(0, wake.bowVariationStart, a);
-  const n1 = Math.sin(BOW_K * (BOW_MODE_A[0]! * noiseX + BOW_MODE_A[1]! * noiseZ) + phaseA);
-  const n2 = Math.sin(BOW_K * (BOW_MODE_B[0]! * noiseX + BOW_MODE_B[1]! * noiseZ) + phaseB);
-  const crest = wake.bowOffset + a * Math.tan(wake.bowAngleDeg * DEG)
-    + blend * wake.bowCrestWander * 0.5 * (n1 + n2);
-  const u = (Math.abs(side) - crest) / (wake.bowWidth + wake.bowWidthGrowth * a);
-  const u2 = u * u;
-  const strength = 1 + blend * wake.bowHeightVariation * 0.5 * (n1 - n2);
-  const along = smoothstep(-wake.bowAhead, 0, aft) / Math.sqrt(1 + a / wake.bowLength);
-  return height * strength * along * (1 - 2 * u2) * Math.exp(-u2);
-}
-
-/** Match the growing V-arm width so distant arms aren't filtered at the narrow bow width. */
-export function bowWaveFilter(aft: number, footprint: number): number {
-  const width = wake.bowWidth + wake.bowWidthGrowth * Math.max(aft, 0);
-  return 1 - smoothstep(width, 2 * width, footprint);
-}
-
 export interface WakeSample {
   h: number;
   dhds: number;
@@ -132,8 +97,8 @@ const f = (v: number) => v.toFixed(10);
  * Shader code. Uniforms (filled by render/wake.ts):
  *   wakeA[N] (local x, local z, s, speed), wakeB[N] (amplitude, age, 0, 0), wakeCount,
  *   wakeStem (local x, z of the waterline stem, forward unit x, z),
- *   wakeHull (bow wave height, waterline length, foam speed factor, beam),
- *   wakeWet (metres aft of the design stem, signed starboard offset of the current hull/sea contact),
+ *   wakeHull (unused, waterline length, stern foam speed factor, beam),
+ *   bowField (RGBA float texture), bowFieldOrigin (local texel-zero centre), bowFieldCell, bowFieldResolution,
  *   wakeProfile[P] waterline half-beam from stem (a = 0) to transom (a = Lwl),
  *   wakeFoam (noise origin offset x, z mod period, 0, 0), wakeFoamPhase (drift phases).
  * `wakeFrameGLSL` is vertex-only (trail search); `wakeShadeGLSL` is shared.
@@ -144,7 +109,10 @@ export function wakeShadeGLSL(): string {
   return `
 uniform vec4 wakeStem;
 uniform vec4 wakeHull;
-uniform vec2 wakeWet;
+uniform sampler2D bowField;
+uniform vec2 bowFieldOrigin;
+uniform float bowFieldCell;
+uniform float bowFieldResolution;
 uniform float wakeProfile[${P}];
 uniform vec4 wakeFoam;
 uniform vec3 wakeFoamPhase;
@@ -203,32 +171,32 @@ float wakeHullMask(vec2 p) {
   return smoothstep(c - 0.03, c + 0.03, ab.y);
 }
 
-// Spreading V crest/trough arms leave the foremost wetted hull point. World-anchored
-// variation bends and strengthens the arms; fade-in pins attachment. Visual TUNING GUESS.
-float wakeBow(vec2 p) {
-  float height = wakeHull.x;
-  if (height <= 0.0) return 0.0;
-  vec2 d = p - wakeStem.xy;
-  vec2 fwd = wakeStem.zw;
-  float x = -dot(d, fwd) - wakeWet.x;
-  float b = abs(fwd.x * d.y - fwd.y * d.x - wakeWet.y);
-  float a = max(x, 0.0);
-  float along = smoothstep(-${f(wake.bowAhead)}, 0.0, x) / sqrt(1.0 + a / ${f(wake.bowLength)});
-  vec2 q = p + wakeFoam.xy;
-  float n1 = sin(dot(q, vec2(${f(BOW_K * BOW_MODE_A[0]!)}, ${f(BOW_K * BOW_MODE_A[1]!)})) + wakeFoamPhase.x);
-  float n2 = sin(dot(q, vec2(${f(BOW_K * BOW_MODE_B[0]!)}, ${f(BOW_K * BOW_MODE_B[1]!)})) + wakeFoamPhase.y);
-  float blend = smoothstep(0.0, ${f(wake.bowVariationStart)}, a);
-  float crest = ${f(wake.bowOffset)} + a * ${f(Math.tan(wake.bowAngleDeg * DEG))}
-    + blend * ${f(wake.bowCrestWander)} * 0.5 * (n1 + n2);
-  float u = (b - crest) / (${f(wake.bowWidth)} + ${f(wake.bowWidthGrowth)} * a);
-  float strength = 1.0 + blend * ${f(wake.bowHeightVariation)} * 0.5 * (n1 - n2);
-  return height * strength * along * (1.0 - 2.0 * u * u) * exp(-u * u);
+// World-space scalar bow field. Four nearest lookups give bilinear filtering without
+// float-linear texture support; packet count never affects shader cost.
+vec4 wakeBowSample(vec2 p) {
+  vec2 grid = (p - bowFieldOrigin) / bowFieldCell;
+  float last = bowFieldResolution - 1.0;
+  if (grid.x < 0.0 || grid.y < 0.0 || grid.x > last || grid.y > last) return vec4(0.0);
+  vec2 base = floor(grid);
+  vec2 next = min(base + 1.0, vec2(last));
+  vec2 weight = grid - base;
+  vec2 uv0 = (base + 0.5) / bowFieldResolution;
+  vec2 uv1 = (next + 0.5) / bowFieldResolution;
+  vec4 value = mix(
+    mix(texture2D(bowField, uv0), texture2D(bowField, vec2(uv1.x, uv0.y)), weight.x),
+    mix(texture2D(bowField, vec2(uv0.x, uv1.y)), texture2D(bowField, uv1), weight.x),
+    weight.y);
+  // TUNING GUESS (wake.json): fade height/foam across four cache-edge cells.
+  float edge = min(min(grid.x, grid.y), min(last - grid.x, last - grid.y));
+  float fade = smoothstep(0.0, 4.0, edge);
+  value.r *= fade;
+  value.b *= fade;
+  return value;
 }
 
-// Use local spreading width, not the narrow width at the bow, when filtering the V arms.
-float wakeBowFilter(vec2 p, float footprint) {
-  float aft = max(wakeHullCoords(p).x - wakeWet.x, 0.0);
-  float width = ${f(wake.bowWidth)} + ${f(wake.bowWidthGrowth)} * aft;
+float wakeBowFilter(vec4 fieldSample, float footprint) {
+  float width = fieldSample.a;
+  if (width <= 0.0) return 0.0;
   return 1.0 - smoothstep(width, 2.0 * width, footprint);
 }
 
@@ -244,20 +212,25 @@ float wakeNoise(vec2 p, float footprint) {
 }
 
 // Foam coverage 0..1: turbulent wake behind the transom plus whitewater on the bow wave.
-float wakeFoamAmount(vec2 p, vec4 sn, vec4 props, float bow, float footprint) {
+float wakeFoamAmount(
+  vec2 p, vec4 sn, vec4 props, float bow, float bowReference, float bowSpeed, float footprint
+) {
   float speedFactor = wakeHull.z;
-  if (speedFactor <= 0.0) return 0.0;
+  if (speedFactor <= 0.0 && bowSpeed <= 0.0) return 0.0;
   float age = props.z;
   float behindTransom = sn.x - wakeHull.y;
   float width = ${f(wake.foamWidthFracBeam)} * wakeHull.w + ${f(wake.foamSpreadRate)} * age;
   float turbulent = (1.0 - smoothstep(0.5 * width, width, abs(sn.y)))
     * smoothstep(-0.2, 0.4, behindTransom) * exp(-age / ${f(wake.foamFadeTime)}) * props.w * wakeHullMask(p);
-  float crest = smoothstep(${f(wake.foamBowThreshold)}, 1.0, bow / max(wakeHull.x, 1e-4));
-  float coverage = speedFactor * max(turbulent, crest);
   float noise = wakeNoise(p, footprint);
-  // Boost so the turbulent core is a continuous streak and only its edges break up into patches.
-  float boosted = min(coverage * 1.8, 1.0);
-  return smoothstep(1.0 - boosted, 1.0 - boosted + 0.3, noise) * boosted;
+  // Preserve the stern's existing coverage boost and patch breakup.
+  float boosted = min(speedFactor * turbulent * 1.8, 1.0);
+  float sternFoam = smoothstep(1.0 - boosted, 1.0 - boosted + 0.3, noise) * boosted;
+  // TUNING GUESS (wake.json): continuous crest foam; noise varies opacity, never gates it off.
+  float crest = smoothstep(${f(wake.foamBowThreshold)}, ${f(wake.foamBowFull)}, bow / max(bowReference, 1e-4));
+  float bowCoverage = min(${f(wake.foamBowGain)} * bowSpeed * crest, 1.0);
+  float bowFoam = bowCoverage * mix(${f(1 - wake.foamBowNoiseContrast)}, 1.0, noise);
+  return max(sternFoam, bowFoam);
 }
 `;
 }
