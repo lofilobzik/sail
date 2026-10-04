@@ -116,7 +116,7 @@ export class DebugOverlay {
 
     const y = d.yaw;
     t.L6.textContent = L.yaw
-      ? `sail ${nm(y.sail)}  foils ${nm(y.foils)}  hull ${nm(y.hull)}\nmunk ${nm(y.munk)}  damping ${nm(y.damping)}  total ${nm(y.total)}`
+      ? `sail ${nm(y.sail)}  foils ${nm(y.foils)}  hull ${nm(y.hull)}\nmunk ${nm(y.munk)}  damping ${nm(y.damping)}  ground ${nm(y.ground)}  total ${nm(y.total)}`
       : OFF;
 
     const w = d.waves;
@@ -134,7 +134,10 @@ export class DebugOverlay {
     const c = d.controls;
     t.Boat.textContent =
       `speed ${kn(d.speed)}  leeway ${deg(d.leeway)}  VMG ${kn(d.vmg)}  heading ${deg(wrap2Pi(s.heading))}\n` +
-      `tiller ${c.tiller.toFixed(2)}  sheet ${c.sheet.toFixed(2)}  hike ${c.hike.toFixed(2)}`;
+      `tiller ${c.tiller.toFixed(2)}  sheet ${c.sheet.toFixed(2)}  hike ${c.hike.toFixed(2)}` +
+      (d.ground
+        ? `\ndepth ${d.ground.depth.toFixed(2)} m${d.ground.penetration > 0 ? `  AGROUND ${d.ground.penetration.toFixed(2)} m  F ${n(Math.hypot(d.ground.fx, d.ground.fy))}` : ''}`
+        : '\nopen water (no seabed)');
   }
 
   private buildPhysics(onReset: () => void): void {
@@ -172,6 +175,7 @@ export class DebugOverlay {
       this.rangeInput(sec, 'wind shifts', gusts.shiftScale, 2, (v) => (gusts.shiftScale = v));
     }
 
+    this.checkbox(sec, 'seabed grounding (bay)', cfg.land, (v) => (cfg.land = v));
     this.checkbox(sec, 'waves', cfg.waves.enabled, (v) => (cfg.waves.enabled = v));
     this.rangeInput(sec, 'wave amplitude', cfg.waves.amplitudeScale, WAVE_PARAMETERS.maxAmplitudeScale, (v) => {
       cfg.waves.amplitudeScale = v;

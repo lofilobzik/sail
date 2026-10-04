@@ -383,6 +383,24 @@ numbers and appearance checks describe the implementations that existed at those
   CPU double precision is still finite; this is not an unlimited-distance guarantee or target-GPU
   performance qualification. Physical wave-response calibration and far-field filtering limits remain.
 
+### Grounding (`sim/layers/ground.ts`, `data/bay.json` `grounding`)
+
+On when `cfg.land` is set (the browser; off in `defaultConfig()`, so headless runs and the polar
+sail in endless deep water). Elevation `h(x, z)` comes from `sim/terrain.ts` (`terrainHeight`,
+depth = -h; waves are ignored). With board tip depth `T = Tc + board span` (0.77 m), penetration
+`p = clamp(T - depth, 0, maxPenetration)`. When `p > 0`, in the world frame:
+- push toward deeper water: `F_push = k p (-grad h / |grad h|)`, `k = pushStiffness` (3000 N/m);
+- damping: `F_damp = -c p V`, `c = damping` (2000 N s/m^2), and yaw `N = -c_r p r`, `c_r = yawDamping`.
+The force is rotated into the body frame and added to the total; the yaw moment joins the yaw sum
+(reported as `yaw.ground`). There is no board kick-up, heel on the bottom, or keel/hull contact
+geometry: it is a soft stop for play, all **TUNING GUESS**.
+- Check (`ground.test.ts` and a throwaway run): driving at 3.7 kn on a beam reach (heading held)
+  straight at the east shore, the boat first touches at 0.77 m depth and stops within about 2 m,
+  never shallower than the hull's canoe draft. Easing the sheet fully lets the push and the wind
+  float it clear (depth back above the board tip); with yaw free it bears away and sails off.
+  A boat left head to wind in the shallows has no rudder flow and stays in irons until the sheet
+  is eased, as on a real beach.
+
 ## 3. Boat parameters (`data/laser.json`)
 
 | Parameter | Value | Status |
@@ -420,22 +438,25 @@ position: the sailor reads values, remembers them and later plots them.
   Its doubt radius grows by `hypot(speedFraction, tan(courseSigmaDeg))` times the distance
   plotted **[tune]**; a fix resets it to `accuracy.oneLineFix` or `accuracy.twoLineFix`.
 - A bearing line's normal is perpendicular to its compass direction. The remembered velocity times
-  the note's age advances the buoy before solving a running fix. One bearing projects the
+  the note's age advances the mark before solving a running fix. One bearing projects the
   remembered position onto that line; two bearings intersect their advanced lines (after
   `timing.plotLine` s per line). One plot key: candidate notes are the named notes newer than the
-  last plot and younger than `maxBearingAge`, newest per buoy, at most two; with candidates the plot
+  last plot and younger than `maxBearingAge`, newest per mark, at most two; with candidates the plot
   is a fix, otherwise the leg. Each plot appends to a capped pencil track (`maxTrack`). The chart
-  lists the bearing and distance from the last plotted position to every buoy and a course line
+  lists the bearing and distance from the last plotted position to every mark and a course line
   with minute ticks at the remembered speed. Reject unnamed/expired notes, near-parallel geometry,
-  solutions looking away from the chosen buoy, and notes older than `noteCarryGrace` s with no
+  solutions looking away from the chosen mark, and notes older than `noteCarryGrace` s with no
   remembered course and speed. These limits are **[tune]**, not empirical compass accuracy.
+- Marks are the buoys (`data/buoys.json`) and the landmarks ashore (`data/bay.json`), both at known
+  chart positions (`NAV_MARKS`). The eye names the mark nearest the line of sight within
+  `visual.markAimDeg`; the bearing is still the compass's.
 - A physical lap chart, the hand-bearing compass model and the faint memory text in `render/` read
   this independent navigation state. Only the explicit chart debug marker receives true position;
   render-side origin changes never alter navigation or the chart's logical landmark coordinates.
 - Navigation regressions cover timed and interrupted readings, the astern-only wake and stale speed,
   remembered course and speed, leg plotting, the track, candidate notes and the single plot key,
   doubt growth, reset, north-wrap graduation, one/two-bearing fixes, line crossings, running
-  observations, bad geometry/identification, bounded notes, and chart projection and auto-fit.
+  observations, bad geometry/identification, landmark fixes, bounded notes, and chart projection and auto-fit.
 
 ## 5. Validation
 
@@ -464,4 +485,7 @@ If the polar shape is wrong, fix the sail curves (L2) first, then the foils (L3)
 
 Apparent wind vector, true wind vector, sail force components, foil forces, hull drag, boat speed, leeway angle,
 heel, `luffAmount`, current inputs. Wave diagnostics include surface height, roll/pitch targets,
-pitch, wave roll moment and separate board/rudder orbital inflows. Toggle with a key. Off by default in normal play.
+pitch, wave roll moment and separate board/rudder orbital inflows. With the bay on, the boat line
+shows the depth under the boat and, when aground, the penetration and ground force; the yaw line
+shows the ground yaw moment, and "seabed grounding (bay)" toggles `cfg.land`. Toggle with a key.
+Off by default in normal play.

@@ -106,6 +106,8 @@ export interface SimConfig {
   wind: WindConfig;
   env: EnvironmentConfig;
   waves: WaveConfig;
+  /** The bay's seabed and shores (data/bay.json): grounding in the shallows. Off: endless deep water. */
+  land: boolean;
   /** Fixed timestep, s. */
   dt: number;
   /** Integration substeps per fixed step. */
@@ -138,6 +140,8 @@ export function defaultConfig(waveSeed?: number): SimConfig {
     // Gusts are off here so headless runs and the polar stay constant-wind; the browser enables them.
     wind: { speedKn: 7, fromDeg: 0, gusts: { enabled: false, seed: waveSeed ?? 1, gustScale: 1, shiftScale: 1 } },
     waves: defaultWaves(waveSeed),
+    // Headless runs and the polar sail in open water; the browser sails in the bay.
+    land: false,
     env: {
       rhoAir: 1.225, // PHYSICS.md section 3, standard
       rhoWater: 1025, // PHYSICS.md section 3, sea water (1000 fresh)

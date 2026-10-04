@@ -79,7 +79,7 @@ export class MemoryReadout {
         this.arc.setAttribute('stroke-dashoffset', offset);
       }
       const caption = task === 'bearing'
-        ? `${LABELS[task]} · ${nav.aimedBow ? 'BOW' : nav.aimedBuoy ?? 'no buoy'}`
+        ? `${LABELS[task]} · ${nav.aimedBow ? 'BOW' : nav.aimedMark ?? 'no mark'}`
         : nav.astern ? LABELS[task] : 'LOOK ASTERN';
       if (caption !== this.lastCaption) {
         this.lastCaption = caption;
@@ -101,7 +101,7 @@ export class MemoryReadout {
     if (nav.course) lines.push(`course ${bearingLabel(nav.course.value)}  ${age(nav.t - nav.course.t)}`);
     if (nav.speed) lines.push(`speed ${(nav.speed.value / KNOT).toFixed(1)} kn  ${age(nav.t - nav.speed.t)}`);
     for (const note of nav.observations) {
-      lines.push(`${note.buoyId ?? '?'} ${bearingLabel(note.bearing)}  ${age(nav.t - note.t)}`);
+      lines.push(`${note.markId ?? '?'} ${bearingLabel(note.bearing)}  ${age(nav.t - note.t)}`);
     }
     const text = visible ? lines.join('\n') : '';
     if (text !== this.lastText) {

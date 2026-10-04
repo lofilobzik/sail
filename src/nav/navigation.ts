@@ -8,9 +8,21 @@
 import parameters from '../data/navigation.json';
 import buoyData from '../data/buoys.json';
 import { DEG, bearingToWorld, wrap2Pi, wrapPi, type Vec2 } from '../sim/frames';
+import { LANDMARKS } from '../sim/terrain';
 
 export const NAVIGATION = parameters;
-export const NAV_BUOYS = buoyData.buoys;
+
+/** Something fixed a bearing can be taken on: a buoy or a landmark ashore, at known chart positions. */
+export interface Mark extends Vec2 {
+  name: string;
+  /** Height above mean sea level the eye sights on, m. */
+  sightHeight: number;
+}
+
+export const NAV_MARKS: readonly Mark[] = [
+  ...buoyData.buoys.map((b) => ({ name: b.name, x: b.x, z: b.z, sightHeight: buoyData.height / 2 })),
+  ...LANDMARKS.map((l) => ({ name: l.name, x: l.x, z: l.z, sightHeight: l.base + l.height * NAVIGATION.visual.landmarkSightFraction })),
+];
 
 export interface InstrumentReading {
   t: number;
@@ -29,14 +41,14 @@ export interface Observation {
   t: number;
   bearing: number;
   /** Chosen by the player on the chart, not inferred from a target's true position. */
-  buoyId: string | null;
+  markId: string | null;
 }
 
-/** n dot position = offset; direction points FROM the observer TO the buoy. */
+/** n dot position = offset; direction points FROM the observer TO the mark. */
 export interface PositionLine {
   normal: Vec2;
   direction: Vec2;
-  buoy: Vec2;
+  mark: Vec2;
   offset: number;
 }
 
@@ -51,7 +63,7 @@ export interface Task { kind: ReadingKind | PlotKind; elapsed: number; duration:
 
 /**
  * A steady-aim hold: offsets from the first aim, so a slow track on a mark averages out, and what the
- * eyes saw during it (bow or buoys), so a boat rocking the crosshair off the buoy for a moment is forgiven.
+ * eyes saw during it (bow or marks), so a boat rocking the crosshair off the mark for a moment is forgiven.
  */
 interface Hold {
   ref: number;
@@ -59,11 +71,11 @@ interface Hold {
   samples: { t: number; d: number }[];
   steps: number;
   bowSteps: number;
-  buoys: Map<string, number>;
+  marks: Map<string, number>;
 }
 
 function newHold(ref: number, t: number): Hold {
-  return { ref, lastT: t, samples: [{ t, d: 0 }], steps: 0, bowSteps: 0, buoys: new Map() };
+  return { ref, lastT: t, samples: [{ t, d: 0 }], steps: 0, bowSteps: 0, marks: new Map() };
 }
 
 export function graduatedBearing(bearing: number): number {
@@ -77,18 +89,18 @@ export function bearingLabel(bearing: number): string {
 
 /** Advance a sighting's line by the remembered motion since it was taken (a running line of position). */
 export function positionLine(observation: Observation, carry: Carry): PositionLine | null {
-  const buoy = NAV_BUOYS.find((b) => b.name === observation.buoyId);
-  if (!buoy) return null;
+  const mark = NAV_MARKS.find((m) => m.name === observation.markId);
+  if (!mark) return null;
   const direction = bearingToWorld(observation.bearing);
   const normal = { x: -direction.z, z: direction.x };
   const age = carry.t - observation.t;
-  const advancedBuoy = {
-    x: buoy.x + (carry.velocity?.x ?? 0) * age,
-    z: buoy.z + (carry.velocity?.z ?? 0) * age,
+  const advancedMark = {
+    x: mark.x + (carry.velocity?.x ?? 0) * age,
+    z: mark.z + (carry.velocity?.z ?? 0) * age,
   };
   return {
-    normal, direction, buoy: advancedBuoy,
-    offset: normal.x * advancedBuoy.x + normal.z * advancedBuoy.z,
+    normal, direction, mark: advancedMark,
+    offset: normal.x * advancedMark.x + normal.z * advancedMark.z,
   };
 }
 
@@ -102,8 +114,8 @@ export function lineIntersection(a: PositionLine, b: PositionLine): Vec2 | null 
   };
 }
 
-function pointsTowardBuoy(line: PositionLine, point: Vec2): boolean {
-  return (line.buoy.x - point.x) * line.direction.x + (line.buoy.z - point.z) * line.direction.z >= 0;
+function pointsTowardMark(line: PositionLine, point: Vec2): boolean {
+  return (line.mark.x - point.x) * line.direction.x + (line.mark.z - point.z) * line.direction.z >= 0;
 }
 
 /** One bearing constrains a line; two well-separated bearings determine a fix. */
@@ -117,20 +129,20 @@ export function solveFix(observations: readonly Observation[], context: FixConte
   }
   const lines = observations.map((o) => positionLine(o, context));
   const a = lines[0];
-  if (!a || lines.some((l) => !l)) return { ok: false, reason: 'Identify each selected buoy.' };
+  if (!a || lines.some((l) => !l)) return { ok: false, reason: 'Identify each selected mark.' };
   let position: Vec2 | null;
   if (lines.length === 1) {
     const distance = a.offset - a.normal.x * context.position.x - a.normal.z * context.position.z;
     position = { x: context.position.x + a.normal.x * distance, z: context.position.z + a.normal.z * distance };
   } else {
     position = lineIntersection(a, lines[1]!);
-    if (!position) return { ok: false, reason: 'Lines too parallel. Sight another buoy.' };
+    if (!position) return { ok: false, reason: 'Lines too parallel. Sight another mark.' };
   }
   if (!Number.isFinite(position.x) || !Number.isFinite(position.z)) {
     return { ok: false, reason: 'Cannot resolve these bearings.' };
   }
-  if (lines.some((l) => !pointsTowardBuoy(l!, position))) {
-    return { ok: false, reason: 'Bearing points away from buoy. Check its ID.' };
+  if (lines.some((l) => !pointsTowardMark(l!, position))) {
+    return { ok: false, reason: 'Bearing points away from its mark. Check what you sighted.' };
   }
   return { ok: true, position };
 }
@@ -147,15 +159,15 @@ export class Navigation {
   /** The sailor is looking back along the wake, the only way to judge speed through the water. */
   astern = false;
   task: Task | null = null;
-  message = 'Hold F on a buoy or the bow for a bearing, or looking astern at the wake for speed.';
+  message = 'Hold F on a buoy, a landmark or the bow for a bearing, or looking astern at the wake for speed.';
   private nextId = 1;
   private instrumentSpeed = 0;
   private aimT = 0;
   private aim: number | null = null;
   private hold: Hold | null = null;
   private looking = true;
-  /** The painted buoy the compass is pointing at, as read by the sailor's eyes; null if none. */
-  aimedBuoy: string | null = null;
+  /** The mark the compass is pointing at, as recognised by the sailor's eyes; null if none. */
+  aimedMark: string | null = null;
   /** The compass is pointing at the boat's own bow: a bow bearing is the boat's course. */
   aimedBow = false;
 
@@ -265,7 +277,7 @@ export class Navigation {
     const current = this.hold!;
     current.steps += 1;
     if (this.aimedBow) current.bowSteps += 1;
-    else if (this.aimedBuoy) current.buoys.set(this.aimedBuoy, (current.buoys.get(this.aimedBuoy) ?? 0) + 1);
+    else if (this.aimedMark) current.marks.set(this.aimedMark, (current.marks.get(this.aimedMark) ?? 0) + 1);
     return true;
   }
 
@@ -285,9 +297,9 @@ export class Navigation {
     this.astern = astern;
   }
 
-  /** The buoy under the crosshair, named by its painted ID. Bearings still come from the compass. */
-  setAimedBuoy(name: string | null): void {
-    this.aimedBuoy = name;
+  /** The mark under the crosshair, named by the eye (a buoy's painted ID, a landmark's shape). Bearings still come from the compass. */
+  setAimedMark(name: string | null): void {
+    this.aimedMark = name;
   }
 
   setAimedBow(aimed: boolean): void {
@@ -300,7 +312,7 @@ export class Navigation {
     this.task = { kind, elapsed: 0, duration: kind === 'bearing' ? timing.bearingRead : timing.speedRead };
     this.hold = null;
     this.message = kind === 'bearing'
-      ? 'Hold steady on a buoy: its painted ID names it. Line the compass up with the bow, tilted down, for your course.'
+      ? 'Hold steady on a buoy or landmark: the eye names it. Line the compass up with the bow, tilted down, for your course.'
       : this.astern ? 'Watching the wake.' : 'Look astern at the wake.';
   }
 
@@ -311,30 +323,30 @@ export class Navigation {
     this.message = 'Reading lost. Hold it steady next time.';
   }
 
-  /** What the compass was on for most of the hold: the bow (the course), or the buoy under the crosshair. */
+  /** What the compass was on for most of the hold: the bow (the course), or the mark under the crosshair. */
   private holdTarget(hold: Hold | null): string | null {
     if (!hold || !hold.steps) return null;
     if (hold.bowSteps * 2 > hold.steps) return 'course';
     let best: string | null = null;
     let votes = 0;
-    for (const [name, count] of hold.buoys) {
+    for (const [name, count] of hold.marks) {
       if (count > votes) {
         best = name;
         votes = count;
       }
     }
-    return best && votes >= NAVIGATION.buoyHoldFraction * hold.steps ? best : null;
+    return best && votes >= NAVIGATION.markHoldFraction * hold.steps ? best : null;
   }
 
   /**
    * The notes a fix would use: bearings taken since the last plot, named, still fresh, and at most
-   * one newest per buoy (two buoys give a fix, one gives a line). Oldest first.
+   * one newest per mark (two marks give a fix, one gives a line). Oldest first.
    */
   candidateNotes(): Observation[] {
     const chosen: Observation[] = [];
     for (const note of [...this.observations].reverse()) {
-      if (!note.buoyId || note.t <= this.plotted.t || this.t - note.t > NAVIGATION.maxBearingAge) continue;
-      if (chosen.some((c) => c.buoyId === note.buoyId)) continue;
+      if (!note.markId || note.t <= this.plotted.t || this.t - note.t > NAVIGATION.maxBearingAge) continue;
+      if (chosen.some((c) => c.markId === note.markId)) continue;
       chosen.push(note);
       if (chosen.length === 2) break;
     }
@@ -442,20 +454,20 @@ export class Navigation {
 
   record(bearing: number): void {
     if (!Number.isFinite(bearing)) return;
-    const observation: Observation = { id: this.nextId++, t: this.t, bearing: graduatedBearing(bearing), buoyId: null };
+    const observation: Observation = { id: this.nextId++, t: this.t, bearing: graduatedBearing(bearing), markId: null };
     if (this.observations.length === NAVIGATION.maxObservations) this.observations.shift();
     this.observations.push(observation);
-    this.message = `Noted ${bearingLabel(observation.bearing)}. No buoy was under the crosshair.`;
+    this.message = `Noted ${bearingLabel(observation.bearing)}. No mark was under the crosshair.`;
   }
 
-  identify(id: number, buoyId: string): void {
+  identify(id: number, markId: string): void {
     const observation = this.observations.find((o) => o.id === id);
-    if (!observation || !NAV_BUOYS.some((b) => b.name === buoyId)) return;
-    observation.buoyId = buoyId;
-    this.message = `Note ${id}: ${buoyId}. Press R to reckon.`;
+    if (!observation || !NAV_MARKS.some((m) => m.name === markId)) return;
+    observation.markId = markId;
+    this.message = `Note ${id}: ${markId}. Press R to reckon.`;
   }
 
-  /** The note was taken along the bow: remember it as the course instead of a buoy bearing. */
+  /** The note was taken along the bow: remember it as the course instead of a mark bearing. */
   assignCourse(id: number): void {
     const observation = this.observations.find((o) => o.id === id);
     if (!observation) return;

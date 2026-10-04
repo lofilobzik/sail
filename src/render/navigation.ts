@@ -1,7 +1,7 @@
 /** Navigation scene objects and what the sailor's eyes can tell. Rendering reads the independent navigation model. */
 import * as THREE from 'three';
-import buoyData from '../data/buoys.json';
-import { NAVIGATION, type Navigation } from '../nav/navigation';
+import type { Vec2 } from '../sim/frames';
+import { NAVIGATION, NAV_MARKS, type Navigation } from '../nav/navigation';
 import { sightingBearing } from '../nav/sighting';
 import { LapChart } from './chart';
 import { HandBearingCompass } from './compass';
@@ -18,20 +18,20 @@ export class NavigationView {
   chartInView = false;
   /** The line of sight is back along the wake, where speed through the water can be judged. */
   lookingAstern = false;
-  /** The painted buoy under the crosshair, by name; the eye reads its ID, the compass gives the bearing. */
-  aimedBuoy: string | null = null;
+  /** The mark under the crosshair, by name: the eye reads a buoy's painted ID or knows a landmark's shape; the compass gives the bearing. */
+  aimedMark: string | null = null;
   /** Sighting down the boat toward its bow: the compass is lined up with the centreline, tilted down. */
   aimedBow = false;
   private readonly bow = new THREE.Object3D();
   private readonly forward = new THREE.Vector3();
-  private readonly buoyPosition = new THREE.Vector3();
+  private readonly markPosition = new THREE.Vector3();
   private readonly chartPosition = new THREE.Vector3();
   private readonly eyePosition = new THREE.Vector3();
   private readonly direction = new THREE.Vector3();
 
   constructor(
     nav: Navigation, boat: BoatMesh, private readonly camera: THREE.PerspectiveCamera,
-    private readonly buoys: THREE.Object3D,
+    private readonly origin: Readonly<Vec2>,
   ) {
     this.chart = new LapChart(nav, boat.sailor.eye);
     this.compass = new HandBearingCompass(camera);
@@ -48,7 +48,7 @@ export class NavigationView {
     this.camera.getWorldPosition(this.eyePosition);
     const toChart = this.chartPosition.sub(this.eyePosition).normalize();
     this.chartInView = cockpit && toChart.dot(this.direction) > Math.cos(NAVIGATION.visual.chartViewDeg * Math.PI / 180);
-    this.aimedBuoy = cockpit ? this.buoyUnderCrosshair() : null;
+    this.aimedMark = cockpit ? this.markUnderCrosshair() : null;
     this.aimedBow = cockpit && this.sightingAlongBow();
     this.lookingAstern = cockpit && this.facingAstern();
     this.compass.update(this.bearing, this.sighting && cockpit);
@@ -64,18 +64,18 @@ export class NavigationView {
     return Math.abs(Math.atan2(Math.sin(offset), Math.cos(offset))) < visual.bowAimDeg * Math.PI / 180;
   }
 
-  /** The buoy whose mid-height lies within `buoyAimDeg` of the line of sight, nearest to it first. */
-  private buoyUnderCrosshair(): string | null {
-    const limit = Math.cos(NAVIGATION.visual.buoyAimDeg * Math.PI / 180);
+  /** The mark whose sighting point lies within `markAimDeg` of the line of sight, nearest to it first. */
+  private markUnderCrosshair(): string | null {
+    const limit = Math.cos(NAVIGATION.visual.markAimDeg * Math.PI / 180);
     let best: string | null = null;
     let bestDot = limit;
-    for (const buoy of this.buoys.children) {
-      buoy.getWorldPosition(this.buoyPosition);
-      this.buoyPosition.y += buoyData.height / 2;
-      const dot = this.buoyPosition.sub(this.eyePosition).normalize().dot(this.direction);
+    for (const mark of NAV_MARKS) {
+      // Marks are fixed in the logical world; the camera lives in render-local coordinates.
+      this.markPosition.set(mark.x - this.origin.x, mark.sightHeight, mark.z - this.origin.z);
+      const dot = this.markPosition.sub(this.eyePosition).normalize().dot(this.direction);
       if (dot > bestDot) {
         bestDot = dot;
-        best = buoy.name;
+        best = mark.name;
       }
     }
     return best;

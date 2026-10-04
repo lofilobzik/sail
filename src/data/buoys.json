@@ -1,12 +1,12 @@
 {
-  "source": "Sandbox landmarks, not a course or IALA navigation marks. Positions are world x (east) and z (south) in metres from the known departure, spread to roughly 400-550 m so that choosing a buoy by eye matters. VISUAL ESTIMATE sizes (scaled with the spacing so they stay readable), distinctive colours/topmarks and painted IDs for milestone 6 sighting and chart identification.",
+  "source": "Sandbox landmarks, not a course or IALA navigation marks. Positions are world x (east) and z (south) in metres from the known departure, in 12-17 m of water, 1.3-1.5 km out in a ring around the start: N in the channel east of Great Holm and Holm Spit, NE off Eastport's approach, E off the east shore, S on the way to the bay mouth beside Little Holm Ledge, W toward Westcove. VISUAL ESTIMATE sizes (scaled with the spacing so they stay readable at that range), distinctive colours/topmarks and painted IDs for milestone 6 sighting and chart identification.",
   "buoys": [
-    { "name": "N", "x": 0, "z": -380, "color": "#ef6f2f", "topmark": "cone" },
-    { "name": "NE", "x": 350, "z": -150, "color": "#e8c845", "topmark": "sphere" },
-    { "name": "E", "x": 550, "z": 100, "color": "#d04c47", "topmark": "doubleCone" },
-    { "name": "S", "x": 150, "z": 400, "color": "#65aa76", "topmark": "cylinder" },
-    { "name": "W", "x": -300, "z": 75, "color": "#539dd5", "topmark": "cross" }
+    { "name": "N", "x": 380, "z": -1250, "color": "#ef6f2f", "topmark": "cone" },
+    { "name": "NE", "x": 1150, "z": -700, "color": "#e8c845", "topmark": "sphere" },
+    { "name": "E", "x": 1350, "z": 250, "color": "#d04c47", "topmark": "doubleCone" },
+    { "name": "S", "x": 350, "z": 1450, "color": "#65aa76", "topmark": "cylinder" },
+    { "name": "W", "x": -1250, "z": 450, "color": "#539dd5", "topmark": "cross" }
   ],
-  "radius": 1.1,
-  "height": 2.6
+  "radius": 1.8,
+  "height": 4.2
 }

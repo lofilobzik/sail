@@ -1,7 +1,8 @@
-/** World-anchored Gerstner water; CPU samples and this shader share waves.ts. */
+/** World-anchored Gerstner water, tinted over baked shallows; CPU samples and this shader share waves.ts. */
 import * as THREE from 'three';
 import { gerstnerGLSL, waveAmplitude, wavePhaseAt, WAVE_PARAMETERS, type WaveConfig } from '../sim/waves';
 import type { Vec2 } from '../sim/frames';
+import { terrainGrid } from '../sim/terrain';
 import type { WakeView } from './wake';
 import { WAKE, wakeFrameGLSL, wakeShadeGLSL } from './wake/kelvin';
 import { skyGLSL, type SkyView } from './sky';
@@ -13,6 +14,40 @@ const WATER_REFRACTIVE_INDEX = 1.333; // Water/air index; https://en.wikipedia.o
 const WATER_F0 = ((WATER_REFRACTIVE_INDEX - 1) / (WATER_REFRACTIVE_INDEX + 1)) ** 2;
 const SUN_SHININESS = 96; // TUNING GUESS: broad water glint, no measured roughness
 const FOAM_ALBEDO = 0.85; // TUNING GUESS: whitewater diffuse reflectance
+// Shallows, VISUAL ESTIMATE from aerial photos of sandy bays: sand shows through the first metre,
+// turquoise to a few metres, then the deep body colour. The bed colour replaces the body colour
+// under the Fresnel reflection (partly, see SHALLOW_GLANCE).
+const SHALLOW_SAND = 0xa3ae8a; // wet sand under a few centimetres of water
+const SHALLOW_TURQUOISE = 0x22706e;
+const SHALLOW_TURQUOISE_DEPTH = 1.2; // m: sand to turquoise
+const SHALLOW_DEPTH = 5; // m: turquoise to the deep body colour
+const SHALLOW_DEPTH_RANGE = 32; // m: the baked depth is clamped to +/- this (half-float texture)
+// Fraction of the Fresnel reflection the bed replaces over the shallowest water. Physically the
+// bed vanishes at grazing angles; seen from a dinghy that hides every shoal, so this VISUAL
+// ESTIMATE keeps shoals and beaches readable from a sitting eye height.
+const SHALLOW_GLANCE = 0.5;
+
+/**
+ * Seabed elevation baked once from terrainGrid() into a single-channel half-float texture in
+ * logical world coordinates (texel centres on the grid samples), sampled with hardware filtering.
+ */
+function createShallowsTexture(): { texture: THREE.DataTexture; bounds: THREE.Vector4 } {
+  const grid = terrainGrid();
+  const data = new Uint16Array(grid.heights.length);
+  for (let i = 0; i < data.length; i++) {
+    const h = Math.min(Math.max(grid.heights[i]!, -SHALLOW_DEPTH_RANGE), SHALLOW_DEPTH_RANGE);
+    data[i] = THREE.DataUtils.toHalfFloat(h);
+  }
+  const texture = new THREE.DataTexture(data, grid.columns, grid.rows, THREE.RedFormat, THREE.HalfFloatType);
+  texture.magFilter = texture.minFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  const width = grid.columns * grid.cell, height = grid.rows * grid.cell;
+  return {
+    texture,
+    // uv = (world - corner) * scale; the corner is half a cell outside the first sample.
+    bounds: new THREE.Vector4(grid.minX - grid.cell / 2, grid.minZ - grid.cell / 2, 1 / width, 1 / height),
+  };
+}
 
 export interface WaterView {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
@@ -87,6 +122,7 @@ export function createWater(
   let components = cfg.components;
   const waveCode = gerstnerGLSL(components);
   const wakeShade = wakeShadeGLSL();
+  const shallows = createShallowsTexture();
   const material = new THREE.ShaderMaterial({
     fog: true,
     // Wake uniforms are attached by reference after the merge (merge clones values).
@@ -97,12 +133,20 @@ export function createWater(
         waveShape: { value: components.map((w) => new THREE.Vector4(w.dx, w.dz, w.k, w.amplitude)) },
         waveMotion: { value: components.map((w) => new THREE.Vector2(w.phase, w.choppiness)) },
         waterColour: { value: new THREE.Color(WATER_COLOR) },
+        shallowSand: { value: new THREE.Color(SHALLOW_SAND) },
+        shallowTurquoise: { value: new THREE.Color(SHALLOW_TURQUOISE) },
         sunDirection: { value: sun.position.clone().sub(sun.target.position).normalize() },
         sunColour: { value: sun.color.clone().multiplyScalar(sun.intensity) },
         hemisphereSky: { value: hemisphere.color.clone().multiplyScalar(hemisphere.intensity) },
         hemisphereGround: { value: hemisphere.groundColor.clone().multiplyScalar(hemisphere.intensity) },
       },
-    ]), wake.uniforms, sky.uniforms, gusts.uniforms),
+    ]), wake.uniforms, sky.uniforms, gusts.uniforms, {
+      // By reference: merge would clone the texture and upload it twice.
+      shallowsTexture: { value: shallows.texture },
+      shallowsBounds: { value: shallows.bounds },
+      // Logical world position of render-local zero, for the world-anchored seabed lookup.
+      renderOrigin: { value: new THREE.Vector2() },
+    }),
     vertexShader: `
       uniform float waveScale;
       attribute vec2 cellFootprint;
@@ -135,6 +179,11 @@ export function createWater(
     `,
     fragmentShader: `
       uniform vec3 waterColour;
+      uniform vec3 shallowSand;
+      uniform vec3 shallowTurquoise;
+      uniform sampler2D shallowsTexture;
+      uniform vec4 shallowsBounds; // world corner x, z; 1 / world width, 1 / world depth
+      uniform vec2 renderOrigin;
       uniform vec3 sunDirection;
       uniform vec3 sunColour;
       uniform vec3 hemisphereSky;
@@ -190,7 +239,15 @@ export function createWater(
         vec3 reflectedSky = skyRadiance(reflection, ${SKY.waterCloudOctaves}, 0.0,
           smoothstep(${SKY.waterCloudFresnelFrom}, ${SKY.waterCloudFresnelFull}, fresnel));
         vec3 ambient = mix(hemisphereGround, hemisphereSky, normal.y * 0.5 + 0.5);
-        vec3 diffuse = waterColour * (ambient + sunColour * max(dot(normal, sunDirection), 0.0));
+        // Shallows: one filtered fetch of the baked seabed, in logical world coordinates. Outside
+        // the bake the sea is deep.
+        vec2 seabedUV = (waterPosition.xz + renderOrigin - shallowsBounds.xy) * shallowsBounds.zw;
+        float baked = all(equal(seabedUV, clamp(seabedUV, 0.0, 1.0))) ? 1.0 : 0.0;
+        float depth = -texture2D(shallowsTexture, seabedUV).r;
+        vec3 bed = mix(shallowSand, shallowTurquoise, smoothstep(0.0, ${SHALLOW_TURQUOISE_DEPTH.toFixed(2)}, depth));
+        float shallow = baked * (1.0 - smoothstep(0.0, ${SHALLOW_DEPTH.toFixed(2)}, depth));
+        vec3 body = mix(waterColour, bed, shallow);
+        vec3 diffuse = body * (ambient + sunColour * max(dot(normal, sunDirection), 0.0));
         // TUNING GUESS: broaden the specular lobe by the pixel's normal variance;
         // preserve the cosine-power lobe's integrated energy instead of flashing
         // a narrow highlight on/off as it crosses a pixel.
@@ -199,7 +256,9 @@ export function createWater(
         float glintPower = ${SUN_SHININESS.toFixed(1)} / (1.0 + ${SUN_SHININESS.toFixed(1)} * variance);
         float glint = pow(max(dot(reflection, sunDirection), 0.0), glintPower)
           * (glintPower + 1.0) / ${(SUN_SHININESS + 1).toFixed(1)};
-        vec3 colour = mix(diffuse, reflectedSky + sunColour * glint, fresnel);
+        // Over the shallows the bright bed keeps part of its colour even at grazing angles,
+        // so shoals and beaches still read from a sitting eye height.
+        vec3 colour = mix(diffuse, reflectedSky + sunColour * glint, fresnel * (1.0 - ${SHALLOW_GLANCE.toFixed(2)} * shallow));
         // Gust patches (cat's paws): wind ruffles the surface, which scatters light, so the water
         // darkens where the sim's wind is stronger; lulls are slightly smoother and brighter.
         float gust = gustAmount(waterPosition.xz);
@@ -233,6 +292,7 @@ export function createWater(
       (u.sunColour!.value as THREE.Color).copy(sun.color).multiplyScalar(sun.intensity);
       (u.hemisphereSky!.value as THREE.Color).copy(hemisphere.color).multiplyScalar(hemisphere.intensity);
       (u.hemisphereGround!.value as THREE.Color).copy(hemisphere.groundColor).multiplyScalar(hemisphere.intensity);
+      (u.renderOrigin!.value as THREE.Vector2).set(origin.x, origin.z);
       if (components !== cfg.components) {
         components = cfg.components;
         const shapes = material.uniforms.waveShape!.value as THREE.Vector4[];

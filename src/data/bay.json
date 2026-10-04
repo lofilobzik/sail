@@ -1,0 +1,49 @@
+{
+  "seed": 7,
+  "mainland": {
+    "coast": [
+      [-8000, 2600], [-3200, 2500], [-1900, 2350], [-1350, 2050], [-1450, 1650], [-1850, 1250],
+      [-2000, 600], [-1950, -200], [-1750, -1000], [-1350, -1700], [-700, -2150], [0, -2300],
+      [700, -2200], [1300, -1850], [1750, -1250], [1950, -500], [1900, 300], [1700, 1000],
+      [1300, 1500], [1100, 1850], [1250, 2150], [1900, 2300], [3200, 2450], [8000, 2600],
+      [8000, -8000], [-8000, -8000]
+    ],
+    "hillHeight": 150,
+    "hillRise": 600
+  },
+  "islands": [
+    { "name": "Great Holm", "x": -750, "z": -950, "rx": 650, "rz": 330, "rotationDeg": 25, "hillHeight": 75, "hillRise": 220 },
+    { "name": "Little Holm", "x": 950, "z": 850, "rx": 190, "rz": 140, "rotationDeg": -30, "hillHeight": 28, "hillRise": 90 }
+  ],
+  "shoals": [
+    { "name": "Holm Spit", "x": 150, "z": -800, "radius": 140, "topDepth": 0.3 },
+    { "name": "Little Holm Ledge", "x": 700, "z": 1150, "radius": 90, "topDepth": 0.5 }
+  ],
+  "coastNoise": { "amplitude": 130, "wavelength": 520, "octaves": 4 },
+  "reliefNoise": { "amplitude": 0.45, "wavelength": 900, "octaves": 5 },
+  "beach": { "width": 30, "height": 1.5 },
+  "seabed": { "maxDepth": 28, "nearshoreSlopeMin": 0.017, "nearshoreSlopeMax": 0.05, "slopeWavelength": 700 },
+  "grid": { "minX": -5000, "maxX": 5000, "minZ": -5000, "maxZ": 4000, "cell": 20 },
+  "landmarks": [
+    { "name": "LIGHT", "kind": "lighthouse", "x": 1330, "z": 2180, "height": 22, "color": "#f2efe6", "band": "#c8322f" },
+    { "name": "SPIRE", "kind": "spire", "x": 100, "z": -2430, "height": 32, "color": "#b7a58c", "band": "#4d5a5e" },
+    { "name": "TOWER", "kind": "tower", "x": -760, "z": -960, "height": 14, "color": "#8f8a7f", "band": "#5d574d" },
+    { "name": "MAST", "kind": "mast", "x": -2500, "z": -300, "height": 60, "color": "#e6e2da", "band": "#d0342c" }
+  ],
+  "towns": [
+    { "name": "Northhaven", "x": 0, "z": -2480, "radius": 380, "houses": 140 },
+    { "name": "Westcove", "x": -2150, "z": 900, "radius": 260, "houses": 80 },
+    { "name": "Eastport", "x": 2150, "z": -350, "radius": 300, "houses": 100 }
+  ],
+  "scatteredHouses": { "count": 120, "minShoreDistance": 30, "maxShoreDistance": 450 },
+  "grounding": { "pushStiffness": 3000, "damping": 2000, "yawDamping": 400, "maxPenetration": 2, "gradientStep": 2 },
+  "sources": {
+    "layout": "VISUAL ESTIMATE / sandbox design: a horseshoe bay about 3.9 km east-west and 4.4 km north-south, open to the south through a 2.6 km mouth between two headlands. World x east, z south, metres from the known departure (0, 0). The mainland is a polygon of land (signed distance, perturbed by seeded fractal noise of coastNoise amplitude and wavelength so the shore gets coves and points); islands are rotated ellipses with the same perturbation. The departure, all buoys and the shoals lie well clear of land.",
+    "relief": "VISUAL ESTIMATE: low hills. A beach rises to beach.height over beach.width from the waterline, then hills approach hillHeight with an exponential rise length, modulated by reliefNoise (fraction of the hill height).",
+    "seabed": "VISUAL ESTIMATE / TUNING GUESS: depth falls away from each shore with a seeded nearshore slope between 1:60 and 1:20 and saturates at maxDepth, so the bay centre is about 20-25 m deep. Shoals are Gaussian bumps rising to topDepth below mean sea level, deep enough to float the hull but shallow enough to ground the daggerboard.",
+    "grid": "Render/chart bake only: heights sampled every cell metres over the bounds. Physics evaluates the analytic function directly.",
+    "landmarks": "Sandbox landmarks for bearings, not real aids to navigation. height is the structure above the ground at its foot; colours are VISUAL ESTIMATE.",
+    "towns": "VISUAL ESTIMATE: house counts and radii so the shore does not look bare. Houses are only placed on gentle, dry ground.",
+    "grounding": "TUNING GUESS: when the seabed is shallower than the daggerboard tip, penetration (m, capped at maxPenetration) pushes the boat toward deeper water (pushStiffness N/m along the seabed gradient) and damps its motion (damping N s/m^2 times penetration times velocity, yawDamping N m s/rad per metre of penetration). Sized so a Laser at full drive stops within a few metres of touching on a 1:40 slope, and slides back off when the sheet is eased or the boat is turned away. gradientStep is the finite-difference step, m."
+  }
+}

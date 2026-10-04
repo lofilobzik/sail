@@ -8,6 +8,7 @@ import type { SimConfig } from './config';
 import { DEG, G, bearingToWorld, bodyToWorld, clamp, type Vec2 } from './frames';
 import { apparentWind, type ApparentWind } from './layers/apparentWind';
 import { foilForces, type FoilAmbientFlow, type FoilsResult } from './layers/foils';
+import { groundForces, type GroundResult } from './layers/ground';
 import { CREW_CROSSING_SPEED, crewPosition, rightingMoment } from './layers/heel';
 import { hullForces, type HullResult } from './layers/hull';
 import { boomKinematics, sailForces, type SailResult } from './layers/sail';
@@ -38,6 +39,8 @@ export interface YawDiagnostics {
   hull: number;
   munk: number;
   damping: number;
+  /** Seabed contact damping, N m (0 afloat or with cfg.land off). */
+  ground: number;
   total: number;
 }
 
@@ -50,6 +53,8 @@ export interface Diagnostics {
   hull: HullResult | null;
   /** null on the exact flat-water path (disabled or zero amplitude). */
   waves: WaveDiagnostics | null;
+  /** null when the bay is off (cfg.land). */
+  ground: GroundResult | null;
   heel: HeelDiagnostics;
   yaw: YawDiagnostics;
   /** Total body-frame force, N, and moments, N m. */
@@ -128,9 +133,11 @@ export function evaluate(state: BoatState, controls: Controls, boat: BoatModel, 
   if (cfg.terms.crewCentresWhenLuffing && sail) crew = crewPosition(state, controls, boat, sail.luffAmount);
   const foils = L.foils ? foilForces(state, controls, boat, cfg.env, cfg.terms, cfg.models, waves ?? undefined) : null;
   const hull = L.hull ? hullForces(state, boat, cfg.env, cfg.terms, cfg.models) : null;
+  const ground = cfg.land ? groundForces(state, boat) : null;
   const s = sail ?? ZERO_SAIL_LIKE;
   const f = foils ?? ZERO_SAIL_LIKE;
   const h = hull ?? ZERO_SAIL_LIKE;
+  const gx = ground?.fx ?? 0, gy = ground?.fy ?? 0, gYaw = ground?.yawMoment ?? 0;
 
   const righting = L.heel ? rightingMoment(state.heel, state.crewY, crew.z, boat) : 0;
   let heelTotal = s.heelMoment + f.heelMoment + h.heelMoment + righting;
@@ -138,7 +145,7 @@ export function evaluate(state: BoatState, controls: Controls, boat: BoatModel, 
 
   const munk = L.yaw && cfg.terms.munkMoment ? munkMoment(state, boat, cfg.env) : 0;
   const damping = -boat.cfg.dynamics.yawDamping * state.r;
-  const yawTotal = s.yawMoment + f.yawMoment + h.yawMoment + munk + damping;
+  const yawTotal = s.yawMoment + f.yawMoment + h.yawMoment + munk + damping + gYaw;
 
   // Boom kinematics run even with the sail layer off so the rig still moves.
   const cosHeel = Math.cos(state.heel);
@@ -156,6 +163,7 @@ export function evaluate(state: BoatState, controls: Controls, boat: BoatModel, 
     foils,
     hull,
     waves,
+    ground,
     heel: {
       aeroMoment: s.heelMoment,
       hydroMoment: f.heelMoment + h.heelMoment,
@@ -164,8 +172,8 @@ export function evaluate(state: BoatState, controls: Controls, boat: BoatModel, 
       crewTargetY: crew.targetY,
       crewZ: crew.z,
     },
-    yaw: { sail: s.yawMoment, foils: f.yawMoment, hull: h.yawMoment, munk, damping, total: yawTotal },
-    total: { fx: s.fx + f.fx + h.fx, fy: s.fy + f.fy + h.fy, yaw: yawTotal, heel: heelTotal },
+    yaw: { sail: s.yawMoment, foils: f.yawMoment, hull: h.yawMoment, munk, damping, ground: gYaw, total: yawTotal },
+    total: { fx: s.fx + f.fx + h.fx + gx, fy: s.fy + f.fy + h.fy + gy, yaw: yawTotal, heel: heelTotal },
     speed,
     leeway: speed > 1e-3 ? Math.atan2(state.v, Math.abs(state.u)) : 0,
     vmg: vel.x * windFrom.x + vel.z * windFrom.z,

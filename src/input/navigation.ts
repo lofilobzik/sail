@@ -1,5 +1,5 @@
 /**
- * Hold F: take a reading. Where you look decides which: looking astern at the wake (no buoy under
+ * Hold F: take a reading. Where you look decides which: looking astern at the wake (no mark under
  * the crosshair) judges speed, anything else raises the hand-bearing compass for a bearing.
  * R: reckon, i.e. plot on the chart. The mouse is only for looking around and the debug panel.
  */

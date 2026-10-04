@@ -3,6 +3,7 @@ import { TestHud } from './debug/hud';
 import { DebugOverlay } from './debug/overlay';
 import { ControlInput, isTypingTarget } from './input/controls';
 import { MouseLook } from './input/mouseLook';
+import { BinocularInput } from './input/binoculars';
 import { NavigationInput } from './input/navigation';
 import { Navigation, type ReadingKind } from './nav/navigation';
 import { MemoryReadout } from './render/memory';
@@ -22,6 +23,7 @@ const boat = buildBoat();
 // Choose a sea pattern once. All subsequent sampling remains seeded and world-anchored.
 const cfg = defaultConfig(Math.floor(Math.random() * 0x100000000));
 cfg.waves.enabled = true;
+cfg.land = true;
 setWaveWind(cfg.waves, cfg.wind.speedKn);
 const params = new URLSearchParams(location.search);
 // Browser sailing has gusts and shifts (seeded like the sea); ?gusts=0 keeps the wind constant.
@@ -60,6 +62,7 @@ if (clouds !== null) view.sky.setCloudCoverage(clouds);
 const input = new ControlInput(view.renderer.domElement);
 const look = new MouseLook(view.renderer.domElement);
 const navigationInput = new NavigationInput(() => view.mode === 'cockpit');
+const binocularInput = new BinocularInput(() => view.mode === 'cockpit');
 const vectors = new ForceVectors(boat, view.scene, view.boat.yaw, view.boat.heel);
 
 let prev: BoatState;
@@ -138,18 +141,23 @@ function frame(now: number): void {
   last = now;
   frameMs += (frameSeconds * 1000 - frameMs) * FRAME_SMOOTHING;
 
-  // F starts one reading when pressed: the wake if the sailor is looking astern with no buoy under the
-  // crosshair, otherwise a compass bearing (a buoy astern is still a bearing). It is not repeated
+  // B raises the binoculars unless a reading is under way; while they are up F is ignored.
+  const glassesUp = binocularInput.held && !wantedReading;
+  view.binoculars.update(frameSeconds, glassesUp);
+  look.sensitivityScale = 1 / view.binoculars.zoom;
+
+  // F starts one reading when pressed: the wake if the sailor is looking astern with no mark under the
+  // crosshair, otherwise a compass bearing (a mark astern is still a bearing). It is not repeated
   // until the key is released, and the kind is fixed for the whole press.
-  if (!navigationInput.held) {
+  if (!navigationInput.held || glassesUp) {
     if (wantedReading) navigation.cancelReading();
     wantedReading = null;
   } else if (!wantedReading) {
-    wantedReading = view.navigation.lookingAstern && !view.navigation.aimedBuoy ? 'speed' : 'bearing';
+    wantedReading = view.navigation.lookingAstern && !view.navigation.aimedMark ? 'speed' : 'bearing';
     navigation.beginReading(wantedReading);
   }
   navigation.setAim(wantedReading === 'bearing' ? view.navigation.bearing : null);
-  navigation.setAimedBuoy(wantedReading === 'bearing' ? view.navigation.aimedBuoy : null);
+  navigation.setAimedMark(wantedReading === 'bearing' ? view.navigation.aimedMark : null);
   navigation.setAimedBow(wantedReading === 'bearing' && view.navigation.aimedBow);
   navigation.setAstern(view.navigation.lookingAstern);
   const lookingAtChart = view.navigation.chartInView;

@@ -7,6 +7,8 @@ export class MouseLook {
   yaw = 0;
   /** Rad, + = look up. */
   pitch = 0;
+  /** Multiplier on the sensitivity; the binoculars set 1/zoom so a magnified view turns as slowly as it looks. */
+  sensitivityScale = 1;
 
   constructor(private readonly canvas: HTMLElement) {
     canvas.addEventListener('click', () => {
@@ -14,8 +16,9 @@ export class MouseLook {
     });
     document.addEventListener('mousemove', (e) => {
       if (document.pointerLockElement !== this.canvas) return;
-      this.yaw -= e.movementX * SENSITIVITY;
-      this.pitch = Math.min(MAX_PITCH, Math.max(-MAX_PITCH, this.pitch - e.movementY * SENSITIVITY));
+      const s = SENSITIVITY * this.sensitivityScale;
+      this.yaw -= e.movementX * s;
+      this.pitch = Math.min(MAX_PITCH, Math.max(-MAX_PITCH, this.pitch - e.movementY * s));
     });
   }
 }

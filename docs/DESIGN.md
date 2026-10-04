@@ -5,7 +5,7 @@ Read this file at the start of every session. Read `PHYSICS.md` before touching 
 ## What this is
 
 A first-person, realistic sailing simulator that runs in the browser as a static site.
-One sailor, one boat (Laser / ILCA 7), open water, light gusty wind.
+One sailor, one boat (Laser / ILCA 7), a bay with islands, light gusty wind.
 Failure is the teacher: there is no auto-trim and no auto-hiking. The world gives honest
 cues (telltales, luffing, heel, water), and the player learns to read them.
 
@@ -14,7 +14,8 @@ Keep the boat data-driven so that is possible later.
 
 ## v1 scope
 
-- Free sandbox in endless open water, with a few buoys to navigate between.
+- Free sandbox in a bay (see "The bay"): shores, two islands, towns and landmarks, with a few buoys
+  to navigate between. Headless runs and the polar sail in endless open water (`cfg.land` off).
 - Boat: Laser (ILCA 7), procedurally generated to class dimensions.
 - Wind: default 7 knots mean, always read through `getWind(position, time)`. Debug range 0-16 kn;
   6-8 kn remains the intended light-wind sailing range, stronger settings are exploratory.
@@ -35,7 +36,7 @@ Keep the boat data-driven so that is possible later.
 - First-person camera only; vertical cockpit field of view 85 degrees.
 - Controls: mouse look, keyboard for tiller / sheet / hiking.
 - Navigation: compass plus a paper-style chart with a drifting dead-reckoning marker,
-  corrected by bearings to buoys.
+  corrected by bearings to buoys and landmarks ashore.
 - Visuals: as realistic as an integrated laptop GPU allows, at one fixed quality level. There are no
   quality tiers: every effect is built cheap enough to run everywhere.
 
@@ -75,7 +76,7 @@ Rules:
   Only the flat-water debug grid snaps. Filter rendering detail to mesh/pixel resolution.
   A **render-side floating origin** follows the interpolated boat every frame, without threshold jumps.
   Simulation/navigation coordinates stay in logical-world doubles. Boat, cameras, water and debug
-  arrows use small render-local coordinates; fixed buoy transforms are rebased before GPU upload.
+  arrows use small render-local coordinates; fixed buoy and land transforms are rebased before GPU upload.
   Reduce each wave's origin/time phase in double precision before the shader adds local spatial phase.
   Wake history is world-anchored: `render/wake/trail.ts` stores logical-world doubles and subtracts this
   same origin only when packing GPU uniforms.
@@ -90,7 +91,8 @@ Rules:
 | W / S | Ease mainsheet / sheet in, holds position |
 | Mouse wheel up / down | Sheet in / ease mainsheet in small steps, holds position |
 | Shift (hold) | Hike out (lean weight out), release to sit in |
-| F (hold) | Take a reading; where you look decides which. Looking astern at the wake (no buoy under the crosshair) judges boat speed. Anything else raises the yellow hand-bearing compass for a bearing: the buoy under the crosshair names itself, and lined up with the bow, tilted down, the bearing is your course. A buoy astern is still a bearing |
+| F (hold) | Take a reading; where you look decides which. Looking astern at the wake (no mark under the crosshair) judges boat speed. Anything else raises the yellow hand-bearing compass for a bearing: the buoy or landmark under the crosshair names itself, and lined up with the bow, tilted down, the bearing is your course. A mark astern is still a bearing |
+| B (hold) | Raise the binoculars: the view glides to 10x through a two-lens mask, mouse look slows to match, and lowering them glides back. For checking landmarks from afar; bearings still come from the compass (F), and B is ignored during a reading and F while the glasses are up |
 | R | Reckon, with the chart in view: plot bearings taken since the last plot (a fix), otherwise the dead-reckoning leg |
 | H | Toggle test instruments (hidden by default) |
 
@@ -140,6 +142,16 @@ fraction of a second and holds its position. Same idea for the sheet.
   texture read with hardware filtering rather than Sky.js's per-pixel hash, which cost about 2.8 ms
   per frame on an M1; the whole sky is about 1 ms. The dome draws last at the far plane so water and
   boat pixels skip it. No screen-space reflections, no heavy post-processing, no renderer tone mapping.
+- **Land** (`render/land/`, all VISUAL ESTIMATE): built once at startup from the shared terrain grid.
+  The terrain is 64x64-cell tiles (about 360k triangles, culled per tile) with vertex colours for
+  seabed sand, wet/dry beach, grass, scrub, woodland floor and rock; about 4.6k instanced trees in
+  clumps; about 440 instanced houses with pitched roofs in the three towns and scattered along the
+  shore; and the four landmark models. Land draws before the water so hills reject hidden water by
+  depth, and fogs toward the sky's horizon colour like the water. The water shader reads a baked
+  seabed-height texture and tints the shallows sand/turquoise. To see land across the bay the fog
+  runs 0-9 km, the water mesh is 40 km across, the dome radius is 25 km and the far plane 30 km;
+  the renderer uses a reversed depth buffer (the dome writes the far plane at z = 0) so distant
+  shorelines do not z-fight. Measured on an M1 the bay adds well under 1 ms per frame (within noise).
 - **Boat:** procedural hull lofted from a few cross-sections using class dimensions,
   plus spars and fittings. Low triangle count.
 - **Sail:** cloth-like visual (small Verlet grid, around 20x12 points, pinned along luff / foot).
@@ -157,6 +169,27 @@ fraction of a second and holds its position. Same idea for the sheet.
   `:3` reads backwards when seen from the other side. The default is the plain white class sail.
 - **Sailor:** v1 shows hands, tiller extension and sheet. Full body and hiking pose come later.
 
+## The bay
+
+- **Layout** (`data/bay.json`, all VISUAL ESTIMATE): a horseshoe bay about 3.9 km east-west and
+  4.4 km north-south, open to the south through a 2.6 km mouth between two headlands. Great Holm
+  (about 1.3 x 0.7 km, 75 m hill with a stone tower) lies in the north-west of the bay, Little Holm
+  (about 380 x 280 m) toward the mouth in the east. Two shoals (Holm Spit, Little Holm Ledge) rise to
+  0.3-0.5 m. The departure (0, 0) and every buoy are in 10-20 m of water.
+- **One elevation function** (`sim/terrain.ts`, pure and seeded): a mainland polygon and island
+  ellipses as signed distances, their coasts perturbed by fractal noise; beaches, then low hills
+  modulated by noise ashore; a seeded 1:60-1:20 nearshore slope saturating at 28 m offshore.
+  Physics evaluates it directly; the land mesh, the water's shallow tint and the chart use one grid
+  baked from it at startup (`terrainGrid()`), so the chart, the land and grounding always agree.
+- **Grounding** (`sim/layers/ground.ts`, PHYSICS.md "Grounding"): the seabed touching the daggerboard
+  tip pushes the boat toward deeper water and damps it, so it stops within a few metres in the
+  shallows and slides off again when the sheet is eased or it turns away. Toggle with `cfg.land`
+  ("seabed grounding (bay)" in the debug panel); the debug panel shows depth and AGROUND.
+- **Landmarks** for bearings: LIGHT (lighthouse on the east headland), SPIRE (church in Northhaven),
+  TOWER (on Great Holm) and MAST (radio mast in the western hills). Towns (Northhaven, Westcove,
+  Eastport) and scattered houses line the shore; trees clump on the grass. All of it is visual only:
+  land does not shelter the wind or shorten the sea.
+
 ## In-world cues (no HUD)
 
 Telltales on the sail, sail luffing and flutter, a masthead fly or burgee, water ripples
@@ -169,7 +202,10 @@ The debug overlay is a developer tool, not a player aid, and is toggled off by d
   hiking. It is always there: look down to see it. No minimap, chart overlay, automatic camera
   movement or chart raised into view. It is read-only and driven entirely by the keyboard: the mouse
   only looks around (and clicks the debug panel). The chart frames the marker, its track, the course
-  line and all the buoys by itself.
+  line, all the buoys and any landmark the next plot will use by itself. The bay is printed around
+  them: buff land with a coastline, faint 50 and 100 m height contours, blue shallows inside the 2 m
+  contour (where the board touches), 5 and 10 m depth contours, and the names of towns, islands and
+  shoals. A landmark beyond the paper gets a pointer at the edge with its bearing and distance.
 - **No instrument tells you where you are.** The boat has no log, GPS or deck compass. The only
   instruments are a yellow hand-bearing compass (modelled on a Plastimo Iris 50) and the sailor's
   eyes. There is no live position: the chart shows only the last position pencilled onto it, how
@@ -177,24 +213,24 @@ The debug overlay is a developer tool, not a player aid, and is toggled off by d
 - **Readings take time.** Hold `F` to raise the compass and hold it on a mark (a ring fills; pointing
   at the sky, or straying more than 10 degrees from your own recent mean aim, restarts it) to record
   a bearing. The boat rocks in the waves, which swings the aim a few degrees either way; the
-  recorded bearing is the mean over the last 1.5 s, so a slow track on a buoy works. The buoy that
+  recorded bearing is the mean over the last 1.5 s, so a slow track on a mark works. The mark that
   was under the crosshair for most of the hold (at least 30% of it, so a rocking boat is forgiven)
   is named automatically. Lining the compass up with the boat's centreline, tilted down at least 8
   degrees toward the bow for most of the hold, takes a bow bearing, which is remembered as the
   course. Speed comes from the wake: press `F` looking astern (within about 50 degrees of straight
-  back) with no buoy under the crosshair; the kind of reading is fixed when the key goes down, and
+  back) with no mark under the crosshair; the kind of reading is fixed when the key goes down, and
   turning away from the wake restarts the ring. A remembered speed older than two minutes is flagged
   OLD on the chart, so the sailor knows to look at the wake again. A value is only taken when the
   ring completes, is not repeated until the key is released, and is kept with its age.
 - **Remembered values are shown as faint text** in the lower-right corner (course, speed, and each
-  bearing with its buoy), never as an instrument. They are exactly true for now; no instrument
+  bearing with its mark), never as an instrument. They are exactly true for now; no instrument
   error, magnetic variation or deviation is modelled.
 - **One reckoning key.** `R`, with the chart in view, plots the bearings taken since the last plot if
   there are any named ones (a fix, about 4 s per line), and otherwise the dead-reckoning leg
   (about 5 s). Pencil work only progresses while you look at the paper; looking away pauses it
   where it was. A leg carries the last pencilled position forward by the remembered course and
   speed over the time since the last plot, ignoring leeway and anything that changed since the
-  readings. A fix takes the newest named note of each buoy, up to two: one projects the marker onto
+  readings. A fix takes the newest named note of each mark, up to two: one projects the marker onto
   its line, leaving along-line error; two adequately separated bearings give an intersection fix.
   The marker only moves when the pencil work finishes. The doubt figure in the header grows with the
   length of each leg plotted on memory and shrinks again on a fix.
@@ -202,22 +238,24 @@ The debug overlay is a developer tool, not a player aid, and is toggled off by d
   Every earlier plotted position stays as a dot on a thin pencilled
   track. A dashed course line runs ahead of the dot with ticks at 1, 2 and 5 minutes at the
   remembered speed, and a little triangle points where the last bow reading says we are heading.
-  Every buoy always shows the bearing and distance from the last plotted position, so the chart says
+  Every mark always shows the bearing and distance from the last plotted position, so the chart says
   what to steer for; those figures go stale as the boat sails on until the next plot. Bearing lines
   are drawn only for notes the next plot will use; plotted ones are rubbed out. There are no grid
   numbers, track times or arrival times.
-- **Buoys identify themselves to the eye.** A sailor can read the painted ID of the buoy they are
-  looking at, so a buoy within 7 degrees of the line of sight counts as under the crosshair. This
-  uses only what the eye sees: the bearing still comes from the compass, and the boat's position is
-  never used. There is no manual selection: a note taken with no buoy under the crosshair stays
-  unnamed and is not used for fixes. Buoys have matching physical painted IDs,
-  distinctive colours and topmarks; these are sandbox landmarks, not an IALA-marked course.
-- **Bearing lines on the chart.** Each named note draws a pencil line from its buoy back along the
+- **Marks identify themselves to the eye.** A sailor can read the painted ID of the buoy they are
+  looking at, or recognise a landmark's shape, so a mark within 7 degrees of the line of sight counts
+  as under the crosshair (buoys at half height, landmarks at 60% of their height). This uses only
+  what the eye sees: the bearing still comes from the compass, and the boat's position is never
+  used. There is no manual selection: a note taken with no mark under the crosshair stays unnamed
+  and is not used for fixes. Buoys have matching physical painted IDs, distinctive colours and
+  topmarks; buoys and landmarks are sandbox marks, not an IALA-marked course. The chart key shows
+  every mark's symbol.
+- **Bearing lines on the chart.** Each named note draws a pencil line from its mark back along the
   bearing, labelled with its angle; the ones the next plot will use are darker, and where two of
   them cross the crossing is marked. Lines are advanced by the remembered course and speed, so
   sailing between sightings is accounted for. Bearings expire after 180 simulated seconds;
   near-parallel lines (within 15 degrees), unnamed notes and bearings pointing away from their
-  chosen buoys cannot provide a fix. These limits are TUNING GUESS values.
+  chosen marks cannot provide a fix. These limits are TUNING GUESS values.
 - There is no "you are here" marker for the true position (a debug toggle may show it).
   The navigation estimator receives only instrument readings, never the true boat position;
   logical navigation coordinates are independent of the render-side floating origin.
@@ -246,6 +284,10 @@ One milestone per session. Commit after each working one.
    remembered values, physical lap chart with doubt circle and bearing lines, identifiable buoys.
    Pure navigation tests cover timed holds, remembered values, leg plotting, bearing geometry, fixes and
    chart projection. Browser smoke checked pointer-locked readings, the memory text, plotting and lines.
+   **Bay:** horseshoe bay with two islands, beaches and low hills, towns, houses and trees, four
+   landmarks usable for bearings, a shallow-water tint, grounding on the seabed, and a chart printed
+   with land, coastline, depth/height contours and place names. Tests cover fixes on landmarks and
+   grounding (stops within a few metres, afloat, slides off when eased).
 7. **Sailor body and hiking pose (post-v1, as scoped above).**
 8. **Polish:** sound, tuning against the polar.
 
@@ -268,3 +310,7 @@ capsize, planing and stronger wind, third-person camera, cruising / management l
 - Heel clamp value and what the clamp feels like at the limit.
 - Wave response magnitudes are sanity-checked, not calibrated against measured Laser wave data.
   Tune by feel for now; measured response would be needed for calibration.
+- Bay: grounding feel (push/damping are TUNING GUESS), chart framing (buoys plus landmarks in use,
+  others pointed at from the edge) and landmark visibility (the spire is small from mid-bay) await
+  player feedback. Distant-shore depth precision is only checked on Apple GPUs (reversed depth there
+  is floating point).

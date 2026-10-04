@@ -1,6 +1,6 @@
 /**
- * Three.js scene: lights, sky, shared Gerstner water and snapped grid, buoys, boat and
- * cameras (first-person, plus an outside view for checking). Reads state only.
+ * Three.js scene: lights, sky, shared Gerstner water and snapped grid, the bay's land, buoys, boat
+ * and cameras (first-person, plus an outside view for checking). Reads state only.
  */
 import * as THREE from 'three';
 import { meanWind, type BoatModel, type EnvironmentConfig, type Vec2, type WindConfig } from '../sim';
@@ -11,14 +11,22 @@ import { SkyView } from './sky';
 import { GustMap } from './gustMap';
 import { WakeView } from './wake';
 import { createWater, type WaterView } from './water';
+import { createLand, type LandView } from './land';
+import { Binoculars } from './binoculars';
 import type { Navigation } from '../nav/navigation';
 import { NavigationView } from './navigation';
 
 const GRID_CELL = 5; // TUNING GUESS: grid cell size, m (grid snaps to multiples of this)
 const GRID_CELLS = 80; // TUNING GUESS: grid cells per side
 const FOV_DEG = 85; // User-selected vertical cockpit field of view, degrees
-const FOG_NEAR = 400; // visual estimate, m
-const FOG_FAR = 2500; // visual estimate, m
+// Linear fog (smoothstep between these view depths), visual estimate: land at 2-5 km is hazy but
+// clear (about 15-55% fogged); the water is fully fogged well inside its 20 km half-extent, even
+// at the screen edges, so it meets the horizon without a seam.
+const FOG_NEAR = 0; // m
+const FOG_FAR = 9000; // m
+// Beyond the water mesh corners (20 km half-extent) and the sky dome (25 km). A reversed depth
+// buffer keeps the shoreline free of z-fighting at this near/far ratio.
+const CAMERA_FAR = 30000; // m
 const MAX_PIXEL_RATIO = 2; // quality cap for high-DPI laptop screens
 const OUTSIDE_DISTANCE = 9; // visual estimate: outside camera distance from the boat, m
 const OUTSIDE_TARGET_HEIGHT = 1.8; // visual estimate, m
@@ -48,6 +56,7 @@ export class SceneView {
   readonly wake: WakeView;
   readonly sky: SkyView;
   readonly navigation: NavigationView;
+  readonly binoculars: Binoculars;
   /** Gust patches sampled from the sim's wind field. */
   readonly gusts = new GustMap();
   /** Logical position of render-local zero, continuously following the interpolated boat. */
@@ -57,12 +66,13 @@ export class SceneView {
   private readonly grid: THREE.GridHelper;
   private readonly buoys = createBuoys();
   private readonly surface = createWaveSample();
+  private readonly land: LandView;
 
   constructor(
     model: BoatModel, private readonly waves: WaveConfig, env: EnvironmentConfig,
     private readonly wind: WindConfig, navigation: Navigation,
   ) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, reversedDepthBuffer: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     document.body.appendChild(this.renderer.domElement);
     this.scene.fog = new THREE.Fog(0xffffff, FOG_NEAR, FOG_FAR); // colour set by the sky
@@ -87,13 +97,17 @@ export class SceneView {
 
     this.scene.add(this.buoys);
 
+    this.land = createLand(this.sky);
+    this.scene.add(this.land.group);
+
     this.scene.add(this.boat.yaw);
 
-    this.camera = new THREE.PerspectiveCamera(FOV_DEG, 1, 0.05, 5000);
+    this.camera = new THREE.PerspectiveCamera(FOV_DEG, 1, 0.05, CAMERA_FAR);
     this.camera.rotation.order = 'YXZ';
     this.boat.sailor.eye.add(this.camera);
-    this.outsideCamera = new THREE.PerspectiveCamera(FOV_DEG * 0.8, 1, 0.1, 5000);
-    this.navigation = new NavigationView(navigation, this.boat, this.camera, this.buoys);
+    this.binoculars = new Binoculars(this.camera, FOV_DEG);
+    this.outsideCamera = new THREE.PerspectiveCamera(FOV_DEG * 0.8, 1, 0.1, CAMERA_FAR);
+    this.navigation = new NavigationView(navigation, this.boat, this.camera, this.origin);
     // Raising the compass for the first time must not compile shaders or upload textures mid-frame.
     this.navigation.compass.prewarm(this.renderer, this.scene, this.camera);
 
@@ -130,8 +144,9 @@ export class SceneView {
     // An immediate debug toggle can precede the next physics/interpolation frame.
     if (!wavesActive) b.pitch.rotation.x = 0;
 
-    // Fixed buoy transforms compose in JS doubles before GPU matrix upload/culling.
+    // Fixed buoy and land transforms compose in JS doubles before GPU matrix upload/culling.
     this.buoys.position.set(-this.origin.x, 0, -this.origin.z);
+    this.land.update(this.origin);
     this.wake.update(pose, this.origin, this.waves, this.surface.y, b.pitch.rotation.x);
     this.water.update(this.origin, pose.t);
     this.gusts.update(this.wind, this.origin, pose.t);

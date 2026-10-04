@@ -11,7 +11,7 @@ import {
   type Atmosphere, type Vec3,
 } from './skyModel';
 
-const SKY_RADIUS = 3000; // m, inside the camera far plane
+const SKY_RADIUS = 25000; // m: beyond the farthest land and water edge (20 km), inside the 30 km far plane
 const DOME_SEGMENTS: [number, number] = [32, 16]; // smooth horizon silhouette; shading is per pixel
 const SUN_LIGHT_DISTANCE = 100; // m: only the direction matters
 // Sky.js: evolve = time * cloudSpeed * 300 with cloudSpeed 0.00002, per second of sim time.
@@ -177,8 +177,13 @@ export class SkyView {
           skyDirection = position;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
           // Far plane: drawn after the opaque scene, depth testing rejects every pixel the water,
-          // boat or buoys already cover before the sky shader runs.
+          // boat or buoys already cover before the sky shader runs. A reversed depth buffer puts
+          // the far plane at 0 instead of 1.
+          #ifdef USE_REVERSED_DEPTH_BUFFER
+          gl_Position.z = 0.0;
+          #else
           gl_Position.z = gl_Position.w;
+          #endif
         }
       `,
       fragmentShader: `

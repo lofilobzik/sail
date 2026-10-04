@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { DEG, worldToBearing } from '../sim/frames';
-import { NAV_BUOYS, NAVIGATION, Navigation, graduatedBearing, lineIntersection, positionLine, solveFix, type FixContext, type Observation } from './navigation';
+import { NAV_MARKS, NAVIGATION, Navigation, graduatedBearing, lineIntersection, positionLine, solveFix, type FixContext, type Observation } from './navigation';
 
 const at = (x = 0, z = 0, t = 0, velocity: FixContext['velocity'] = null): FixContext => ({ position: { x, z }, t, velocity });
-function note(id: number, buoyId: string, from = { x: 0, z: 0 }, t = 0): Observation {
-  const buoy = NAV_BUOYS.find((b) => b.name === buoyId)!;
-  return { id, buoyId, bearing: worldToBearing(buoy.x - from.x, buoy.z - from.z), t };
+function note(id: number, markId: string, from = { x: 0, z: 0 }, t = 0): Observation {
+  const mark = NAV_MARKS.find((m) => m.name === markId)!;
+  return { id, markId, bearing: worldToBearing(mark.x - from.x, mark.z - from.z), t };
 }
 
 /** Step the navigation model through simulated time. */
@@ -131,39 +131,39 @@ describe('timed readings', () => {
     expect(Math.min(bearing, 360 - bearing)).toBeLessThan(6);
   });
 
-  /** One hold on a steady 50 degree bearing, with the crosshair on `buoyAt(step)` and the bow on `bowAt(step)`. */
-  function holdWith(nav: Navigation, buoyAt: (i: number) => string | null, bowAt: (i: number) => boolean = () => false): void {
+  /** One hold on a steady 50 degree bearing, with the crosshair on `markAt(step)` and the bow on `bowAt(step)`. */
+  function holdWith(nav: Navigation, markAt: (i: number) => string | null, bowAt: (i: number) => boolean = () => false): void {
     nav.beginReading('bearing');
     const steps = Math.round((NAVIGATION.timing.bearingRead + 0.1) / 0.1);
     for (let i = 1; i <= steps; i++) {
       nav.setAim(50 * DEG);
-      nav.setAimedBuoy(buoyAt(i));
+      nav.setAimedMark(markAt(i));
       nav.setAimedBow(bowAt(i));
       nav.advance({ t: nav.t + 0.1, speed: 2 }, 0.1);
     }
   }
 
-  it('names the buoy under the crosshair by its painted ID, while the bearing stays the compass\'s', () => {
+  it('names the mark under the crosshair as the eye reads it, while the bearing stays the compass\'s', () => {
     const nav = new Navigation();
     holdWith(nav, () => 'NE');
-    expect(nav.observations[0]!.buoyId).toBe('NE');
+    expect(nav.observations[0]!.markId).toBe('NE');
     expect(nav.observations[0]!.bearing / DEG).toBeCloseTo(50, 6);
   });
 
-  it('forgives the rocking boat taking the crosshair off the buoy for part of the hold', () => {
+  it('forgives the rocking boat taking the crosshair off the mark for part of the hold', () => {
     const nav = new Navigation();
     holdWith(nav, (i) => (i % 5 < 3 ? 'E' : i % 5 === 3 ? 'N' : null)); // E 60%, N 20%, nothing 20%
-    expect(nav.observations[0]!.buoyId).toBe('E');
+    expect(nav.observations[0]!.markId).toBe('E');
   });
 
-  it('names nothing when the crosshair was on a buoy for too little of the hold', () => {
+  it('names nothing when the crosshair was on a mark for too little of the hold', () => {
     const nav = new Navigation();
     holdWith(nav, (i) => (i % 10 === 0 ? 'E' : null));
     expect(nav.observations).toHaveLength(1);
-    expect(nav.observations[0]!.buoyId).toBeNull();
+    expect(nav.observations[0]!.markId).toBeNull();
   });
 
-  it('takes a bow bearing as the remembered course, ahead of any buoy in line, and leaves no note', () => {
+  it('takes a bow bearing as the remembered course, ahead of any mark in line, and leaves no note', () => {
     const nav = new Navigation();
     holdWith(nav, () => 'N', () => true);
     expect(nav.course?.value).toBeCloseTo(50 * DEG, 6);
@@ -174,10 +174,10 @@ describe('timed readings', () => {
     const nav = new Navigation();
     holdWith(nav, () => 'S', (i) => i % 3 === 0);
     expect(nav.course).toBeNull();
-    expect(nav.observations[0]!.buoyId).toBe('S');
+    expect(nav.observations[0]!.markId).toBe('S');
   });
 
-  it('plots the newest named note of each buoy taken since the last plot, skipping untagged, old and plotted ones', () => {
+  it('plots the newest named note of each mark taken since the last plot, skipping untagged, old and plotted ones', () => {
     const nav = new Navigation();
     run(nav, 1);
     nav.record(0); nav.identify(1, 'N');
@@ -332,11 +332,15 @@ describe('bearing lines and fixes', () => {
   });
 
   it('projects a one-bearing estimate onto the line without inventing an along-line fix', () => {
+    const buoy = NAV_MARKS.find((m) => m.name === 'N')!;
     const result = solveFix([note(1, 'N')], at(40, 25));
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.position.x).toBeCloseTo(0, 10);
-      expect(result.position.z).toBe(25);
+      // The foot of the perpendicular from (40, 25) on the line through the origin and the buoy.
+      const length = Math.hypot(buoy.x, buoy.z);
+      const along = (40 * buoy.x + 25 * buoy.z) / length;
+      expect(result.position.x).toBeCloseTo((along * buoy.x) / length, 8);
+      expect(result.position.z).toBeCloseTo((along * buoy.z) / length, 8);
     }
   });
 
@@ -370,7 +374,18 @@ describe('bearing lines and fixes', () => {
       expect(result.position.x).toBeCloseTo(70, 10);
       expect(result.position.z).toBeCloseTo(35, 10);
     }
-    expect(positionLine(first, context)?.buoy).toEqual({ x: 70, z: NAV_BUOYS.find((b) => b.name === 'N')!.z + 35 });
+    const n = NAV_MARKS.find((m) => m.name === 'N')!;
+    expect(positionLine(first, context)?.mark).toEqual({ x: n.x + 70, z: n.z + 35 });
+  });
+
+  it('fixes on a landmark ashore just like on a buoy', () => {
+    const from = { x: 300, z: -200 };
+    const result = solveFix([note(1, 'N', from), note(2, 'LIGHT', from)], at(0, 0, 0));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.position.x).toBeCloseTo(from.x, 6);
+      expect(result.position.z).toBeCloseTo(from.z, 6);
+    }
   });
 
   it('rejects parallel/antiparallel geometry, unidentified/expired notes, wrong-way rays and unremembered motion', () => {
@@ -379,7 +394,7 @@ describe('bearing lines and fixes', () => {
     const opposite = { ...parallel, bearing: a.bearing + Math.PI };
     expect(solveFix([a, parallel], at())).toMatchObject({ ok: false, reason: expect.stringMatching(/parallel/) });
     expect(solveFix([a, opposite], at()).ok).toBe(false);
-    expect(solveFix([{ ...a, buoyId: null }], at()).ok).toBe(false);
+    expect(solveFix([{ ...a, markId: null }], at()).ok).toBe(false);
     expect(solveFix([a], at(0, 0, NAVIGATION.maxBearingAge + 1, { x: 0, z: 0 })).ok).toBe(false);
     expect(solveFix([{ ...a, bearing: Math.PI }], at())).toMatchObject({ ok: false, reason: expect.stringMatching(/away/) });
     expect(solveFix([a], at(0, 0, 30))).toMatchObject({ ok: false, reason: expect.stringMatching(/course and speed/) });
@@ -390,9 +405,9 @@ describe('bearing lines and fixes', () => {
     const nav = new Navigation();
     nav.course = { value: 0, t: 0 };
     nav.speed = { value: 0, t: 0 };
-    const buoy = NAV_BUOYS.find((b) => b.name === 'N')!;
+    const mark = NAV_MARKS.find((m) => m.name === 'N')!;
     run(nav, 1, 0);
-    nav.record(worldToBearing(buoy.x - 0, buoy.z - 0));
+    nav.record(worldToBearing(mark.x - 0, mark.z - 0));
     nav.identify(1, 'N');
     expect(nav.beginPlot('fix')).toBe(true);
     run(nav, NAVIGATION.timing.plotLine - 1, 0);
