@@ -13,7 +13,7 @@
  * with trail age. `kelvinWake` (TS) and `wakeGLSL` (shader) implement the same formula;
  * the tests exercise the TS version.
  */
-import wake from '../../data/wake.json';
+import wake from '../../../data/wake.json';
 
 export const WAKE = wake;
 const G = 9.81;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import laser from '../../data/laser.json';
+import laser from '../../../data/laser.json';
 import { Cloth, type ClothInput } from './cloth';
 import { buildPlanform } from './planform';
 import { telltalePoints, type V3 } from './telltale';

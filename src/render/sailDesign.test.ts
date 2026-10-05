@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import designFile from '../data/sail-designs.json';
+import designFile from '../../data/sail-designs.json';
 import { drawSailDesign, parseDesignFile, patternCells, starVertices } from './sailDesign';
 
 /** Minimal valid file with one design whose layers are replaced per test. */

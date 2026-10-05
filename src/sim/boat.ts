@@ -5,9 +5,9 @@
  * buoyancy on the centreline at the waterline; with the boat in level trim the
  * system CG sits above it.
  */
-import laserJson from '../data/laser.json';
-import residuaryJson from '../data/delft-residuary.json';
-import coefficientsJson from '../data/sail-coefficients.json';
+import laserJson from '../../data/laser.json';
+import residuaryJson from '../../data/delft-residuary.json';
+import coefficientsJson from '../../data/sail-coefficients.json';
 import { DEG } from './frames';
 import { CubicSpline } from './spline';
 

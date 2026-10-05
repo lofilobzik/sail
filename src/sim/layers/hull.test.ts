@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import residuary from '../../data/delft-residuary.json';
+import residuary from '../../../data/delft-residuary.json';
 import { buildBoat } from '../boat';
 import { defaultConfig } from '../config';
 import { DEG, G, KNOT } from '../frames';

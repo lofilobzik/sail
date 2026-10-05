@@ -5,8 +5,8 @@
  * bearings, a look at the wake for speed), remembers them, and later spends time plotting them on
  * the chart. The only position ever shown is the last one drawn in pencil.
  */
-import parameters from '../data/navigation.json';
-import buoyData from '../data/buoys.json';
+import parameters from '../../data/navigation.json';
+import buoyData from '../../data/buoys.json';
 import { DEG, bearingToWorld, wrap2Pi, wrapPi, type Vec2 } from '../sim/frames';
 import { LANDMARKS } from '../sim/terrain';
 

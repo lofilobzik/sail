@@ -6,7 +6,7 @@
  * three's examples Sky (node_modules/three/examples/jsm/objects/Sky.js, three 0.186.1).
  */
 import { DEG, bearingToWorld, clamp } from '../sim/frames';
-import skyData from '../data/sky.json';
+import skyData from '../../data/sky.json';
 
 export const SKY = skyData;
 

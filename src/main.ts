@@ -10,7 +10,8 @@ import { MemoryReadout } from './render/memory';
 import { Vector2 } from 'three';
 import { SceneView, type RenderPose } from './render/scene';
 import { ForceVectors } from './render/vectors';
-import { DEG, FixedStep, WAVE_PARAMETERS, buildBoat, clamp, defaultConfig, evaluate, initialState, setWaveParameters, setWaveWind, step, wrapPi, type BoatState, type Diagnostics } from './sim';
+import { DEG, FixedStep, WAVE_PARAMETERS, browserConfig, buildBoat, clamp, evaluate, initialState, setWaveParameters, step, wrapPi, type BoatState, type Diagnostics } from './sim';
+import { connectToServer, serverSocketUrl } from './net/link';
 import { SKY } from './render/skyModel';
 
 const START_HEADING_DEG = 90; // TUNING GUESS: beam reach for the default wind from 0°
@@ -20,27 +21,31 @@ const BENCH_FRAMES = 200; // ?perf=1: frames rendered back to back, each synchro
 const BENCH_DELAY_MS = 2000;
 
 const boat = buildBoat();
-// Choose a sea pattern once. All subsequent sampling remains seeded and world-anchored.
-const cfg = defaultConfig(Math.floor(Math.random() * 0x100000000));
-cfg.waves.enabled = true;
-cfg.land = true;
-setWaveWind(cfg.waves, cfg.wind.speedKn);
 const params = new URLSearchParams(location.search);
-// Browser sailing has gusts and shifts (seeded like the sea); ?gusts=0 keeps the wind constant.
-// Headless runs and the polar use defaultConfig, where they are off.
-if (cfg.wind.gusts) cfg.wind.gusts.enabled = params.get('gusts') !== '0';
-if (params.get('waves') === '0') cfg.waves.enabled = false;
-const waveScale = params.get('waveAmplitude');
-if (waveScale !== null && Number.isFinite(Number(waveScale))) {
-  cfg.waves.amplitudeScale = clamp(Number(waveScale), 0, WAVE_PARAMETERS.maxAmplitudeScale);
+// ?server=ws://host:port/ws (or a bare ?server for this site's own /ws): the Go server owns the seed,
+// the config and the boat (src/net); the page predicts with the TS sim, and the URL physics
+// parameters below are ignored.
+const serverParam = params.get('server');
+const server = serverParam === null ? null : await connectToServer(serverSocketUrl(serverParam));
+// Choose a sea pattern once. All subsequent sampling remains seeded and world-anchored.
+const cfg = server?.cfg ?? browserConfig(Math.floor(Math.random() * 0x100000000));
+if (!server) {
+  // Browser sailing has gusts and shifts (seeded like the sea); ?gusts=0 keeps the wind constant.
+  // Headless runs and the polar use defaultConfig, where they are off.
+  if (cfg.wind.gusts) cfg.wind.gusts.enabled = params.get('gusts') !== '0';
+  if (params.get('waves') === '0') cfg.waves.enabled = false;
+  const waveScale = params.get('waveAmplitude');
+  if (waveScale !== null && Number.isFinite(Number(waveScale))) {
+    cfg.waves.amplitudeScale = clamp(Number(waveScale), 0, WAVE_PARAMETERS.maxAmplitudeScale);
+  }
+  const wavePeriod = params.get('wavePeriod');
+  const waveDirection = params.get('waveDirection');
+  setWaveParameters(
+    cfg.waves,
+    wavePeriod !== null && Number.isFinite(Number(wavePeriod)) ? Number(wavePeriod) : cfg.waves.periodSeconds,
+    waveDirection !== null && Number.isFinite(Number(waveDirection)) ? Number(waveDirection) : cfg.waves.directionDeg,
+  );
 }
-const wavePeriod = params.get('wavePeriod');
-const waveDirection = params.get('waveDirection');
-setWaveParameters(
-  cfg.waves,
-  wavePeriod !== null && Number.isFinite(Number(wavePeriod)) ? Number(wavePeriod) : cfg.waves.periodSeconds,
-  waveDirection !== null && Number.isFinite(Number(waveDirection)) ? Number(waveDirection) : cfg.waves.directionDeg,
-);
 const fixed = new FixedStep(cfg.dt);
 
 const navigation = new Navigation();
@@ -79,8 +84,10 @@ function resetBoat(): void {
   diagnostics = evaluate(curr, input.update(0), boat, cfg);
 }
 resetBoat();
+if (server) curr = prev = { ...server.welcome.state };
 
-const overlay = new DebugOverlay(cfg, resetBoat);
+// Server mode: the reset button restarts the server's boat as well.
+const overlay = new DebugOverlay(cfg, server ? () => { resetBoat(); server.reset(); } : resetBoat, server !== null);
 let showNavigationTruth = false;
 overlay.addToggle('navigation: show true position on chart', false, (v) => { showNavigationTruth = v; });
 overlay.addToggle('wake: Kelvin waves', true, (v) => view.wake.setLayer('kelvin', v));
@@ -166,12 +173,16 @@ function frame(now: number): void {
     if (lookingAtChart) navigation.beginAutoPlot();
     else navigation.message = 'Look down at the chart to reckon.';
   }
+  // Server mode: fold in the newest snapshot first; a jump is not interpolated.
+  if (server?.correct(curr)) prev = curr;
   const steps = fixed.advance(frameSeconds);
   for (let i = 0; i < steps; i++) {
-    const result = step(curr, input.update(cfg.dt), boat, cfg);
+    const controls = input.update(cfg.dt);
+    const result = step(curr, controls, boat, cfg);
     prev = curr;
     curr = result.state;
     diagnostics = result.diagnostics;
+    server?.afterStep(curr, controls);
     // Narrow instrument boundary: only the speed through the water; no true x/z, heading or sway.
     navigation.advance({ t: curr.t, speed: (prev.u + curr.u) / 2 }, cfg.dt);
   }
@@ -208,6 +219,7 @@ function frame(now: number): void {
   if (overlay.visible) vectors.update(diagnostics, view.boat.yaw.position, overlay.arrows);
   else vectors.hideAll();
   overlay.update(diagnostics, curr);
+  if (server && overlay.visible) overlay.setNetwork(server.describe());
   const info = view.renderer.info.render;
   hud.update(diagnostics, curr, { frameMs, cpuMs, triangles: info.triangles, calls: info.calls }, now);
   cpuMs += (performance.now() - t0 - cpuMs) * FRAME_SMOOTHING;

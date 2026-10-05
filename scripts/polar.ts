@@ -18,8 +18,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import laserJson from '../src/data/laser.json';
-import target from '../src/data/laser-polar-target.json';
+import laserJson from '../data/laser.json';
+import target from '../data/laser-polar-target.json';
 import {
   DEG,
   KNOT,

@@ -1,6 +1,6 @@
 /** Minimal environment: fixed buoys. The sky lives in sky.ts. */
 import * as THREE from 'three';
-import buoyData from '../data/buoys.json';
+import buoyData from '../../data/buoys.json';
 
 const BUOY_SEGMENTS = 10;
 

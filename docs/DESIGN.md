@@ -48,21 +48,30 @@ full sailor body and hiking pose (hands, tiller extension and mainsheet only in 
 
 ## Stack
 
-Vite + TypeScript + Three.js. Static build output. No backend.
+Vite + TypeScript + Three.js for the browser (static build output). Go for the authoritative
+server (optional: the browser still runs fully offline without it).
 
 ## Architecture
 
 ```
 src/
   sim/      Pure math. NO Three.js imports, no DOM. Deterministic.
-            state + inputs + dt -> new state.
+            state + inputs + dt -> new state. Offline play and client-side prediction.
   render/   Reads sim state, draws it. Never writes to sim state.
   input/    Keys / mouse -> normalized control values (tiller, sheet, hike, look).
   nav/      Chart, dead reckoning, bearings (reads sim state, own state for DR).
-  data/     Boat config (laser.json), constants. No magic numbers in code.
+  net/      Browser client for the Go server (?server=ws://host:port/ws): input up, snapshots down,
+            local TS prediction corrected toward server state.
   debug/    Overlay: apparent wind, force vectors, speed, heel, polar plot.
+data/       JSON config shared by TS (Vite imports) and Go (data/embed.go, go:embed). No magic numbers in code.
+server/     Go module `sail` (go.mod at the repo root).
+  sim/      Go port of src/sim: the authoritative simulation (no render helpers). Golden fixtures
+            from TS in sim/testdata/golden/ keep the two within tolerance.
+  netsim/   WebSocket protocol and per-connection sessions.
+  cmd/sailserver/  The server. cmd/polar/  Go port of scripts/polar.ts.
 scripts/
-  polar.ts  Headless: sails the boat at fixed headings, dumps a polar. Runs in Node.
+  polar.ts         Headless: sails the boat at fixed headings, dumps a polar. Runs in Node.
+  goldenTraces.ts  `npm run golden`: writes the TS golden fixtures the Go tests compare against.
 docs/   Source papers and rules. See INDEX.md.
 ```
 
@@ -72,6 +81,12 @@ Rules:
 - Boat parameters live in `data/laser.json`, not in code. A second boat should be a new config file.
 - Every constant is either sourced from `docs/` or marked `// TUNING GUESS`.
   Do not recall coefficient tables from memory.
+- **Two simulations, one model.** `src/sim` (TS) and `server/sim` (Go) implement the same physics.
+  The server is authoritative; the TS copy predicts locally and is corrected toward server snapshots.
+  They are not bit-identical (V8 and Go math differ in the last bits); `npm run golden` exports TS
+  traces and samples, and `go test ./server/sim/...` checks the Go port against them within stated
+  tolerances. Any physics change goes into both, then regenerate the fixtures. The server owns the
+  seed and config; clients take them from the welcome message.
 - Water follows the boat continuously, but wave phase stays anchored to world coordinates.
   Only the flat-water debug grid snaps. Filter rendering detail to mesh/pixel resolution.
   A **render-side floating origin** follows the interpolated boat every frame, without threshold jumps.
@@ -80,6 +95,32 @@ Rules:
   Reduce each wave's origin/time phase in double precision before the shader adds local spatial phase.
   Wake history is world-anchored: `render/wake/trail.ts` stores logical-world doubles and subtracts this
   same origin only when packing GPU uniforms.
+
+## Server and networking
+
+- Run `npm run server` (Go, `-addr :8080`, optional `-seed`, `-snapshot-hz 20`, `-static dist` to also
+  serve a built site) and `npm run dev`, then open `/?server=ws://localhost:8080/ws`. A bare `?server`
+  joins the page's own host (`wss://` on https), which is how the deployed site works. Without
+  `?server` the browser plays offline exactly as before. `GET /healthz` answers `ok`.
+- **Deployment**: one container image (site plus server) built by GitHub Actions, published to GHCR,
+  and pulled by podman-auto-update on the home box behind a Cloudflare Tunnel at dinghysail.ing.
+  See `DEPLOY.md`.
+- **Server-authoritative, single boat per connection** (multi-boat later). Each connection gets its
+  own `BrowserConfig(seed)` (random seed per session) and boat, stepped at `cfg.dt` with `cfg.substeps`
+  from a ticker plus a fixed-step accumulator. The latest input (clamped) is applied each tick.
+- **Protocol** (WebSocket `/ws`, JSON text frames; `server/netsim/protocol.go`, `src/net/protocol.ts`):
+  server sends `welcome` (seed, full config, dt, tick, state, snapshotHz), then `snapshot` (tick,
+  ackSeq, state, applied controls) at 20 Hz, and `error` for a rejected message (the connection stays
+  open). Client sends `input` (strictly increasing seq, controls) every local fixed step, and `reset`.
+  Origins: same-origin (the deployed site) plus localhost on any port (Vite dev).
+- **Client prediction** (`src/net/correction.ts`): the TS sim predicts every step; each snapshot is
+  compared with the prediction recorded for its acked input (256-step history), minus corrections
+  applied since. Small errors blend out over 0.2 s; over 2 m, 20 degrees or a different boom side the
+  state snaps; an ack older than the history resyncs. All TUNING GUESS. No rewind/replay yet.
+- In server mode the debug panel's physics controls are read-only (the server owns config); Reset
+  sends `reset`. The panel's Network section shows status, round-trip time and the last correction.
+- Checked on localhost: RTT about 6 ms, corrections 0.0-1.7 cm in steady sailing and turns, no snaps.
+  Deferred: reconnecting, server-pushed config changes, multi-boat, rewind/replay reconciliation.
 
 ## Controls
 

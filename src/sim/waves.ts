@@ -6,7 +6,7 @@
  * supplies orbital velocity, attenuated by exp(k depth) below the surface.
  * Multiple components and the boat response are approximations, not a sea-state VPP.
  */
-import parameters from '../data/waves.json';
+import parameters from '../../data/waves.json';
 import { DEG, G, clamp } from './frames';
 
 export interface WaveComponent {

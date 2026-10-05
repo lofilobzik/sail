@@ -1,6 +1,6 @@
 import type { WindConfig } from './config';
 import { DEG, KNOT, bearingToWorld, type Vec2 } from './frames';
-import windData from '../data/wind.json';
+import windData from '../../data/wind.json';
 
 export const WIND_PARAMETERS = windData;
 

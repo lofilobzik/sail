@@ -3,7 +3,7 @@
  * first time it is selected, then cached as a Three.js texture. Nothing is loaded from an image.
  */
 import * as THREE from 'three';
-import designFile from '../data/sail-designs.json';
+import designFile from '../../data/sail-designs.json';
 import { drawSailDesign, parseDesignFile, type DesignInfo } from './sailDesign';
 
 /** Parsed and validated at startup, so a typo in the JSON fails loudly and names the design. */

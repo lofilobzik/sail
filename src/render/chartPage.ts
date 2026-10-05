@@ -1,5 +1,5 @@
 /** Paper artwork. Pixel dimensions, colours and typography are VISUAL ESTIMATE. */
-import buoyData from '../data/buoys.json';
+import buoyData from '../../data/buoys.json';
 import { KNOT, bearingToWorld, worldToBearing, type Vec2 } from '../sim/frames';
 import { BAY, LANDMARKS, type LandmarkKind } from '../sim/terrain';
 import { contains, type ChartProjection, type PaperRect } from '../nav/chart';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import table from '../../data/sail-coefficients.json';
+import table from '../../../data/sail-coefficients.json';
 import { buildBoat } from '../boat';
 import { defaultConfig } from '../config';
 import { DEG, clamp } from '../frames';

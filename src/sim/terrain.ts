@@ -3,7 +3,7 @@
  * land mesh. Elevation is metres above mean sea level; negative values are water depth.
  * Layout and every constant live in data/bay.json.
  */
-import bay from '../data/bay.json';
+import bay from '../../data/bay.json';
 import { DEG, type Vec2 } from './frames';
 
 export const BAY = bay;

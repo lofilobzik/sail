@@ -41,7 +41,7 @@ tables, so transcribe any number you use from the **page image**, then copy it i
 | Length overall 4.23 m, waterline 3.81 m, beam 1.37 m, draught 0.787 m, sail area 7.06 m^2 | Public class listings | verify against the ILCA Build Manual if it is available |
 | Hull cross-sections | None. Approximate from principal dimensions. | accepted for v1 |
 | Polar target at 6-8 kn | None in Day. Use VPP results at 9 kn for shape and upwind speed. | extrapolate |
-| Hull depth (freeboard), mast diameter | Web forum measurements, URLs in `src/data/laser.json` `sources` | not in docs/, verify |
+| Hull depth (freeboard), mast diameter | Web forum measurements, URLs in `data/laser.json` `sources` | not in docs/, verify |
 | Sail effective span form | ORC VPP Documentation 2023 p54, Eqs. 5.43-5.45 (web PDF, URL in `laser.json`) | factor for a una rig is a TUNING GUESS |
 | Delft induced-resistance coefficients (Day Eq. 15: A1-A4, B0, B1 per heel angle) | Not in Day, not in `bare_hull_resistance.pdf`. Eq. 16 used for the board as well | **known gap** |
 | Downwash constant a0, AR_eff,k (Day p6) | Not printed. a0 TUNING GUESS, AR_eff,k = AR_E e (interpretation) | missing |
@@ -51,23 +51,23 @@ tables, so transcribe any number you use from the **page image**, then copy it i
 
 | File | Contents | Status |
 |---|---|---|
-| `src/data/sail-coefficients.json` | CL and CDv vs apparent wind angle beta, transcribed from Day Table 1 (p3), read from the 300 dpi page image | done (milestone 1) |
-| `src/data/laser.json` | Boat parameters from `PHYSICS.md` section 3 plus everything the sim needs; per-parameter sources in its `sources` block (docs page, web source, or TUNING GUESS) | done (milestone 1) |
-| `src/data/delft-residuary.json` | Keuning & Katgert Table 2 residuary coefficients a0-a7 vs Fn | done (milestone 2) |
-| `src/data/laser-polar-target.json` | Day VPP 9 kn, 80 kg: Fig 4 (upwind 40-60) and Fig 6 (downwind 150-180), read off the plots (approximate) | done (milestone 2) |
-| `src/data/laser.json` `visual` block | Render-only boat geometry: hull section table (plan from ILCA p27), cockpit, spars and blocks (p33-34), sail widths (p36), visual estimates marked in `sources` | done (milestone 3) |
-| `src/data/buoys.json` | Sandbox buoy positions (not a course), distinctive colours/topmarks and painted IDs matching the chart | implemented (milestones 3, 6 preview) |
-| `src/data/bay.json` | The bay: mainland coast polygon, islands, shoals, coast/relief noise, beach and seabed profile, bake grid, landmarks for bearings, towns and scattered houses, grounding constants; VISUAL ESTIMATE / TUNING GUESS in its `sources` block | implemented (bay) |
-| `src/data/navigation.json` | Known departure, reading and plotting durations, aim tolerance, doubt radii, stale-speed and track limits, bearing graduation/fix conditioning, mark aim and landmark sight height, chart auto-fit, course-line ticks and printed depth/height contours, and hand-bearing compass visuals; TUNING GUESS or VISUAL ESTIMATE | implemented (milestone 6, bay) |
-| `src/data/waves.json` | Shared broad-wave/ripple bands, wind scaling, seeded strength/phase variation plus ripple wavelength/direction variation, amplitude/period bounds, pitch response, water grid and sampling filters; sources and TUNING GUESS labels | implemented; layered-sea and ripple repair checks in `PHYSICS.md` |
-| `src/data/sky.json` | Sun direction, Preetham scattering and cloud parameters, tone exposure, cloud drift and water-reflection cost controls, light strengths; per-parameter sources and TUNING GUESS labels in its `sources` block | implemented (milestone 5) |
-| `src/data/wind.json` | Gust amplitude and length scales, gust veer, slow direction-shift components, gust-patch map size and visual strength; sources and TUNING GUESS labels | implemented |
-| `src/data/sail-designs.json` | Procedural sail designs as data: layer stacks in sail space, per-design opacity and glow, cloth finish (seams, speckle), texture size; the layer reference is in its `sources` block | implemented; designs are original VISUAL ESTIMATE palettes |
+| `data/sail-coefficients.json` | CL and CDv vs apparent wind angle beta, transcribed from Day Table 1 (p3), read from the 300 dpi page image | done (milestone 1) |
+| `data/laser.json` | Boat parameters from `PHYSICS.md` section 3 plus everything the sim needs; per-parameter sources in its `sources` block (docs page, web source, or TUNING GUESS) | done (milestone 1) |
+| `data/delft-residuary.json` | Keuning & Katgert Table 2 residuary coefficients a0-a7 vs Fn | done (milestone 2) |
+| `data/laser-polar-target.json` | Day VPP 9 kn, 80 kg: Fig 4 (upwind 40-60) and Fig 6 (downwind 150-180), read off the plots (approximate) | done (milestone 2) |
+| `data/laser.json` `visual` block | Render-only boat geometry: hull section table (plan from ILCA p27), cockpit, spars and blocks (p33-34), sail widths (p36), visual estimates marked in `sources` | done (milestone 3) |
+| `data/buoys.json` | Sandbox buoy positions (not a course), distinctive colours/topmarks and painted IDs matching the chart | implemented (milestones 3, 6 preview) |
+| `data/bay.json` | The bay: mainland coast polygon, islands, shoals, coast/relief noise, beach and seabed profile, bake grid, landmarks for bearings, towns and scattered houses, grounding constants; VISUAL ESTIMATE / TUNING GUESS in its `sources` block | implemented (bay) |
+| `data/navigation.json` | Known departure, reading and plotting durations, aim tolerance, doubt radii, stale-speed and track limits, bearing graduation/fix conditioning, mark aim and landmark sight height, chart auto-fit, course-line ticks and printed depth/height contours, binoculars, and hand-bearing compass visuals; TUNING GUESS or VISUAL ESTIMATE | implemented (milestone 6, bay) |
+| `data/waves.json` | Shared broad-wave/ripple bands, wind scaling, seeded strength/phase variation plus ripple wavelength/direction variation, amplitude/period bounds, pitch response, water grid and sampling filters; sources and TUNING GUESS labels | implemented; layered-sea and ripple repair checks in `PHYSICS.md` |
+| `data/sky.json` | Sun direction, Preetham scattering and cloud parameters, tone exposure, cloud drift and water-reflection cost controls, light strengths; per-parameter sources and TUNING GUESS labels in its `sources` block | implemented (milestone 5) |
+| `data/wind.json` | Gust amplitude and length scales, gust veer, slow direction-shift components, gust-patch map size and visual strength; sources and TUNING GUESS labels | implemented |
+| `data/sail-designs.json` | Procedural sail designs as data: layer stacks in sail space, per-design opacity and glow, cloth finish (seams, speckle), texture size; the layer reference is in its `sources` block | implemented; designs are original VISUAL ESTIMATE palettes |
 
 ## Wave references (web)
 
 Wake: Kelvin wake pattern, https://en.wikipedia.org/wiki/Kelvin_wake_pattern (angles, wavenumbers);
-energy balance as in `data/wake.json` `sources`. Parameters: `src/data/wake.json`.
+energy balance as in `data/wake.json` `sources`. Parameters: `data/wake.json`.
 The independently emitted bow fronts use the same deep-water period/phase-speed identity, but their
 expanding-circle propagation speed, profile, decay and sampling resolution are a **TUNING GUESS**
 visual approximation, not a measured Laser wake or a complete dispersive/fluid model. Parameters

@@ -3,7 +3,7 @@
  * toggle so a wrong result can be bisected layer by layer. Sub-toggles switch
  * individual terms inside a layer.
  */
-import { defaultWaves, type WaveConfig } from './waves';
+import { defaultWaves, setWaveWind, type WaveConfig } from './waves';
 
 export const LAYER_IDS = ['apparentWind', 'sail', 'foils', 'hull', 'heel', 'yaw'] as const;
 export type LayerId = (typeof LAYER_IDS)[number];
@@ -151,6 +151,20 @@ export function defaultConfig(waveSeed?: number): SimConfig {
     dt: 1 / 60, // DESIGN.md: start at 60 Hz
     substeps: 4,
   };
+}
+
+/**
+ * The sailing world as played: waves on and sized by the wind, gusts and shifts, the bay's seabed.
+ * The browser (offline) and the Go server (data/ JSON shared, server/sim BrowserConfig) both start
+ * here; only the seed differs between sessions.
+ */
+export function browserConfig(seed: number): SimConfig {
+  const cfg = defaultConfig(seed);
+  cfg.waves.enabled = true;
+  cfg.land = true;
+  if (cfg.wind.gusts) cfg.wind.gusts.enabled = true;
+  setWaveWind(cfg.waves, cfg.wind.speedKn);
+  return cfg;
 }
 
 /** Returns a config with the named layers switched off. Unknown names throw. */

@@ -1,5 +1,5 @@
 {
-  "//": "Headless config: sim/, nav/, data/ and scripts/ compile without the DOM lib and without Three.js types, so DOM globals and browser APIs in pure math are type errors.",
+  "//": "Headless config: sim/, nav/, data/ and scripts/ compile without the DOM lib and without Three.js types, so DOM globals and browser APIs in pure math are type errors. data/ (JSON, shared with the Go server) lives at the repository root.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -17,5 +17,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/sim", "src/nav", "src/data", "scripts"]
+  "include": ["src/sim", "src/nav", "data", "scripts"]
 }

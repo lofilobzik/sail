@@ -1,5 +1,6 @@
 export { buildBoat, type BoatModel } from './boat';
 export {
+  browserConfig,
   defaultConfig,
   withDisabledLayers,
   LAYER_IDS,

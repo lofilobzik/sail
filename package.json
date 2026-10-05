@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "server": "go run ./server/cmd/sailserver",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.sim.json --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "polar": "tsx scripts/polar.ts"
+    "polar": "tsx scripts/polar.ts",
+    "golden": "tsx scripts/goldenTraces.ts"
   },
   "dependencies": {
     "three": "^0.186.1"

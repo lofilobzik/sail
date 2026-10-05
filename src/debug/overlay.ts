@@ -2,6 +2,8 @@
  * Debug overlay: DOM panel, off by default, toggled with ` (Backquote) or F3.
  * Text grouped by physics layer L1..L6 (+ Boat), each with its own show/hide checkbox.
  * The Physics section mutates the live SimConfig (layer and term toggles, wind) and can reset the boat.
+ * In server mode the server owns the config: the Physics controls are shown disabled, reset still works,
+ * and a Network section shows the connection.
  */
 import { DEG, KNOT, WAVE_PARAMETERS, setWaveParameters, setWaveWind, setWaveLayers, waveAmplitude, worldToBearing, wrap2Pi, type BoatState, type Diagnostics, type SimConfig } from '../sim';
 import type { ArrowVisibility } from '../render/vectors';
@@ -33,10 +35,13 @@ export class DebugOverlay {
   readonly show: Record<GroupId, boolean> = { L1: true, L2: true, L3: true, L4: true, L5: true, L6: true, Waves: true, Boat: true };
   private readonly root = document.createElement('div');
   private readonly text = {} as Record<GroupId, HTMLPreElement>;
+  private network: HTMLPreElement | null = null;
 
   constructor(
     private readonly cfg: SimConfig,
     onReset: () => void,
+    /** Server mode: the config is the server's, so the Physics controls are read-only. */
+    serverOwned = false,
   ) {
     const r = this.root;
     r.style.cssText =
@@ -56,7 +61,13 @@ export class DebugOverlay {
       this.text[g] = pre;
     }
 
-    this.buildPhysics(onReset);
+    this.buildPhysics(onReset, serverOwned);
+    if (serverOwned) {
+      const sec = this.section('Network');
+      this.network = document.createElement('pre');
+      this.network.style.margin = '0 0 6px 16px';
+      sec.appendChild(this.network);
+    }
 
     window.addEventListener('keydown', (e) => {
       if (e.code !== 'Backquote' && e.code !== 'F3') return;
@@ -140,12 +151,28 @@ export class DebugOverlay {
         : '\nopen water (no seabed)');
   }
 
-  private buildPhysics(onReset: () => void): void {
-    const cfg = this.cfg;
+  /** Network section text (server mode only). */
+  setNetwork(text: string): void {
+    if (this.network) this.network.textContent = text;
+  }
+
+  private section(title: string): HTMLDivElement {
     const sec = document.createElement('div');
     sec.style.cssText = 'border-top:1px solid #666;margin-top:4px;padding-top:4px;';
-    sec.innerHTML = '<b>Physics</b>';
+    sec.innerHTML = `<b>${title}</b>`;
     this.root.appendChild(sec);
+    return sec;
+  }
+
+  private buildPhysics(onReset: () => void, serverOwned: boolean): void {
+    const cfg = this.cfg;
+    const outer = this.section('Physics');
+    // A disabled fieldset disables every control inside it; the reset button stays outside.
+    const sec = document.createElement('fieldset');
+    sec.style.cssText = 'border:0;margin:0;padding:0;';
+    sec.disabled = serverOwned;
+    if (serverOwned) outer.append(' (set by the server, read-only)');
+    outer.appendChild(sec);
 
     for (const key of Object.keys(cfg.layers) as (keyof SimConfig['layers'])[]) {
       this.checkbox(sec, `layer ${key}`, cfg.layers[key], (v) => (cfg.layers[key] = v));
@@ -201,7 +228,7 @@ export class DebugOverlay {
       onReset();
       btn.blur();
     });
-    sec.appendChild(btn);
+    outer.appendChild(btn);
   }
 
   /** Extra render-side toggle appended at the end of the panel (e.g. the visual wake). */
