@@ -1,5 +1,6 @@
 # The game: Go server + static site from ghcr.io, updated by podman-auto-update (see the timer drop-in).
-# Installed to /etc/containers/systemd/ (rootful quadlet) by install.sh; runs as the image's nonroot user.
+# Rootless quadlet for the `core` user (alongside the Minecraft server), installed to
+# ~/.config/containers/systemd/ by install.sh; starts at boot because `core` has linger enabled.
 [Unit]
 Description=dinghysail.ing game server
 Wants=network-online.target
@@ -31,4 +32,4 @@ RestartSec=5
 TimeoutStartSec=300
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

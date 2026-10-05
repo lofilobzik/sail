@@ -3,8 +3,8 @@
 ```
 push to main ─► GitHub Actions: test ─► build image ─► ghcr.io/lofilobzik/sail:latest
                                                             ▲ polled every 5 min
-chinese-box (uCore, behind NAT)                              │
-  podman-auto-update.timer ──────────────────────────────────┘ pull + restart (rollback if unhealthy)
+chinese-box (uCore, behind NAT), rootless podman as `core`, next to the Minecraft server
+  podman-auto-update.timer (user) ───────────────────────────┘ pull + restart (rollback if unhealthy)
   sail.service         Go server: site + /ws on :8080 (127.0.0.1 only on the host)
   cloudflared.service  outbound tunnel ─► Cloudflare edge ◄─ https://dinghysail.ing
 ```
@@ -59,20 +59,25 @@ Do these in order: the box can only install once the image exists and is public.
 
 ### 4. Install on the box
 
-From the repo on your Mac, on the home network:
+From the repo on your Mac, on the home network (box: `core@10.0.0.246`, SSH key in the keychain):
 
 ```sh
-scp -r deploy/box core@<box-ip>:~/sail-deploy
-ssh -t core@<box-ip> 'cd ~/sail-deploy && sudo ./install.sh'
+scp -r deploy/box/. core@10.0.0.246:sail-deploy/
+ssh -t core@10.0.0.246 'cd ~/sail-deploy && ./install.sh'
 ```
 
-`install.sh` asks for the tunnel token. It stores the token as a podman secret, read from the
-terminal and never from argv. It then copies the quadlets to `/etc/containers/systemd/`, copies
-the timer drop-in, pulls both images, starts `sail` and `cloudflared`, and enables
-`podman-auto-update.timer`. It finishes by printing the unit status and a local `/healthz` check.
+Everything runs **rootless as `core`**, like the Minecraft container; there is no sudo. The units
+start at boot because `core` lingers (`loginctl show-user core -p Linger` → `yes`). `install.sh`
+refuses to run if linger is off, and tells you the one sudo command that turns it on.
 
-`Notify=healthy` in `sail.container` needs Podman 5.1 or newer. Check with `podman --version`;
-current uCore ships Podman 5. If it is older, delete that line.
+`install.sh` asks for the tunnel token. It stores the token as a podman secret of `core`, read
+from the terminal and never from argv. It then copies the quadlets to
+`~/.config/containers/systemd/`, copies the timer drop-in to
+`~/.config/systemd/user/podman-auto-update.timer.d/`, pulls both images, starts `sail` and
+`cloudflared`, and enables the user's `podman-auto-update.timer`. It finishes by printing the unit
+status and a local `/healthz` check.
+
+`Notify=healthy` in `sail.container` needs Podman 5.1 or newer. The box has 5.8.
 
 ### 5. Check
 
@@ -86,20 +91,21 @@ should say `wss://dinghysail.ing/ws connected`.
 ## Day to day
 
 - **Deploy**: push to `main`. It is live within about 5 minutes of the workflow finishing.
-  To deploy right away: `ssh core@<box-ip> sudo podman auto-update`.
-- **Logs**: `journalctl -u sail -f`, `journalctl -u cloudflared -f`.
-- **What would update**: `sudo podman auto-update --dry-run`.
+  To deploy right away: `ssh core@10.0.0.246 podman auto-update`.
+- **Logs** (on the box): `journalctl --user -u sail -f`, `journalctl --user -u cloudflared -f`.
+- **Status**: `systemctl --user status sail cloudflared`, `podman ps`.
+- **What would update**: `podman auto-update --dry-run`.
 - **Rollback**: auto-update already rolls back if the new container never turns healthy. To pin a
   known-good build, set `Image=ghcr.io/lofilobzik/sail:sha-<commit>` in `deploy/box/sail.container`
   and re-run `install.sh`. Switch back to `:latest` the same way.
 - **Change box config**: edit `deploy/box/*`, then copy it over and re-run `install.sh` as in step 4.
   The script is idempotent.
-- **Rotate the tunnel token**: `sudo ./install.sh --new-token`.
+- **Rotate the tunnel token**: `./install.sh --new-token`.
 - cloudflared also auto-updates from Docker Hub through the same timer; its own updater is off.
 
 ## Not covered
 
 - No uptime alerting. Cloudflare shows the tunnel's health in the dashboard, and visitors get
   error 1033 or 502 while the box is down.
-- This is not tested on the real box: quadlet syntax, Podman features and the uCore layout are
-  checked against the docs only. Report anything `install.sh` trips over.
+- Rebooting is not tested yet. The units are wired to the user's `default.target`, and linger
+  starts that at boot, so they should come back like the Minecraft container does.
