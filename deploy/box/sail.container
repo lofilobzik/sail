@@ -1,0 +1,34 @@
+# The game: Go server + static site from ghcr.io, updated by podman-auto-update (see the timer drop-in).
+# Installed to /etc/containers/systemd/ (rootful quadlet) by install.sh; runs as the image's nonroot user.
+[Unit]
+Description=dinghysail.ing game server
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=ghcr.io/lofilobzik/sail:latest
+ContainerName=sail
+Network=sail.network
+# Reachable from the box itself for debugging (curl 127.0.0.1:8080/healthz); never from the LAN or
+# the internet. Public traffic only arrives through the tunnel.
+PublishPort=127.0.0.1:8080:8080
+AutoUpdate=registry
+# The image has no shell: the server binary probes its own /healthz.
+HealthCmd=["/sailserver", "-healthcheck"]
+HealthInterval=30s
+HealthTimeout=5s
+HealthStartPeriod=10s
+HealthRetries=3
+# The unit only counts as started once the health check passes, so podman-auto-update can roll back
+# a new image that never becomes healthy.
+Notify=healthy
+NoNewPrivileges=true
+ReadOnly=true
+
+[Service]
+Restart=always
+RestartSec=5
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,8 @@
+.git
+node_modules
+dist
+polar-out
+docs
+omp-browser-recording-*
+server/sim/testdata
+**/.DS_Store

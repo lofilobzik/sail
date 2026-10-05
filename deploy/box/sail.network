@@ -1,0 +1,3 @@
+# Private network shared by the game server and cloudflared; cloudflared reaches the game as http://sail:8080.
+[Network]
+NetworkName=sail

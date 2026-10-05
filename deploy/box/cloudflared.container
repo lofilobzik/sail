@@ -1,0 +1,24 @@
+# Cloudflare Tunnel connector (remotely managed: hostname routes live in the Cloudflare dashboard).
+# Outbound only: no router ports. The token is a podman secret created by install.sh.
+[Unit]
+Description=Cloudflare Tunnel for dinghysail.ing
+Wants=network-online.target
+After=network-online.target sail.service
+
+[Container]
+Image=docker.io/cloudflare/cloudflared:latest
+ContainerName=cloudflared
+Network=sail.network
+AutoUpdate=registry
+Secret=cloudflared-token,type=env,target=TUNNEL_TOKEN
+# Updates come from podman-auto-update, not cloudflared's own updater.
+Exec=tunnel --no-autoupdate run
+NoNewPrivileges=true
+ReadOnly=true
+
+[Service]
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
