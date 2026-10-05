@@ -4,7 +4,7 @@ import { defaultConfig } from '../config';
 import { DEG, G } from '../frames';
 import { initialState } from '../state';
 import { step } from '../step';
-import { crewPosition, rightingMoment } from './heel';
+import { CREW_CROSSING_SPEED, crewPosition, rightingMoment } from './heel';
 
 const boat = buildBoat();
 
@@ -35,8 +35,25 @@ describe('L5 heel and hiking', () => {
     const full = crewPosition(state, hiking, boat).targetY;
     expect(crewPosition(state, hiking, boat, 0).targetY).toBe(full);
     expect(crewPosition(state, hiking, boat, 0.5).targetY).toBeCloseTo(full / 2, 12);
-    expect(crewPosition(state, hiking, boat, 1).targetY).toBeCloseTo(0, 12);
+    const luffing = crewPosition(state, hiking, boat, 1).targetY;
+    expect(Math.sign(luffing)).toBe(Math.sign(full)); // centred, but still on the same side
+    expect(Math.abs(luffing)).toBeLessThan(0.002);
     expect(crewPosition(state, hiking, boat, 1).z).toBe(crewPosition(state, hiking, boat).z);
+  });
+
+  it('keeps the sailor on their side through a fully luffing sail while boomSide flips head to wind', () => {
+    // Regression: the sailor used to reach exactly crewY = 0 when the sail luffed fully, then took
+    // the side from boomSide, which flips with every apparent-wind crossing while pinching.
+    const sitting = { tiller: 0, sheet: 0, hike: 0 };
+    const s = { ...initialState(), boom: 3 * DEG, boomSide: 1 as const, crewY: -boat.cfg.crew.sitInOffset };
+    const move = CREW_CROSSING_SPEED / 60;
+    for (let i = 0; i < 120; i++) {
+      const target = crewPosition(s, sitting, boat, 1).targetY;
+      s.crewY += Math.min(Math.max(target - s.crewY, -move), move);
+    }
+    expect(s.crewY).toBeLessThan(0);
+    const flipped = { ...s, boom: -3 * DEG, boomSide: -1 as const }; // boom flicked across, not clearly
+    expect(crewPosition(flipped, sitting, boat, 0).targetY).toBeLessThan(0);
   });
 
   it('settles at the heel where righting balances a steady moment, and hiking reduces it', () => {

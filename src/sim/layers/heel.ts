@@ -15,6 +15,9 @@
  * crewCentresWhenLuffing term the target offset shrinks as the sail luffs (reach x (1 - luffAmount)).
  * The sailor only changes sides once the boom has swung clearly across, so a boom
  * flicking about the centreline head to wind does not make the crew rock the boat.
+ * The sign of crewY is the sailor's memory of their side, so a fully luffing sail never pulls
+ * them exactly onto the centreline (MIN_CREW_OFFSET): at exactly 0 the side would come from
+ * boomSide, which flips with every apparent-wind crossing head to wind.
  */
 import type { BoatModel } from '../boat';
 import { DEG, G } from '../frames';
@@ -24,6 +27,11 @@ import type { BoatState, Controls } from '../state';
 export const CREW_CROSSING_SPEED = 1.5;
 /** TUNING GUESS: boom angle past the centreline at which the sailor changes sides. */
 const CREW_SWITCH_BOOM_ANGLE = 10 * DEG;
+/**
+ * TUNING GUESS: smallest target offset, m, so the sign of crewY (the side) survives a fully luffing
+ * sail. 1 mm of 80 kg is under 1 N m of heel, far below anything else acting on the boat.
+ */
+const MIN_CREW_OFFSET = 0.001;
 
 export interface CrewPosition {
   /** Target transverse offset from the centreline, m (+ = starboard). */
@@ -39,7 +47,10 @@ export function crewPosition(state: BoatState, controls: Controls, boat: BoatMod
   const c = boat.cfg.crew;
   const hike = Math.min(Math.max(controls.hike, 0), 1);
   const maxReach = c.hikeReachFrac * c.cgHeightFrac * c.height;
-  const reach = (c.sitInOffset + hike * (maxReach - c.sitInOffset)) * (1 - Math.min(Math.max(luffAmount, 0), 1));
+  const reach = Math.max(
+    (c.sitInOffset + hike * (maxReach - c.sitInOffset)) * (1 - Math.min(Math.max(luffAmount, 0), 1)),
+    MIN_CREW_OFFSET,
+  );
   let side: number;
   if (Math.abs(state.boom) > CREW_SWITCH_BOOM_ANGLE) side = -Math.sign(state.boom);
   else if (state.crewY !== 0) side = Math.sign(state.crewY);

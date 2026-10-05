@@ -20,6 +20,9 @@ import "math"
 // crewCentresWhenLuffing term the target offset shrinks as the sail luffs (reach x (1 - luffAmount)).
 // The sailor only changes sides once the boom has swung clearly across, so a boom
 // flicking about the centreline head to wind does not make the crew rock the boat.
+// The sign of CrewY is the sailor's memory of their side, so a fully luffing sail never pulls
+// them exactly onto the centreline (minCrewOffset): at exactly 0 the side would come from
+// BoomSide, which flips with every apparent-wind crossing head to wind.
 
 // CrewCrossingSpeed is how fast the sailor moves across the boat, m/s. TUNING GUESS.
 const CrewCrossingSpeed = 1.5
@@ -27,6 +30,10 @@ const CrewCrossingSpeed = 1.5
 // crewSwitchBoomAngle is the boom angle past the centreline at which the sailor changes sides.
 // TUNING GUESS.
 const crewSwitchBoomAngle = 10 * DEG
+
+// minCrewOffset is the smallest target offset, m, so the sign of CrewY (the side) survives a fully
+// luffing sail. 1 mm of 80 kg is under 1 N m of heel. TUNING GUESS.
+const minCrewOffset = 0.001
 
 // CrewPosition is where the sailor is heading.
 type CrewPosition struct {
@@ -44,7 +51,7 @@ func crewPosition(state *BoatState, controls *Controls, boat *BoatModel, luffAmo
 	c := &boat.Cfg.Crew
 	hike := min(max(controls.Hike, 0), 1)
 	maxReach := c.HikeReachFrac * c.CgHeightFrac * c.Height
-	reach := (c.SitInOffset + hike*(maxReach-c.SitInOffset)) * (1 - min(max(luffAmount, 0), 1))
+	reach := max((c.SitInOffset+hike*(maxReach-c.SitInOffset))*(1-min(max(luffAmount, 0), 1)), minCrewOffset)
 	var side float64
 	if math.Abs(state.Boom) > crewSwitchBoomAngle {
 		side = -jsSign(state.Boom)

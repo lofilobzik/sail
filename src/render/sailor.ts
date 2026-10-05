@@ -90,16 +90,20 @@ export function createSailor(layout: BoatLayout, parent: THREE.Group): Sailor {
       for (const [name, p] of Object.entries(parts)) p.visible = on && !(HIDE_ARMS && name !== 'extension');
     },
     update(pose) {
-      const side = pose.crewY < 0 ? -1 : 1;
+      // The eye follows crewY continuously: across the cockpit between the two sitting positions
+      // (|crewY| up to sitInOffset), then outboard and up as the sailor hikes. `lateral` is -1/+1
+      // when sitting on a side, so the view never jumps between gunwales when crewY passes zero.
+      const lateral = Math.min(Math.max(pose.crewY / crew.sitInOffset, -1), 1);
+      const side = Math.sign(pose.crewY) || 1;
       const hike = Math.min(Math.max((Math.abs(pose.crewY) - crew.sitInOffset) / (maxReach - crew.sitInOffset), 0), 1);
       const ex = layout.transomX + s.eyeFromTransom;
-      const ey = side * (layout.halfBeamAt(ex) - s.eyeInboardOfGunwale + hike * s.eyeOutboardHiked);
+      const ey = lateral * (layout.halfBeamAt(ex) - s.eyeInboardOfGunwale) + side * hike * s.eyeOutboardHiked;
       const ez = layout.sheerAt(ex) + s.eyeAboveDeckSitting + hike * (s.eyeAboveDeckHiked - s.eyeAboveDeckSitting);
       bodyToLocal(ex, ey, ez, eye.position);
 
-      // Elbows bend down and outboard (toward the sailor's own side).
-      bodyToLocal(0, side * 0.6, -1, v.pole).normalize();
-      const shoulder = (dx: number) => bodyToLocal(ex + dx, ey - side * 0.05, ez - s.shoulderBelowEye, v.S);
+      // Elbows bend down and outboard (toward the sailor's own side), fading to straight down mid-boat.
+      bodyToLocal(0, lateral * 0.6, -1, v.pole).normalize();
+      const shoulder = (dx: number) => bodyToLocal(ex + dx, ey - lateral * 0.05, ez - s.shoulderBelowEye, v.S);
 
       // Tiller hand: on the extension, which runs from the tiller end toward the aft shoulder.
       const tEnd = layout.tillerEnd(pose.rudderAngle);

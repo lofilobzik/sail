@@ -80,6 +80,12 @@ and direction exactly. Do not hardcode wind anywhere else. See L7 for gusts and 
 - Sailor mass is a parameter, not a constant. **[tune]**
 - v1: no capsize. Heel angle clamps at a limit. **[tune]**
 - Heel feeds back: it reduces projected sail area / effective force and changes lateral resistance.
+- Crew side (`layers/heel.ts` `crewPosition`): opposite the boom, switching only once the boom is
+  more than 10 degrees across; otherwise the sign of `crewY` is the remembered side. A luffing sail
+  pulls the target toward the centreline (`crewCentresWhenLuffing`) but never closer than 1 mm
+  (**[tune]**), so the side survives head to wind instead of being re-picked from `boomSide`, which
+  flips with every apparent-wind crossing. The first-person eye (`render/sailor.ts`) follows
+  `crewY` continuously across the cockpit, so it never jumps between gunwales.
 
 ### L6. Yaw dynamics
 - Yaw moment balance from sail centre of effort versus lateral plane centre, plus rudder moment.
