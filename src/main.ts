@@ -11,7 +11,7 @@ import { Vector2 } from 'three';
 import { SceneView, type RenderPose } from './render/scene';
 import { ForceVectors } from './render/vectors';
 import { DEG, FixedStep, WAVE_PARAMETERS, browserConfig, buildBoat, clamp, evaluate, initialState, setWaveParameters, step, wrapPi, type BoatState, type Diagnostics } from './sim';
-import { connectToServer, serverSocketUrl } from './net/link';
+import { joinServer, serverChoice } from './net/link';
 import { SKY } from './render/skyModel';
 
 const START_HEADING_DEG = 90; // TUNING GUESS: beam reach for the default wind from 0°
@@ -22,11 +22,12 @@ const BENCH_DELAY_MS = 2000;
 
 const boat = buildBoat();
 const params = new URLSearchParams(location.search);
-// ?server=ws://host:port/ws (or a bare ?server for this site's own /ws): the Go server owns the seed,
-// the config and the boat (src/net); the page predicts with the TS sim, and the URL physics
-// parameters below are ignored.
-const serverParam = params.get('server');
-const server = serverParam === null ? null : await connectToServer(serverSocketUrl(serverParam));
+// The built site joins its own server (wss://<host>/ws); `npm run dev` sails offline unless
+// ?server[=ws://host:port/ws] is given, and ?offline always sails locally. With a server, the Go
+// server owns the seed, the config and the boat (src/net), the page predicts with the TS sim, and
+// the URL physics parameters below are ignored. An unreachable server falls back to offline.
+const serverUrl = serverChoice(params, import.meta.env.PROD);
+const server = serverUrl === null ? null : await joinServer(serverUrl);
 // Choose a sea pattern once. All subsequent sampling remains seeded and world-anchored.
 const cfg = server?.cfg ?? browserConfig(Math.floor(Math.random() * 0x100000000));
 if (!server) {

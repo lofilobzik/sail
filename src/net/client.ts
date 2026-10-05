@@ -45,11 +45,18 @@ export class NetClient {
         }
       });
       this.ws.addEventListener('close', (e) => {
-        this.closeReason = e.reason || `code ${e.code}`;
+        // A reason given to close() wins: a socket closed while connecting reports only code 1006.
+        if (!this.closeReason) this.closeReason = e.reason || `code ${e.code}`;
         this.setStatus('disconnected');
         reject(new Error(`could not join ${url} (${this.closeReason})`));
       });
     });
+  }
+
+  /** Gives up on the server, e.g. when it never answers; `reason` is reported as the close reason. */
+  close(reason: string): void {
+    if (!this.closeReason) this.closeReason = reason;
+    this.ws.close();
   }
 
   /** Seq the next input will carry. */

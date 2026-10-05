@@ -16,8 +16,9 @@ home: the apex is a proxied CNAME to the tunnel, which Cloudflare flattens.
 
 Files: `Containerfile`, `.github/workflows/deploy.yml`, `deploy/box/` (quadlets, timer drop-in,
 `install.sh`). The image serves the built site and the game server on one origin, so the page
-reaches the server at `wss://dinghysail.ing/ws`. Open **https://dinghysail.ing/?server** to play
-against the server; without `?server` the page sails offline in the browser, as in development.
+reaches the server at `wss://dinghysail.ing/ws`. Opening **https://dinghysail.ing** joins the
+server automatically; `https://dinghysail.ing/?offline` sails locally in the browser instead. If the
+server can't be reached within 5 s, the page says so and sails offline.
 
 ## One-time setup
 
@@ -85,7 +86,7 @@ status and a local `/healthz` check.
 curl -sS https://dinghysail.ing/healthz      # ok
 ```
 
-Then open https://dinghysail.ing/?server, press F3 for the debug panel, and the Network section
+Then open https://dinghysail.ing, press F3 for the debug panel, and the Network section
 should say `wss://dinghysail.ing/ws connected`.
 
 ## Day to day

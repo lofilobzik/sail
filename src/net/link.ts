@@ -1,7 +1,7 @@
 /**
- * Server mode (?server=ws://host:port/ws, or a bare ?server for this site's own /ws): joins the Go
- * server, which owns the seed, config and the authoritative boat. The page keeps predicting with the
- * TS sim; each snapshot corrects the prediction.
+ * Server mode: joins the Go server, which owns the seed, config and the authoritative boat. The page
+ * keeps predicting with the TS sim; each snapshot corrects the prediction. Which server (or none) is
+ * decided by `serverChoice`: the built site joins its own host, dev stays offline unless ?server.
  */
 import { DEG, type BoatState, type Controls, type SimConfig } from '../sim';
 import { NetClient, configFromWelcome, type NetStatus } from './client';
@@ -61,15 +61,35 @@ const BANNER_TEXT: Record<NetStatus, string | null> = {
   connected: null,
   disconnected: 'disconnected from server: sailing on local prediction',
 };
+// TUNING GUESS: long enough for a slow phone connection, short enough that an unreachable server
+// only delays the offline fallback a little.
+const JOIN_TIMEOUT_MS = 5000;
+const FALLBACK_BANNER_MS = 6000; // how long the "sailing offline" note stays up
+
+/**
+ * Which server this page load joins, or null to sail offline. `?offline` always sails locally;
+ * `?server=<ws url>` joins that server and a bare `?server` this site's own /ws. Otherwise the
+ * built site (dinghysail.ing) joins its own host, and the dev server stays offline.
+ */
+export function serverChoice(params: URLSearchParams, built: boolean): string | null {
+  if (params.has('offline')) return null;
+  const param = params.get('server');
+  if (param !== null) return serverSocketUrl(param);
+  return built ? serverSocketUrl('') : null;
+}
 
 /** The socket for `?server=<value>`: an explicit URL, or empty for the same host the page came from (wss on https). */
-export function serverSocketUrl(param: string): string {
+function serverSocketUrl(param: string): string {
   if (param !== '') return param;
   return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
 }
 
-/** Joins the server; shows a small status banner while connecting and after a disconnect. Throws if it cannot join. */
-export async function connectToServer(url: string): Promise<ServerLink> {
+/**
+ * Joins the server, showing a small status banner while connecting and after a disconnect. If it
+ * cannot join (refused, closed or no welcome within JOIN_TIMEOUT_MS), says so briefly and returns
+ * null: the page then sails offline.
+ */
+export async function joinServer(url: string): Promise<ServerLink | null> {
   const banner = document.createElement('div');
   banner.style.cssText =
     'position:fixed;top:8px;left:50%;transform:translateX(-50%);padding:4px 10px;z-index:20;' +
@@ -83,12 +103,18 @@ export async function connectToServer(url: string): Promise<ServerLink> {
   };
   client.onStatus = show;
   show(client.status);
+  const timer = setTimeout(() => client.close(`no answer within ${JOIN_TIMEOUT_MS / 1000} s`), JOIN_TIMEOUT_MS);
   try {
     const welcome = await client.welcome;
     return new ServerLink(client, welcome, configFromWelcome(welcome));
   } catch (err) {
-    banner.textContent = String(err);
+    console.warn(err);
+    client.onStatus = () => {};
+    banner.textContent = `could not reach the server (${client.closeReason}): sailing offline`;
     banner.style.display = '';
-    throw err;
+    setTimeout(() => banner.remove(), FALLBACK_BANNER_MS);
+    return null;
+  } finally {
+    clearTimeout(timer);
   }
 }

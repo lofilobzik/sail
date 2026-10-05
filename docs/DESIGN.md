@@ -60,7 +60,7 @@ src/
   render/   Reads sim state, draws it. Never writes to sim state.
   input/    Keys / mouse -> normalized control values (tiller, sheet, hike, look).
   nav/      Chart, dead reckoning, bearings (reads sim state, own state for DR).
-  net/      Browser client for the Go server (?server=ws://host:port/ws): input up, snapshots down,
+  net/      Browser client for the Go server (joined by default on the built site): input up, snapshots down,
             local TS prediction corrected toward server state.
   debug/    Overlay: apparent wind, force vectors, speed, heel, polar plot.
 data/       JSON config shared by TS (Vite imports) and Go (data/embed.go, go:embed). No magic numbers in code.
@@ -98,10 +98,13 @@ Rules:
 
 ## Server and networking
 
-- Run `npm run server` (Go, `-addr :8080`, optional `-seed`, `-snapshot-hz 20`, `-static dist` to also
-  serve a built site) and `npm run dev`, then open `/?server=ws://localhost:8080/ws`. A bare `?server`
-  joins the page's own host (`wss://` on https), which is how the deployed site works. Without
-  `?server` the browser plays offline exactly as before. `GET /healthz` answers `ok`.
+- Which server a page joins (`src/net/link.ts` `serverChoice`): the **built site** (dinghysail.ing)
+  joins its own host's `/ws` by default; **`npm run dev`** sails offline unless `?server` is given
+  (`?server=ws://localhost:8080/ws`, or a bare `?server` for the page's own host); **`?offline`**
+  always sails locally. A server that refuses, closes or doesn't send its welcome within 5 s (TUNING
+  GUESS) gets a short "sailing offline" note and the page plays offline. Run the server locally with
+  `npm run server` (Go, `-addr :8080`, optional `-seed`, `-snapshot-hz 20`, `-static dist` to also
+  serve a built site). `GET /healthz` answers `ok`.
 - **Deployment**: one container image (site plus server) built by GitHub Actions, published to GHCR,
   and pulled by podman-auto-update on the home box behind a Cloudflare Tunnel at dinghysail.ing.
   See `DEPLOY.md`.
