@@ -143,6 +143,13 @@ const debugSailPicker = overlay.addSelect('sail design', sail.designs.map((d) =>
 const hud = new TestHud(boat);
 
 const sound = new SailSound(prefs.volume, prefs.muted);
+// Mute from the menu checkbox or the M key: the sound, the checkbox and the saved preference follow.
+function setMuted(muted: boolean): void {
+  sound.setMuted(muted);
+  menu.setMuted(muted);
+  prefs.muted = muted;
+  savePrefs(prefs);
+}
 const guide = new LookGuide(view.boat.lookTargets, prefs);
 const menu = new Menu({
   canvas: view.renderer.domElement,
@@ -156,22 +163,14 @@ const menu = new Menu({
     prefs.volume = v;
     savePrefs(prefs);
   },
-  onMuted: (m) => {
-    sound.setMuted(m);
-    prefs.muted = m;
-    savePrefs(prefs);
-  },
+  onMuted: setMuted,
   onRespawn: respawn,
   onShowGuidance: () => guide.reset(),
 });
 // M: mute or unmute.
 window.addEventListener('keydown', (e) => {
   if (e.code !== 'KeyM' || e.repeat || isTypingTarget(e.target)) return;
-  const muted = !sound.isMuted;
-  sound.setMuted(muted);
-  menu.setMuted(muted);
-  prefs.muted = muted;
-  savePrefs(prefs);
+  setMuted(!prefs.muted);
 });
 
 // V: switch between the first-person view and an outside view for checking the model.

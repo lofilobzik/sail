@@ -71,10 +71,6 @@ export class SailSound {
     });
   }
 
-  get isMuted(): boolean {
-    return this.muted;
-  }
-
   setVolume(volume: number): void {
     this.volume = volume;
     this.applyMaster();

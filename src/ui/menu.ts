@@ -78,6 +78,7 @@ export class Menu {
   private readonly muteBox: HTMLInputElement;
   private readonly volumeSlider: HTMLInputElement;
   private readonly sailSelect = document.createElement('select');
+  private isOpen = false;
   private wasLocked = false;
   private unlockedAt = -Infinity;
 
@@ -164,7 +165,7 @@ export class Menu {
   }
 
   get open(): boolean {
-    return this.backdrop.style.display === 'flex';
+    return this.isOpen;
   }
 
   /** Keeps the checkbox in step when M mutes from the keyboard. */
@@ -178,6 +179,7 @@ export class Menu {
   }
 
   private setOpen(open: boolean): void {
+    this.isOpen = open;
     this.backdrop.style.display = open ? 'flex' : 'none';
   }
 
