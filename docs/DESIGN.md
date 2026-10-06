@@ -279,11 +279,18 @@ The debug overlay is a developer tool, not a player aid, and is toggled off by d
   it is seen. Starts on the first click or key press (browser autoplay rules); `M` or the menu mutes.
 - **First-time guidance** (`src/ui/lookGuide.ts`) shows where to look, never what to think: a
   "click to look" mouse glyph while the pointer is free, then one guide at a time, a chevron at the
-  screen edge or a ring when on screen, toward the Windex (shortly after the first look), the tiller
-  (after the tiller first moves) and the telltales (after the sail first luffs or stalls). No text
-  tips, no wind streaks or arrows in the world. A guide completes once its part is held near the
-  middle of the view, is remembered in localStorage, and can be reset from the Esc menu.
-- **Esc menu** (`src/ui/menu.ts`) lists the controls; the boat keeps sailing behind it.
+  screen edge or a steady ring when on screen, each with one plain word naming what the part is for
+  (*tiller*, *wind*, *sail trim*). Triggers: the tiller after it is first pushed well over (it goes
+  first and may interrupt a waiting wind guide, so the answer to "why did it turn that way?" arrives
+  while the boat is still turning); the Windex after a few seconds of looking around; the telltales
+  when the sail goes soft (the luff starts to flutter) for a couple of seconds, or after the player's
+  first trim (W/S or the wheel; respawns never count), only while the boat is moving (stopped head to
+  wind the Windex is the answer, and a stall looks normal, so it never triggers one). No text tips, no wind
+  streaks or arrows in the world. A guide completes once its ring has been on screen for two seconds,
+  is remembered in localStorage, and can be reset from the Esc menu. A guide ignored for 30 s steps
+  back for a minute rather than nagging. Chevrons stay above the lap chart.
+- **Esc menu** (`src/ui/menu.ts`) lists the sailing controls, with the instruments, outside view and
+  debug panel set apart under Developer; the boat keeps sailing behind it.
 
 ## Navigation
 

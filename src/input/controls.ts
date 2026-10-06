@@ -31,6 +31,14 @@ export class ControlInput {
   private sheet = INITIAL_SHEET;
   private sheetTarget = INITIAL_SHEET;
   private hike = 0;
+  /**
+   * Total sheet-target travel the player has made with W/S or the wheel, ever. Resets and respawns
+   * set the sheet directly and never add to it, so it measures deliberate trimming only.
+   */
+  get trimTravel(): number {
+    return this.trimmed;
+  }
+  private trimmed = 0;
 
   constructor(wheelTarget: HTMLElement) {
     window.addEventListener('keydown', (e) => {
@@ -45,7 +53,9 @@ export class ControlInput {
         e.preventDefault();
         if (e.deltaY === 0) return;
         // Wheel down (toward the user) eases, wheel up sheets in.
+        const before = this.sheetTarget;
         this.sheetTarget = clamp(this.sheetTarget + Math.sign(e.deltaY) * SHEET_WHEEL_STEP, 0, 1);
+        this.trimmed += Math.abs(this.sheetTarget - before);
       },
       { passive: false },
     );
@@ -66,7 +76,11 @@ export class ControlInput {
 
     const sheetIn = k.has('KeyS');
     const ease = k.has('KeyW');
-    if (sheetIn !== ease) this.sheetTarget = rateLimit(this.sheetTarget, ease ? 1 : 0, SHEET_RATE, dt);
+    if (sheetIn !== ease) {
+      const before = this.sheetTarget;
+      this.sheetTarget = rateLimit(this.sheetTarget, ease ? 1 : 0, SHEET_RATE, dt);
+      this.trimmed += Math.abs(this.sheetTarget - before);
+    }
     this.sheet = rateLimit(this.sheet, this.sheetTarget, SHEET_RATE, dt);
 
     const hiking = k.has('ShiftLeft') || k.has('ShiftRight');

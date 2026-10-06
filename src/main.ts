@@ -95,6 +95,8 @@ function resetBoat(start: BoatState): void {
   diagnostics = evaluate(curr, input.update(0), boat, cfg);
 }
 resetBoat(server ? server.spawn : initialState(START_HEADING_DEG * DEG, START_SPEED));
+// The first launch is a departure, not a restart: the reset's "Dead reckoning restarted" note is for respawns.
+navigation.message = '';
 
 // Server mode: respawning resets the server's boat; the local one follows on the next snapshot.
 const respawn = server ? () => server.reset() : () => resetBoat(initialState(START_HEADING_DEG * DEG, START_SPEED));
@@ -284,8 +286,9 @@ function frame(now: number): void {
       looking: document.pointerLockElement === view.renderer.domElement,
       busy: view.mode !== 'cockpit' || glassesUp || wantedReading !== null,
       tiller: c.tiller,
+      speed: diagnostics.speed,
       luffAmount,
-      stallAmount: diagnostics.sail?.stallAmount ?? 0,
+      trimTravel: input.trimTravel,
     },
     menu.open,
   );

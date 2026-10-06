@@ -155,7 +155,8 @@ export function createSail(layout: BoatLayout): SailView {
   group.add(ribbons);
   const telltaleMark = new THREE.Object3D();
   group.add(telltaleMark);
-  const [markC, markH] = tt.luff[Math.floor(tt.luff.length / 2)]!;
+  // The lowest luff telltale: the one a helm reads, at eye height when looking up the sail.
+  const [markC, markH] = tt.luff[0]!;
 
   const chain = new Float32Array((seg + 1) * 3);
   const a: [number, number, number] = [0, 0, 0];
