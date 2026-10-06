@@ -81,6 +81,28 @@ type StepResult struct {
 	Diagnostics Diagnostics `json:"diagnostics"`
 }
 
+// foilOrbitalFlow returns the orbital flow of the water at a foil, in the foil's own axes. The foil
+// sits at its rotated position under the boat (yaw, bow-up pitch, starboard-down heel), so a heeled
+// boat samples the waves where the foil really is and at its real depth below the surface.
+func foilOrbitalFlow(foil *FoilModel, state *BoatState, height float64, waves *WaveConfig, sample *WaveSample) (u, v float64) {
+	sh, ch := math.Sin(state.Heading), math.Cos(state.Heading)
+	sp, cp := math.Sin(state.Pitch), math.Cos(state.Pitch)
+	sr, cr := math.Sin(state.Heel), math.Cos(state.Heel)
+	forward := foil.X*cp - foil.Z*cr*sp
+	starboard := foil.Z * sr
+	up := foil.X*sp + foil.Z*cr*cp
+	x := state.X + forward*sh + starboard*ch
+	z := state.Z - forward*ch + starboard*sh
+	SampleWaves(waves, x, z, state.T, 0, sample)
+	depth := min(0, height+up-sample.Y)
+	SampleWaves(waves, x, z, state.T, depth, sample)
+	vf := sample.VelocityX*sh - sample.VelocityZ*ch
+	vs := sample.VelocityX*ch + sample.VelocityZ*sh
+	u = vf*cp + sample.VelocityY*sp
+	v = vs*cr + vf*sr*sp - sample.VelocityY*sr*cp
+	return u, v
+}
+
 // waveDiagnostics returns false on the exact flat-water path.
 func waveDiagnostics(state *BoatState, boat *BoatModel, cfg *SimConfig, out *WaveDiagnostics) bool {
 	if WaveAmplitude(&cfg.Waves) == 0 {
@@ -90,8 +112,6 @@ func waveDiagnostics(state *BoatState, boat *BoatModel, cfg *SimConfig, out *Wav
 	SampleWaves(&cfg.Waves, state.X, state.Z, state.T, 0, &surface)
 	height := surface.Y
 	sh, ch := math.Sin(state.Heading), math.Cos(state.Heading)
-	sp, cp := math.Sin(state.Pitch), math.Cos(state.Pitch)
-	sr, cr := math.Sin(state.Heel), math.Cos(state.Heel)
 	rollTarget := -math.Atan(surface.SlopeX*ch + surface.SlopeZ*sh)
 	pitchTarget := math.Atan(surface.SlopeX*sh - surface.SlopeZ*ch)
 	// Replace only hull-form restoring's gravity slope by the local surface slope.
@@ -103,32 +123,8 @@ func waveDiagnostics(state *BoatState, boat *BoatModel, cfg *SimConfig, out *Wav
 
 	var ambient FoilAmbientFlow
 	if cfg.Layers.Foils {
-		for i := range 2 {
-			foil := &boat.Board
-			if i == 1 {
-				foil = &boat.Rudder
-			}
-			// Rotation order matches the boat: yaw, bow-up pitch, starboard-down heel.
-			forward := foil.X*cp - foil.Z*cr*sp
-			starboard := foil.Z * sr
-			up := foil.X*sp + foil.Z*cr*cp
-			x := state.X + forward*sh + starboard*ch
-			z := state.Z - forward*ch + starboard*sh
-			SampleWaves(&cfg.Waves, x, z, state.T, 0, &foilSample)
-			depth := min(0, height+up-foilSample.Y)
-			SampleWaves(&cfg.Waves, x, z, state.T, depth, &foilSample)
-			vf := foilSample.VelocityX*sh - foilSample.VelocityZ*ch
-			vs := foilSample.VelocityX*ch + foilSample.VelocityZ*sh
-			u := vf*cp + foilSample.VelocityY*sp
-			v := vs*cr + vf*sr*sp - foilSample.VelocityY*sr*cp
-			if i == 0 {
-				ambient.BoardU = u
-				ambient.BoardV = v
-			} else {
-				ambient.RudderU = u
-				ambient.RudderV = v
-			}
-		}
+		ambient.BoardU, ambient.BoardV = foilOrbitalFlow(&boat.Board, state, height, &cfg.Waves, &foilSample)
+		ambient.RudderU, ambient.RudderV = foilOrbitalFlow(&boat.Rudder, state, height, &cfg.Waves, &foilSample)
 	}
 	*out = WaveDiagnostics{FoilAmbientFlow: ambient, Height: height, RollTarget: rollTarget, PitchTarget: pitchTarget, RollMoment: rollMoment}
 	return true

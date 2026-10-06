@@ -3,7 +3,7 @@
  * Forces from each layer are summed in the body frame and integrated with
  * semi-implicit Euler over `cfg.substeps` substeps (PHYSICS.md section 0).
  */
-import type { BoatModel } from './boat';
+import type { BoatModel, FoilModel } from './boat';
 import type { SimConfig } from './config';
 import { DEG, G, bearingToWorld, bodyToWorld, clamp, type Vec2 } from './frames';
 import { apparentWind, type ApparentWind } from './layers/apparentWind';
@@ -15,7 +15,7 @@ import { boomKinematics, sailForces, type SailResult } from './layers/sail';
 import { munkMoment } from './layers/yaw';
 import type { BoatState, Controls } from './state';
 import { getWind } from './wind';
-import { createWaveSample, sampleWaves, waveAmplitude, WAVE_PARAMETERS } from './waves';
+import { createWaveSample, sampleWaves, waveAmplitude, WAVE_PARAMETERS, type WaveConfig } from './waves';
 
 export interface WaveDiagnostics extends FoilAmbientFlow {
   height: number;
@@ -75,14 +75,36 @@ const ZERO_SAIL_LIKE = { fx: 0, fy: 0, heelMoment: 0, yawMoment: 0 };
 const surfaceSample = createWaveSample();
 const foilSample = createWaveSample();
 const ambientFlow: FoilAmbientFlow = { boardU: 0, boardV: 0, rudderU: 0, rudderV: 0 };
+const flow = { u: 0, v: 0 };
+
+/**
+ * Orbital flow of the water at a foil, in the foil's own axes, into `flow`. The foil sits at its
+ * rotated position under the boat (yaw, bow-up pitch, starboard-down heel), so a heeled boat
+ * samples the waves where the foil really is and at its real depth below the surface.
+ */
+function foilOrbitalFlow(foil: FoilModel, state: BoatState, height: number, waves: WaveConfig, flow: { u: number; v: number }): void {
+  const sh = Math.sin(state.heading), ch = Math.cos(state.heading);
+  const sp = Math.sin(state.pitch), cp = Math.cos(state.pitch);
+  const sr = Math.sin(state.heel), cr = Math.cos(state.heel);
+  const forward = foil.x * cp - foil.z * cr * sp;
+  const starboard = foil.z * sr;
+  const up = foil.x * sp + foil.z * cr * cp;
+  const x = state.x + forward * sh + starboard * ch;
+  const z = state.z - forward * ch + starboard * sh;
+  sampleWaves(waves, x, z, state.t, 0, foilSample);
+  const depth = Math.min(0, height + up - foilSample.y);
+  sampleWaves(waves, x, z, state.t, depth, foilSample);
+  const vf = foilSample.velocityX * sh - foilSample.velocityZ * ch;
+  const vs = foilSample.velocityX * ch + foilSample.velocityZ * sh;
+  flow.u = vf * cp + foilSample.velocityY * sp;
+  flow.v = vs * cr + vf * sr * sp - foilSample.velocityY * sr * cp;
+}
 
 function waveDiagnostics(state: BoatState, boat: BoatModel, cfg: SimConfig): WaveDiagnostics | null {
   if (waveAmplitude(cfg.waves) === 0) return null;
   sampleWaves(cfg.waves, state.x, state.z, state.t, 0, surfaceSample);
   const height = surfaceSample.y;
   const sh = Math.sin(state.heading), ch = Math.cos(state.heading);
-  const sp = Math.sin(state.pitch), cp = Math.cos(state.pitch);
-  const sr = Math.sin(state.heel), cr = Math.cos(state.heel);
   const rollTarget = -Math.atan(surfaceSample.slopeX * ch + surfaceSample.slopeZ * sh);
   const pitchTarget = Math.atan(surfaceSample.slopeX * sh - surfaceSample.slopeZ * ch);
   // Replace only hull-form restoring's gravity slope by the local surface slope.
@@ -93,29 +115,12 @@ function waveDiagnostics(state: BoatState, boat: BoatModel, cfg: SimConfig): Wav
 
   ambientFlow.boardU = ambientFlow.boardV = ambientFlow.rudderU = ambientFlow.rudderV = 0;
   if (cfg.layers.foils) {
-    for (let i = 0; i < 2; i++) {
-      const foil = i === 0 ? boat.board : boat.rudder;
-      // Rotation order matches the boat: yaw, bow-up pitch, starboard-down heel.
-      const forward = foil.x * cp - foil.z * cr * sp;
-      const starboard = foil.z * sr;
-      const up = foil.x * sp + foil.z * cr * cp;
-      const x = state.x + forward * sh + starboard * ch;
-      const z = state.z - forward * ch + starboard * sh;
-      sampleWaves(cfg.waves, x, z, state.t, 0, foilSample);
-      const depth = Math.min(0, height + up - foilSample.y);
-      sampleWaves(cfg.waves, x, z, state.t, depth, foilSample);
-      const vf = foilSample.velocityX * sh - foilSample.velocityZ * ch;
-      const vs = foilSample.velocityX * ch + foilSample.velocityZ * sh;
-      const u = vf * cp + foilSample.velocityY * sp;
-      const v = vs * cr + vf * sr * sp - foilSample.velocityY * sr * cp;
-      if (i === 0) {
-        ambientFlow.boardU = u;
-        ambientFlow.boardV = v;
-      } else {
-        ambientFlow.rudderU = u;
-        ambientFlow.rudderV = v;
-      }
-    }
+    foilOrbitalFlow(boat.board, state, height, cfg.waves, flow);
+    ambientFlow.boardU = flow.u;
+    ambientFlow.boardV = flow.v;
+    foilOrbitalFlow(boat.rudder, state, height, cfg.waves, flow);
+    ambientFlow.rudderU = flow.u;
+    ambientFlow.rudderV = flow.v;
   }
   return { height, rollTarget, pitchTarget, rollMoment, ...ambientFlow };
 }
