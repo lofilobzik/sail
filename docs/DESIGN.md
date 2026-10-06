@@ -89,6 +89,14 @@ Rules:
   traces and samples, and `go test ./server/sim/...` checks the Go port against them within stated
   tolerances. Any physics change goes into both, then regenerate the fixtures. The server owns the
   seed and config; clients take them from the welcome message.
+  **Touch both implementations.** When you change anything under `src/sim/` or `server/sim/`, change
+  the matching code on the other side in the same commit:
+  1. Edit the TS file and its Go counterpart (`src/sim/layers/foils.ts` ↔ `server/sim/layer_foils.go`,
+     `src/sim/step.ts` ↔ `server/sim/step.go`, and so on).
+  2. A change to the headless polar goes into both `scripts/polar.ts` (with `scripts/lib/`) and
+     `server/cmd/polar/`.
+  3. Run `npm run golden`, then `npm test` and `go test ./server/...`. A pure refactor must leave the
+     regenerated fixtures byte-identical (`git status` shows no change under `server/sim/testdata/`).
 - Water follows the boat continuously, but wave phase stays anchored to world coordinates.
   Only the flat-water debug grid snaps. Filter rendering detail to mesh/pixel resolution.
   A **render-side floating origin** follows the interpolated boat every frame, without threshold jumps.
