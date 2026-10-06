@@ -2,6 +2,7 @@ node_modules/
 dist/
 polar-out/
 .DS_Store
+WATCHDOG.yml
 
 # Reference PDFs/OCR text and browser recordings
 docs/*.pdf
