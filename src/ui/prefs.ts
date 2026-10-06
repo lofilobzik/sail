@@ -17,7 +17,7 @@ export interface Prefs {
 
 const DEFAULTS: Prefs = { volume: 0.7, muted: false, sail: null, guidesSeen: [] };
 
-export function loadPrefs(): Prefs {
+function loadPrefs(): Prefs {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return { ...DEFAULTS, guidesSeen: [] };
@@ -33,10 +33,34 @@ export function loadPrefs(): Prefs {
   }
 }
 
-export function savePrefs(prefs: Prefs): void {
+function savePrefs(prefs: Prefs): void {
   try {
     localStorage.setItem(KEY, JSON.stringify(prefs));
   } catch {
     // Storage unavailable: preferences last for this session only.
+  }
+}
+
+/**
+ * The live preferences: every change is saved and announced, so the sound, the menu and the debug
+ * panel follow one source instead of each updating the others by hand.
+ */
+export class Preferences {
+  private data = loadPrefs();
+  private readonly listeners: ((prefs: Readonly<Prefs>) => void)[] = [];
+
+  get value(): Readonly<Prefs> {
+    return this.data;
+  }
+
+  set(patch: Partial<Prefs>): void {
+    this.data = { ...this.data, ...patch };
+    savePrefs(this.data);
+    for (const listener of this.listeners) listener(this.data);
+  }
+
+  /** `listener` runs after every change, not at subscription; read `value` for the starting state. */
+  subscribe(listener: (prefs: Readonly<Prefs>) => void): void {
+    this.listeners.push(listener);
   }
 }

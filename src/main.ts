@@ -17,7 +17,7 @@ import type { RemotePose } from './net/remote';
 import { SailSound } from './audio/sound';
 import { LookGuide } from './ui/lookGuide';
 import { Menu } from './ui/menu';
-import { loadPrefs, savePrefs } from './ui/prefs';
+import { Preferences } from './ui/prefs';
 import { SKY } from './render/skyModel';
 
 const START_HEADING_DEG = 90; // TUNING GUESS: beam reach for the default wind from 0°
@@ -110,54 +110,51 @@ overlay.addNumber('cloud coverage (0–1)', view.sky.cloudCoverage, (v, el) => {
 });
 
 // The sail design is a player preference; ?sail=<id> (data/sail-designs.json) overrides it.
-const prefs = loadPrefs();
+const prefs = new Preferences();
 const sail = view.boat.sail;
+const knownSail = (id: string | null): id is string => sail.designs.some((d) => d.id === id);
 if (opts.sail !== null) {
-  if (sail.designs.some((d) => d.id === opts.sail)) sail.setDesign(opts.sail);
+  if (knownSail(opts.sail)) sail.setDesign(opts.sail);
   else console.warn(`unknown ?sail=${opts.sail}; known: ${sail.designs.map((d) => d.id).join(', ')}`);
-} else if (prefs.sail !== null && sail.designs.some((d) => d.id === prefs.sail)) {
-  sail.setDesign(prefs.sail);
+} else if (knownSail(prefs.value.sail)) {
+  sail.setDesign(prefs.value.sail);
 }
-// Both the Esc menu and the debug panel pick the sail; either choice updates the other.
-const chooseSail = (id: string): void => {
-  sail.setDesign(id);
-  prefs.sail = id;
-  savePrefs(prefs);
-  debugSailPicker.value = id;
-  menu.setSailDesign(id);
-};
-const debugSailPicker = overlay.addSelect('sail design', sail.designs.map((d) => ({ value: d.id, label: d.name })), sail.design, chooseSail);
+const debugSailPicker = overlay.addSelect('sail design', sail.designs.map((d) => ({ value: d.id, label: d.name })), sail.design, (id) => prefs.set({ sail: id }));
 const hud = new TestHud(boat);
 
-const sound = new SailSound(prefs.volume, prefs.muted);
-// Mute from the menu checkbox or the M key: the sound, the checkbox and the saved preference follow.
-function setMuted(muted: boolean): void {
-  sound.setMuted(muted);
-  menu.setMuted(muted);
-  prefs.muted = muted;
-  savePrefs(prefs);
-}
+const sound = new SailSound(prefs.value.volume, prefs.value.muted);
 const guide = new LookGuide(view.boat.lookTargets, prefs);
 const menu = new Menu({
   canvas: view.renderer.domElement,
   sailDesigns: sail.designs,
   sailDesign: sail.design,
-  onSailDesign: chooseSail,
-  volume: prefs.volume,
-  muted: prefs.muted,
-  onVolume: (v) => {
-    sound.setVolume(v);
-    prefs.volume = v;
-    savePrefs(prefs);
-  },
-  onMuted: setMuted,
+  onSailDesign: (id) => prefs.set({ sail: id }),
+  volume: prefs.value.volume,
+  muted: prefs.value.muted,
+  onVolume: (volume) => prefs.set({ volume }),
+  onMuted: (muted) => prefs.set({ muted }),
   onRespawn: respawn,
   onShowGuidance: () => guide.reset(),
+});
+// The menu, the debug panel and the M key all change preferences; the sound, the sail and both
+// panels follow from here.
+let savedSail = prefs.value.sail;
+prefs.subscribe((p) => {
+  sound.setVolume(p.volume);
+  sound.setMuted(p.muted);
+  menu.setMuted(p.muted);
+  // Only a changed sail choice acts, so a ?sail= override survives unrelated changes.
+  if (p.sail !== savedSail && knownSail(p.sail)) {
+    savedSail = p.sail;
+    sail.setDesign(p.sail);
+    debugSailPicker.value = p.sail;
+    menu.setSailDesign(p.sail);
+  }
 });
 // M: mute or unmute.
 window.addEventListener('keydown', (e) => {
   if (e.code !== 'KeyM' || e.repeat || isTypingTarget(e.target)) return;
-  setMuted(!prefs.muted);
+  prefs.set({ muted: !prefs.value.muted });
 });
 
 // V: switch between the first-person view and an outside view for checking the model.

@@ -15,7 +15,7 @@
  */
 import * as THREE from 'three';
 import type { LookTargets } from '../render/boatMesh';
-import { savePrefs, type Prefs } from './prefs';
+import type { Preferences } from './prefs';
 
 type GuideId = keyof LookTargets;
 // Steering comes first: it answers "why did it turn that way?" while the boat is still turning, and
@@ -118,9 +118,9 @@ export class LookGuide {
 
   constructor(
     private readonly targets: LookTargets,
-    private readonly prefs: Prefs,
+    private readonly prefs: Preferences,
   ) {
-    this.seen = new Set(prefs.guidesSeen);
+    this.seen = new Set(prefs.value.guidesSeen);
     const style = document.createElement('style');
     style.textContent = STYLE;
     document.head.appendChild(style);
@@ -144,8 +144,7 @@ export class LookGuide {
     this.sheetTravel = 0;
     this.lastTrimTravel = null;
     for (const id of PRIORITY) delete this.snoozedUntil[id];
-    this.prefs.guidesSeen = [];
-    savePrefs(this.prefs);
+    this.prefs.set({ guidesSeen: [] });
   }
 
   update(input: GuideInput, menuOpen: boolean): void {
@@ -214,8 +213,7 @@ export class LookGuide {
     if (this.mode === 'ring') this.held += input.dt;
     if (this.held >= HOLD_SECONDS) {
       this.seen.add(id);
-      this.prefs.guidesSeen = [...this.seen];
-      savePrefs(this.prefs);
+      this.prefs.set({ guidesSeen: [...this.seen] });
       this.current = null;
       this.gap = GAP_SECONDS;
       this.place(null, 0, 0, 0);
