@@ -14,6 +14,11 @@ const SHEET_RATE = 0.4; // TUNING GUESS: sheet travel per second while W/S held 
 const SHEET_WHEEL_STEP = 0.03; // TUNING GUESS: sheet target change per wheel notch
 const HIKE_RATE = 1.5; // TUNING GUESS: hike travel per second
 const INITIAL_SHEET = 0.25; // best trim on the default beam reach: polar sheet 0.25-0.27 at TWA 90, 6-9 kn (milestone 2)
+// The Laser carries weather helm: hands off at tiller 0 the spawn reach rounds up into irons within
+// about 40 s and then slides astern. A sailor already holds a little helm against it, so the tiller
+// starts where it balances the spawn reach (headless sweep, 7 kn: -0.05 still rounds up, -0.06 holds
+// 90 +/- 30 degrees for two minutes with gusts, -0.07 bears away). TUNING GUESS.
+const INITIAL_TILLER = -0.06;
 
 /** True when a key event comes from a form field (overlay inputs must not drive the boat). */
 export function isTypingTarget(target: EventTarget | null): boolean {
@@ -22,7 +27,7 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 
 export class ControlInput {
   private readonly down = new Set<string>();
-  private tiller = 0;
+  private tiller = INITIAL_TILLER;
   private sheet = INITIAL_SHEET;
   private sheetTarget = INITIAL_SHEET;
   private hike = 0;
@@ -47,7 +52,7 @@ export class ControlInput {
   }
 
   reset(): void {
-    this.tiller = 0;
+    this.tiller = INITIAL_TILLER;
     this.sheet = this.sheetTarget = INITIAL_SHEET;
     this.hike = 0;
   }
