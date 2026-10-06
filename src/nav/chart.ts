@@ -47,8 +47,9 @@ export class ChartProjection {
     this.span = Math.max(needed * visual.chartFitPadding, visual.minChartSpan);
   }
 
-  reset(): void {
-    this.center = { ...NAVIGATION.start };
+  /** Back to the default span around `center`: the departure (offline the chart's start). */
+  reset(center: Vec2 = NAVIGATION.start): void {
+    this.center = { x: center.x, z: center.z };
     this.span = NAVIGATION.visual.chartSpan;
   }
 }

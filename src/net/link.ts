@@ -1,26 +1,67 @@
 /**
- * Server mode: joins the Go server, which owns the seed, config and the authoritative boat. The page
- * keeps predicting with the TS sim; each snapshot corrects the prediction. Which server (or none) is
- * decided by `serverChoice`: the built site joins its own host, dev stays offline unless ?server.
+ * Server mode: joins the Go server's room, which owns the seed, the config and the authoritative
+ * boats. The page keeps predicting its own boat with the TS sim; each snapshot corrects the
+ * prediction, and the other boats come with it (NetClient.remote). After a drop the client
+ * reconnects with its resume token. Which server (or none) is decided by `serverChoice`: the built
+ * site joins its own host, dev stays offline unless ?server.
  */
 import { DEG, type BoatState, type Controls, type SimConfig } from '../sim';
-import { NetClient, configFromWelcome, type NetStatus } from './client';
+import { NetClient, adoptServerConfig, configFromWelcome, type NetStatus } from './client';
 import { Corrector } from './correction';
 import type { WelcomeMessage } from './protocol';
 
+/** What the server's news did to the predicted boat this frame. */
+export type Sync =
+  | 'steady'
+  /** The state jumped (a snap or a resync, e.g. a resumed boat): do not interpolate from before. */
+  | 'jumped'
+  /** A new boat (a fresh welcome or a reset): restart the boat and navigation from `spawn`. */
+  | 'respawned';
+
 export class ServerLink {
   readonly corrector = new Corrector();
+  /** The boat's known departure: the spawn of the newest new-boat welcome or reset. */
+  spawn: BoatState;
+  /** After a reset: the first snapshot acking this seq or later shows the new spawn. 0 when none is pending. */
+  private respawnSeq = 0;
 
   constructor(
     readonly client: NetClient,
-    readonly welcome: WelcomeMessage,
+    /** The newest welcome. */
+    public welcome: WelcomeMessage,
     readonly cfg: SimConfig,
-  ) {}
+  ) {
+    this.spawn = { ...welcome.state };
+  }
 
-  /** Folds the newest snapshot into `s` (mutated). True when `s` jumped (do not interpolate from before). */
-  correct(s: BoatState): boolean {
-    const snap = this.client.takeSnapshot();
-    return snap !== null && this.corrector.apply(snap, s, this.client.nextSeq);
+  /**
+   * Folds in what the server sent since the last frame: a reconnect's welcome, then the newest
+   * snapshot. `s` is corrected in place, except on 'respawned', where the caller restarts from `spawn`.
+   */
+  sync(s: BoatState): Sync {
+    const c = this.client;
+    const w = c.takeRewelcome();
+    if (w) {
+      this.welcome = w;
+      this.respawnSeq = 0;
+      if (!w.resumed) {
+        // A new boat, maybe in a restarted server's new world: adopt its config too.
+        adoptServerConfig(this.cfg, w);
+        this.corrector.reset(c.nextSeq);
+        this.spawn = { ...w.state };
+        return 'respawned';
+      }
+      this.corrector.resync(w.state, s, c.nextSeq);
+    }
+    const snap = c.takeSnapshot();
+    if (snap && this.respawnSeq && snap.ackSeq >= this.respawnSeq) {
+      this.respawnSeq = 0;
+      this.corrector.reset(c.nextSeq);
+      this.spawn = { ...snap.state };
+      return 'respawned';
+    }
+    const jumped = snap !== null && this.corrector.apply(snap, s, c.nextSeq);
+    return w || jumped ? 'jumped' : 'steady';
   }
 
   /** Sends one fixed step's controls and records `s`, the predicted state after them. */
@@ -28,10 +69,14 @@ export class ServerLink {
     this.corrector.afterStep(s, this.client.sendInput(controls), this.cfg.dt);
   }
 
-  /** Restarts the server's boat; the caller restarts the local one. */
+  /**
+   * Respawns the server's boat at a free slot. The local boat sails on until the first snapshot
+   * after the reset, which `sync` reports as 'respawned'.
+   */
   reset(): void {
     this.client.sendReset();
-    this.corrector.reset(this.client.nextSeq);
+    this.respawnSeq = this.client.nextSeq;
+    this.corrector.reset(this.respawnSeq);
   }
 
   /** Debug overlay text. */
@@ -42,7 +87,8 @@ export class ServerLink {
     const last = corr.last;
     const ms = (v: number): string => (Number.isNaN(v) ? '–' : `${v.toFixed(1)} ms`);
     return (
-      `${c.url}  ${c.status}${c.status === 'disconnected' ? ` (${c.closeReason})` : ''}  seed ${this.welcome.seed}\n` +
+      `${c.url}  ${c.status}${c.status === 'connected' ? '' : ` (${c.closeReason})`}  seed ${this.welcome.seed}\n` +
+      `own id ${c.id}  room boats ${c.status === 'connected' ? c.remote.size + 1 : '–'}  reconnect attempts ${c.totalAttempts}\n` +
       `RTT ${ms(c.rttMs)} (mean ${ms(c.meanRttMs)})\n` +
       (snap
         ? `server tick ${snap.tick}  ack ${snap.ackSeq}  sent ${c.nextSeq - 1}\n` +
@@ -59,11 +105,9 @@ export class ServerLink {
 const BANNER_TEXT: Record<NetStatus, string | null> = {
   connecting: 'connecting…',
   connected: null,
+  reconnecting: 'reconnecting…',
   disconnected: 'disconnected from server: sailing on local prediction',
 };
-// TUNING GUESS: long enough for a slow phone connection, short enough that an unreachable server
-// only delays the offline fallback a little.
-const JOIN_TIMEOUT_MS = 5000;
 const FALLBACK_BANNER_MS = 6000; // how long the "sailing offline" note stays up
 
 /**
@@ -85,9 +129,9 @@ function serverSocketUrl(param: string): string {
 }
 
 /**
- * Joins the server, showing a small status banner while connecting and after a disconnect. If it
- * cannot join (refused, closed or no welcome within JOIN_TIMEOUT_MS), says so briefly and returns
- * null: the page then sails offline.
+ * Joins the server, showing a small status banner while connecting, reconnecting and after a
+ * disconnect. If the first join fails (refused, closed or no welcome within CONNECT_TIMEOUT_MS),
+ * says so briefly and returns null: the page then sails offline.
  */
 export async function joinServer(url: string): Promise<ServerLink | null> {
   const banner = document.createElement('div');
@@ -98,12 +142,12 @@ export async function joinServer(url: string): Promise<ServerLink | null> {
   const client = new NetClient(url);
   const show = (status: NetStatus): void => {
     const text = BANNER_TEXT[status];
-    banner.textContent = text === null ? '' : `${text} (${url}${client.closeReason ? `, ${client.closeReason}` : ''})`;
+    const attempt = status === 'reconnecting' ? `attempt ${client.attempt}, ` : '';
+    banner.textContent = text === null ? '' : `${text} (${attempt}${url}${client.closeReason ? `, ${client.closeReason}` : ''})`;
     banner.style.display = text === null ? 'none' : '';
   };
   client.onStatus = show;
   show(client.status);
-  const timer = setTimeout(() => client.close(`no answer within ${JOIN_TIMEOUT_MS / 1000} s`), JOIN_TIMEOUT_MS);
   try {
     const welcome = await client.welcome;
     return new ServerLink(client, welcome, configFromWelcome(welcome));
@@ -114,7 +158,5 @@ export async function joinServer(url: string): Promise<ServerLink | null> {
     banner.style.display = '';
     setTimeout(() => banner.remove(), FALLBACK_BANNER_MS);
     return null;
-  } finally {
-    clearTimeout(timer);
   }
 }

@@ -316,6 +316,15 @@ describe('plotting the dead-reckoning leg', () => {
     expect(nav.t).toBe(0);
   });
 
+  it('resets to a spawn the server announces, with ages from its time', () => {
+    const nav = sailingEast();
+    nav.reset({ x: 15, z: -15, t: 500 });
+    expect(nav.plotted).toEqual({ x: 15, z: -15, t: 500, radius: NAVIGATION.accuracy.departure });
+    expect(nav.track).toEqual([nav.plotted]);
+    expect(nav.t).toBe(500);
+    expect(nav.estimate).toEqual({ x: 15, z: -15 });
+  });
+
   it('ignores invalid instrument steps', () => {
     const nav = new Navigation();
     nav.advance({ t: NaN, speed: 2 }, 1);

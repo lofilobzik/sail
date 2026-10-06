@@ -1,8 +1,9 @@
-// Command sailserver runs the authoritative sailing sim over WebSocket (/ws): one boat per connection.
-// With -static it also serves the built site (dist/) on the same origin, so the page can reach
-// /ws without cross-origin rules. GET /healthz answers 200 while the server runs.
+// Command sailserver runs the authoritative sailing sim over WebSocket (/ws): one public room in
+// which every connection sails its own boat in the same world. With -static it also serves the
+// built site (dist/) on the same origin, so the page can reach /ws without cross-origin rules.
+// GET /healthz answers 200 while the server runs.
 //
-//	go run ./server/cmd/sailserver [-addr :8080] [-seed N] [-snapshot-hz 20] [-static dist]
+//	go run ./server/cmd/sailserver [-addr :8080] [-seed N] [-snapshot-hz 20] [-max-boats 32] [-static dist]
 //	sailserver -healthcheck   # exit 0 if the server on -addr answers /healthz (container health check)
 package main
 
@@ -24,8 +25,9 @@ import (
 
 func main() {
 	addr := flag.String("addr", ":8080", "listen address")
-	seed := flag.Uint64("seed", 0, "wave/gust seed for every session (default: random per session)")
+	seed := flag.Uint64("seed", 0, "wave/gust seed of the room (default: random at start)")
 	snapshotHz := flag.Float64("snapshot-hz", netsim.DefaultSnapshotHz, "snapshots per second")
+	maxBoats := flag.Int("max-boats", netsim.DefaultMaxBoats, "boats sailing in the room at once")
 	static := flag.String("static", "", "directory with the built site to serve at / (default: none)")
 	healthcheck := flag.Bool("healthcheck", false, "probe /healthz of the server on -addr and exit 0/1")
 	flag.Parse()
@@ -42,23 +44,31 @@ func main() {
 	if *snapshotHz <= 0 {
 		log.Fatalf("-snapshot-hz must be positive, got %v", *snapshotHz)
 	}
-	pick := rand.Uint32
+	if *maxBoats <= 0 {
+		log.Fatalf("-max-boats must be positive, got %d", *maxBoats)
+	}
+	roomSeed := rand.Uint32()
 	if seeded {
-		fixed := uint32(*seed)
-		pick = func() uint32 { return fixed }
+		roomSeed = uint32(*seed)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	ws := &netsim.Server{Seed: pick, SnapshotHz: *snapshotHz}
+	room := netsim.NewRoom(netsim.RoomConfig{Seed: roomSeed, MaxBoats: *maxBoats, SnapshotHz: *snapshotHz})
+	roomDone := make(chan struct{})
+	go func() {
+		defer close(roomDone)
+		room.Run(ctx)
+	}()
+	ws := &netsim.Server{Room: room}
 	mux := http.NewServeMux()
 	mux.Handle("/ws", ws)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok\n")) })
 	if *static != "" {
 		mux.Handle("/", staticSite(*static))
 	}
-	// Sessions hang off ctx, so a signal also ends the hijacked WebSocket connections.
+	// Connections and the room hang off ctx, so a signal also ends the hijacked WebSocket connections.
 	srv := &http.Server{Addr: *addr, Handler: mux, BaseContext: func(net.Listener) context.Context { return ctx }}
 
 	go func() {
@@ -70,18 +80,15 @@ func main() {
 		}
 	}()
 
-	if seeded {
-		log.Printf("sailserver on %s/ws (seed %d, snapshots %v Hz)", *addr, *seed, *snapshotHz)
-	} else {
-		log.Printf("sailserver on %s/ws (random seed per session, snapshots %v Hz)", *addr, *snapshotHz)
-	}
+	log.Printf("sailserver on %s/ws (seed %d, snapshots %v Hz, max %d boats)", *addr, roomSeed, *snapshotHz, *maxBoats)
 	if *static != "" {
 		log.Printf("serving the site from %s", *static)
 	}
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
-	ws.Wait() // sessions send their close frames
+	ws.Wait() // connections send their close frames
+	<-roomDone
 }
 
 // probe asks the local server's /healthz; the container image has no shell or curl.

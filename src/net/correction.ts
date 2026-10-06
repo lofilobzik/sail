@@ -84,9 +84,7 @@ export class Corrector {
     const slot = snap.ackSeq % HISTORY_STEPS;
     if (this.seqs[slot] !== snap.ackSeq) {
       // No prediction for that input (too old): adopt the server state as it is.
-      this.report('resync', Math.hypot(server.x - s.x, server.z - s.z), Math.abs(wrapPi(server.heading - s.heading)));
-      Object.assign(s, server);
-      this.reset(nextSeq);
+      this.resync(server, s, nextSeq);
       return true;
     }
     const e = this.error;
@@ -114,6 +112,13 @@ export class Corrector {
     this.pending.set(e);
     this.blendLeft = BLEND_SECONDS;
     return false;
+  }
+
+  /** Adopts the server state `server` into `s` outright and forgets all predictions. */
+  resync(server: BoatState, s: BoatState, nextSeq: number): void {
+    this.report('resync', Math.hypot(server.x - s.x, server.z - s.z), Math.abs(wrapPi(server.heading - s.heading)));
+    Object.assign(s, server);
+    this.reset(nextSeq);
   }
 
   /** Forgets all predictions; acks below `nextSeq` are ignored from now on. */

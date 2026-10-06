@@ -35,5 +35,8 @@ describe('paper chart', () => {
     expect(chart.center).toEqual({ x: 5, z: 5 });
     chart.reset();
     expect(chart.center).toEqual(NAVIGATION.start);
+    chart.reset({ x: 15, z: -15 });
+    expect(chart.center).toEqual({ x: 15, z: -15 });
+    expect(chart.span).toBe(NAVIGATION.visual.chartSpan);
   });
 });

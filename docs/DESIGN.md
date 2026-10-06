@@ -108,22 +108,52 @@ Rules:
 - **Deployment**: one container image (site plus server) built by GitHub Actions, published to GHCR,
   and pulled by podman-auto-update on the home box behind a Cloudflare Tunnel at dinghysail.ing.
   See `DEPLOY.md`.
-- **Server-authoritative, single boat per connection** (multi-boat later). Each connection gets its
-  own `BrowserConfig(seed)` (random seed per session) and boat, stepped at `cfg.dt` with `cfg.substeps`
-  from a ticker plus a fixed-step accumulator. The latest input (clamped) is applied each tick.
+- **One public room** (multiplayer v1, `server/netsim/room.go`): one seed and `BrowserConfig` per
+  server process, one room clock (`tick`), and every boat stepped in the same fixed-step loop owned by
+  one goroutine; connections talk to it over channels. New boats and resets spawn at the room time at
+  the first free slot of a 15 m grid around the departure point (TUNING GUESS), all in deep water.
+  `-max-boats` (default 32) caps the room ("room full", close 1013). No names, no races, no
+  collisions or wind shadow: other boats are visual only. 32 boats cost about 1.1 ms per tick on an
+  M1 (about 8% of one core with snapshots).
+- **One sim step per input**: each boat queues its inputs (and resets) in seq order and applies
+  exactly one input per sim step, so the server's state after input N is exactly the client's
+  prediction after input N, whatever the network jitter. A boat with no waiting input does not move,
+  so its own clock (`state.t`) runs behind the room clock by the inputs' travel time. Per tick a boat
+  earns 1.01 steps (1 % for a client clock that runs a little fast) and may catch up at most 15
+  queued inputs at once after a gap; its queue holds 2 s and drops the oldest beyond that, so a
+  client sending faster than real time gets lag, not speed. All TUNING GUESS. Through a proxy adding
+  80-160 ms of jittered round trip, hard steering gave 0.0 cm corrections and no snaps.
 - **Protocol** (WebSocket `/ws`, JSON text frames; `server/netsim/protocol.go`, `src/net/protocol.ts`):
-  server sends `welcome` (seed, full config, dt, tick, state, snapshotHz), then `snapshot` (tick,
-  ackSeq, state, applied controls) at 20 Hz, and `error` for a rejected message (the connection stays
-  open). Client sends `input` (strictly increasing seq, controls) every local fixed step, and `reset`.
-  Origins: same-origin (the deployed site) plus localhost on any port (Vite dev).
+  server sends `welcome` (id, resume token, resumed, seed, full config, dt, tick, state, snapshotHz),
+  then `snapshot` (tick, ackSeq, state, applied controls, and `boats`: every other boat's pose,
+  controls, apparent wind and luff) at 20 Hz, and `error` for a rejected message (the connection
+  stays open). Client sends `input` (strictly increasing seq, controls) every local fixed step, and
+  `reset`. Origins: same-origin (the deployed site) plus localhost on any port (Vite dev).
+- **Reconnect**: a dropped boat is parked for 60 s under its resume token (`/ws?resume=…`). The client
+  retries after 1, 2, 4, 8, then every 10 s, and also when no data arrives for 3 s (a silent socket).
+  Resumed: same boat, navigation kept. Otherwise (expired, or a restarted server with a new seed): a
+  fresh spawn, the new config adopted in place, navigation restarted. Leaving the page closes the
+  socket at once (`pagehide`), so the boat disappears for others immediately.
 - **Client prediction** (`src/net/correction.ts`): the TS sim predicts every step; each snapshot is
   compared with the prediction recorded for its acked input (256-step history), minus corrections
   applied since. Small errors blend out over 0.2 s; over 2 m, 20 degrees or a different boom side the
   state snaps; an ack older than the history resyncs. All TUNING GUESS. No rewind/replay yet.
+- **Other boats** (`src/net/remote.ts`, `src/render/remoteBoats.ts`): buffered per boat and drawn
+  0.1 s in the past (TUNING GUESS), interpolated with heading wrap, holding the last pose if snapshots
+  stop; server time is estimated from arrivals. Each is a full boat mesh on the waves with its cloth
+  sail, rudder, boom and crew, but no wake and no first-person arms. Only the nearest 4 sails within
+  150 m run the cloth every frame; the others take turns (24 remote boats: about 17 ms per frame in
+  headless Chromium).
+- **Navigation per player**: the known departure is the spawn the server announces (welcome
+  `state`), so `Navigation.reset` and the chart take it instead of the fixed start (offline still
+  uses `NAVIGATION.start`). Nobody sees other players' charts or bearings.
 - In server mode the debug panel's physics controls are read-only (the server owns config); Reset
-  sends `reset`. The panel's Network section shows status, round-trip time and the last correction.
-- Checked on localhost: RTT about 6 ms, corrections 0.0-1.7 cm in steady sailing and turns, no snaps.
-  Deferred: reconnecting, server-pushed config changes, multi-boat, rewind/replay reconciliation.
+  respawns at a free slot. The panel's Network section shows status, round-trip time, the last
+  correction, own id, room boat count and reconnect attempts.
+- Checked on localhost: two tabs see each other within the 15 m spawn grid; RTT about 8-13 ms;
+  corrections about 1 cm with no snaps; a leaving tab disappears at once; a server restart
+  reconnects within about 1 s as a fresh spawn in the new world.
+  Deferred: remote wakes, extrapolation, names, rooms, collisions, rewind/replay reconciliation.
 
 ## Controls
 

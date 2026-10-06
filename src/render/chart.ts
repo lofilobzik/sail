@@ -47,8 +47,8 @@ export class LapChart {
     if (this.dirty || this.nav.t < this.lastPaint || this.nav.t - this.lastPaint >= interval) this.paint();
   }
 
-  reset(): void {
-    this.projection.reset();
+  reset(center?: Vec2): void {
+    this.projection.reset(center);
     this.dirty = true;
   }
 }

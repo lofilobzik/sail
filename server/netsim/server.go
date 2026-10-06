@@ -4,47 +4,38 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
-	"math"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
-
-	"sail/server/sim"
 )
 
 const (
-	// DefaultSnapshotHz is the contract's snapshot rate.
-	DefaultSnapshotHz = 20
-	// writeTimeout bounds one frame write so a stalled client cannot hold its loop forever.
+	// writeTimeout bounds one frame write so a stalled client cannot hold its connection forever.
 	writeTimeout = 5 * time.Second // TUNING GUESS
-	// inboxSize buffers client messages between the reader and the sim loop (about 1 s of inputs at 60 Hz).
-	inboxSize = 64 // TUNING GUESS
+	// errorsSize buffers rejections between a connection's reader and writer.
+	errorsSize = 16 // TUNING GUESS
 )
 
 // devOrigins lets the Vite dev server (another port on the same machine) open the socket.
 var devOrigins = []string{"localhost:*", "127.0.0.1:*", "[::1]:*"}
 
-// boat is shared by all sessions: sim.Step only reads it.
-var boat = sync.OnceValue(sim.BuildBoat)
-
-// Server serves the WebSocket endpoint: one Session per connection.
+// Server serves the WebSocket endpoint: every connection sails one boat in Room.
 type Server struct {
-	// Seed picks the wave/gust seed of a new session.
-	Seed func() uint32
-	// SnapshotHz is the snapshot rate; <= 0 means DefaultSnapshotHz.
-	SnapshotHz float64
-	// Log receives connect/disconnect lines; nil means log.Default().
+	// Room is the shared world; its Run must be running.
+	Room *Room
+	// Log receives accept errors and shutdown disconnects; nil means log.Default().
 	Log *log.Logger
 
-	sessions sync.WaitGroup
+	conns sync.WaitGroup
 }
 
-// Wait blocks until every session has ended. http.Server.Shutdown does not wait for hijacked
+// Wait blocks until every connection has ended. http.Server.Shutdown does not wait for hijacked
 // WebSocket connections; cancel their request context (http.Server.BaseContext) and then Wait.
-func (s *Server) Wait() { s.sessions.Wait() }
+func (s *Server) Wait() { s.conns.Wait() }
 
 func (s *Server) logger() *log.Logger {
 	if s.Log != nil {
@@ -53,50 +44,76 @@ func (s *Server) logger() *log.Logger {
 	return log.Default()
 }
 
-func (s *Server) snapshotHz() float64 {
-	if s.SnapshotHz > 0 {
-		return s.SnapshotHz
-	}
-	return DefaultSnapshotHz
-}
-
-// ServeHTTP upgrades the request and runs the session until the client leaves or the request
-// context ends.
+// ServeHTTP upgrades the request, joins the room (resuming ?resume=<token> if it is live) and
+// relays between the socket and the room until the client leaves, the boat is resumed elsewhere,
+// or the request context or room ends.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.sessions.Add(1)
-	defer s.sessions.Done()
+	s.conns.Add(1)
+	defer s.conns.Done()
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: devOrigins})
 	if err != nil {
 		s.logger().Printf("ws accept %s: %v", r.RemoteAddr, err)
 		return
 	}
 	defer c.CloseNow()
+	ctx := r.Context()
+	room := s.Room
 
-	sess := NewSession(boat(), s.Seed())
-	s.logger().Printf("connect %s seed=%d", r.RemoteAddr, sess.seed)
-	err = s.run(r.Context(), c, sess)
-	if status := websocket.CloseStatus(err); status != -1 {
-		s.logger().Printf("disconnect %s after %d ticks: client closed (%v)", r.RemoteAddr, sess.Tick(), status)
+	resume := r.URL.Query().Get("resume")
+	joined := make(chan joinResult, 1)
+	if !room.do(ctx, func() { joined <- room.join(resume, r.RemoteAddr) }) {
+		c.Close(websocket.StatusGoingAway, "server shutting down")
 		return
 	}
-	s.logger().Printf("disconnect %s after %d ticks: %v", r.RemoteAddr, sess.Tick(), err)
-	if errors.Is(err, context.Canceled) {
+	var j joinResult
+	select {
+	case j = <-joined:
+	case <-room.done:
+		c.Close(websocket.StatusGoingAway, "server shutting down")
+		return
+	}
+	if j.welcome == nil {
+		_ = send(ctx, c, ErrorMessage{Type: TypeError, Message: MessageRoomFull})
+		c.Close(StatusRoomFull, MessageRoomFull)
+		return
+	}
+
+	err = s.relay(ctx, c, j)
+	reason := err.Error()
+	if status := websocket.CloseStatus(err); status != -1 {
+		reason = fmt.Sprintf("client closed (%v)", status)
+	}
+	m := j.member
+	if !room.do(context.Background(), func() { room.leave(m, r.RemoteAddr, reason) }) {
+		s.logger().Printf("disconnect %s boat %d (%s), server shutting down", r.RemoteAddr, j.id, reason)
+	}
+	switch {
+	case errors.Is(err, errReplaced):
+		c.Close(StatusReplaced, "replaced")
+	case errors.Is(err, context.Canceled), errors.Is(err, errRoomClosed):
 		c.Close(websocket.StatusGoingAway, "server shutting down")
 	}
 }
 
-// run owns the session: it applies client messages in arrival order, steps the sim at a fixed dt
-// (ticker plus accumulator, so a late tick is caught up rather than lost) and sends snapshots.
-func (s *Server) run(ctx context.Context, c *websocket.Conn, sess *Session) error {
+var (
+	errReplaced   = errors.New("resumed by a newer connection")
+	errRoomClosed = errors.New("room closed")
+)
+
+// relay sends the welcome, then forwards checked client messages to the room and room snapshots
+// and rejections to the client.
+func (s *Server) relay(ctx context.Context, c *websocket.Conn, j joinResult) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	room, m := s.Room, j.member
 
-	inbox := make(chan []byte, inboxSize)
+	rejected := make(chan string, errorsSize)
 	readErr := make(chan error, 1)
 	// The reader ignores cancellation: cancelling a Read drops the connection without a close frame,
 	// and ServeHTTP closes it properly instead (which also ends this goroutine).
 	readCtx := context.WithoutCancel(ctx)
 	go func() {
+		var lastSeq int64 // input seq order is per connection
 		for {
 			typ, data, err := c.Read(readCtx)
 			if err != nil {
@@ -104,52 +121,52 @@ func (s *Server) run(ctx context.Context, c *websocket.Conn, sess *Session) erro
 				return
 			}
 			if typ != websocket.MessageText {
-				data = nil // rejected as bad JSON by the session
+				data = nil // rejected as bad JSON
 			}
-			select {
-			case inbox <- data:
-			case <-ctx.Done():
+			msg, err := parseClientMessage(data, lastSeq)
+			if err != nil {
+				select {
+				case rejected <- err.Error():
+				case <-ctx.Done():
+					return
+				}
+				continue
+			}
+			var op func()
+			switch msg.Type {
+			case TypeInput:
+				lastSeq = *msg.Seq
+				seq, controls := *msg.Seq, *msg.Controls
+				op = func() { room.input(m, seq, controls) }
+			case TypeReset:
+				op = func() { room.reset(m) }
+			}
+			if !room.do(ctx, op) {
 				return
 			}
 		}
 	}()
 
-	hz := s.snapshotHz()
-	if err := send(ctx, c, sess.Welcome(hz)); err != nil {
+	if err := sendRaw(ctx, c, j.welcome); err != nil {
 		return err
 	}
-
-	dt := sess.Dt()
-	fixed := sim.NewFixedStep(dt) // caps catch-up like the browser loop
-	ticker := time.NewTicker(time.Duration(dt * float64(time.Second)))
-	defer ticker.Stop()
-	last := time.Now()
-	snapshotDue := 0.0 // snapshots owed, in units of one snapshot
-
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-room.done:
+			return errRoomClosed
+		case <-m.replaced:
+			return errReplaced
 		case err := <-readErr:
 			return err
-		case data := <-inbox:
-			if err := sess.HandleMessage(data); err != nil {
-				if err := send(ctx, c, ErrorMessage{Type: TypeError, Message: err.Error()}); err != nil {
-					return err
-				}
+		case frame := <-m.out:
+			if err := sendRaw(ctx, c, frame); err != nil {
+				return err
 			}
-		case now := <-ticker.C:
-			steps := fixed.Advance(now.Sub(last).Seconds())
-			last = now
-			for range steps {
-				sess.Step()
-			}
-			snapshotDue += float64(steps) * dt * hz
-			if snapshotDue >= 1 {
-				snapshotDue -= math.Floor(snapshotDue) // after a long catch-up, one snapshot is enough
-				if err := send(ctx, c, sess.Snapshot()); err != nil {
-					return err
-				}
+		case msg := <-rejected:
+			if err := send(ctx, c, ErrorMessage{Type: TypeError, Message: msg}); err != nil {
+				return err
 			}
 		}
 	}
@@ -160,6 +177,10 @@ func send(ctx context.Context, c *websocket.Conn, msg any) error {
 	if err != nil {
 		return err
 	}
+	return sendRaw(ctx, c, data)
+}
+
+func sendRaw(ctx context.Context, c *websocket.Conn, data []byte) error {
 	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
 	defer cancel()
 	return c.Write(ctx, websocket.MessageText, data)

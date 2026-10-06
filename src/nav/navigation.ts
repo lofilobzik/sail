@@ -36,6 +36,12 @@ export interface Remembered { value: number; t: number }
 /** The last position drawn on the chart and the radius of the sailor's doubt about it, metres. */
 export interface PlottedFix extends Vec2 { t: number; radius: number }
 
+/**
+ * Where and when dead reckoning starts: a known point, not a reading. Offline the chart's start;
+ * on a server the spawn point it announces.
+ */
+export interface Departure extends Vec2 { t: number }
+
 export interface Observation {
   id: number;
   t: number;
@@ -150,7 +156,7 @@ export function solveFix(observations: readonly Observation[], context: FixConte
 export class Navigation {
   /** Simulated time of the latest instrument step. */
   t = 0;
-  plotted: PlottedFix = this.departure();
+  plotted: PlottedFix = { ...NAVIGATION.start, t: 0, radius: NAVIGATION.accuracy.departure };
   /** Every position pencilled on the chart, oldest first, ending with `plotted`. */
   readonly track: PlottedFix[] = [{ ...this.plotted }];
   course: Remembered | null = null;
@@ -171,13 +177,9 @@ export class Navigation {
   /** The compass is pointing at the boat's own bow: a bow bearing is the boat's course. */
   aimedBow = false;
 
-  private departure(): PlottedFix {
-    return { ...NAVIGATION.start, t: 0, radius: NAVIGATION.accuracy.departure };
-  }
-
-  reset(): void {
-    this.t = 0;
-    this.plotted = this.departure();
+  reset(departure: Departure = { ...NAVIGATION.start, t: 0 }): void {
+    this.t = departure.t;
+    this.plotted = { x: departure.x, z: departure.z, t: departure.t, radius: NAVIGATION.accuracy.departure };
     this.course = null;
     this.speed = null;
     this.observations.length = 0;

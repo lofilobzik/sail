@@ -1,18 +1,49 @@
 /**
  * WebSocket protocol shared with the Go server (server/netsim/protocol.go). JSON text frames on /ws.
- * The server owns the seed, the config and the boat; the client predicts with the TS sim.
+ * One public room per server: it owns the seed, the config, the room time and every boat; each
+ * client predicts its own boat with the TS sim and draws the others from the snapshots.
+ * The connect URL may carry `?resume=<token>` (the `resume` of an earlier welcome) to get the same
+ * boat back after a drop.
  */
 import type { BoatState, Controls, SimConfig } from '../sim';
 
 /** Sent once on connect. `config` is the SimConfig as the server runs it (Go JSON, same field names). */
 export interface WelcomeMessage {
   type: 'welcome';
+  /** This boat's id in the room (the id other players see in their `boats`). */
+  id: number;
+  /** Token for `?resume=` on a reconnect. */
+  resume: string;
+  /** True when `?resume` re-attached the old boat; false for a new boat (also for an unknown or expired token). */
+  resumed: boolean;
   seed: number;
   config: SimConfig;
   dt: number;
   tick: number;
+  /** The boat at room time `tick * dt`: the spawn for a new boat. */
   state: BoatState;
   snapshotHz: number;
+}
+
+/** Another player's boat at the snapshot's tick: pose, applied controls and sail diagnostics. */
+export interface RemoteBoat {
+  id: number;
+  x: number;
+  z: number;
+  heading: number;
+  u: number;
+  heel: number;
+  pitch: number;
+  boom: number;
+  crewY: number;
+  /** The clamped controls the server applied. */
+  tiller: number;
+  sheet: number;
+  /** From the boat's last Diagnostics: apparent wind in the body frame, m/s, and sail state. */
+  apparentU: number;
+  apparentV: number;
+  luffAmount: number;
+  stallAmount: number;
 }
 
 /** Authoritative state after `tick` steps; `ackSeq` is the input applied on that tick (0 before any). */
@@ -23,9 +54,11 @@ export interface SnapshotMessage {
   state: BoatState;
   /** The clamped controls the server applied. */
   controls: Controls;
+  /** Every other boat in the room on the same tick (never the receiver's own). An id that disappears has left. */
+  boats: RemoteBoat[];
 }
 
-/** A client message the server rejected; the connection stays open. */
+/** A client message the server rejected (the connection stays open), or "room full" before a close. */
 export interface ErrorMessage {
   type: 'error';
   message: string;
@@ -40,7 +73,7 @@ export interface InputMessage {
   controls: Controls;
 }
 
-/** Boat back to the start (heading 90°, 1 m/s). */
+/** Boat back to a free spawn slot (heading 90°, 1 m/s). */
 export interface ResetMessage {
   type: 'reset';
 }

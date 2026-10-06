@@ -12,6 +12,7 @@ import { SceneView, type RenderPose } from './render/scene';
 import { ForceVectors } from './render/vectors';
 import { DEG, FixedStep, WAVE_PARAMETERS, browserConfig, buildBoat, clamp, evaluate, initialState, setWaveParameters, step, wrapPi, type BoatState, type Diagnostics } from './sim';
 import { joinServer, serverChoice } from './net/link';
+import type { RemotePose } from './net/remote';
 import { SKY } from './render/skyModel';
 
 const START_HEADING_DEG = 90; // TUNING GUESS: beam reach for the default wind from 0°
@@ -75,20 +76,28 @@ let prev: BoatState;
 let curr: BoatState;
 let diagnostics: Diagnostics;
 
-function resetBoat(): void {
-  curr = prev = initialState(START_HEADING_DEG * DEG, START_SPEED);
+/**
+ * Puts the boat at `start` and restarts navigation from the known departure: on a server the spawn
+ * it announced (position and room time), offline the chart's start.
+ */
+function resetBoat(start: BoatState): void {
+  curr = prev = { ...start };
   navigationInput.cancel();
-  navigation.reset();
-  view.navigation.chart.reset();
+  const departure = server ? start : undefined;
+  navigation.reset(departure);
+  view.navigation.chart.reset(departure);
   memory.update(navigation, false);
   input.reset();
   diagnostics = evaluate(curr, input.update(0), boat, cfg);
 }
-resetBoat();
-if (server) curr = prev = { ...server.welcome.state };
+resetBoat(server ? server.spawn : initialState(START_HEADING_DEG * DEG, START_SPEED));
 
-// Server mode: the reset button restarts the server's boat as well.
-const overlay = new DebugOverlay(cfg, server ? () => { resetBoat(); server.reset(); } : resetBoat, server !== null);
+// Server mode: the reset button respawns the server's boat; the local one follows on the next snapshot.
+const overlay = new DebugOverlay(
+  cfg,
+  server ? () => server.reset() : () => resetBoat(initialState(START_HEADING_DEG * DEG, START_SPEED)),
+  server !== null,
+);
 let showNavigationTruth = false;
 overlay.addToggle('navigation: show true position on chart', false, (v) => { showNavigationTruth = v; });
 overlay.addToggle('wake: Kelvin waves', true, (v) => view.wake.setLayer('kelvin', v));
@@ -142,6 +151,7 @@ let last = performance.now();
 let frameMs = 16.7;
 let cpuMs = 0;
 let lastPose: RenderPose | null = null;
+let lastRemotes: ReadonlyMap<number, RemotePose> | undefined;
 let wantedReading: ReadingKind | null = null;
 function frame(now: number): void {
   const t0 = performance.now();
@@ -174,8 +184,13 @@ function frame(now: number): void {
     if (lookingAtChart) navigation.beginAutoPlot();
     else navigation.message = 'Look down at the chart to reckon.';
   }
-  // Server mode: fold in the newest snapshot first; a jump is not interpolated.
-  if (server?.correct(curr)) prev = curr;
+  // Server mode: fold in a reconnect's welcome and the newest snapshot first; a jump is not
+  // interpolated, and a new boat (fresh spawn or reset) restarts navigation from its spawn.
+  if (server) {
+    const sync = server.sync(curr);
+    if (sync === 'respawned') resetBoat(server.spawn);
+    else if (sync === 'jumped') prev = curr;
+  }
   const steps = fixed.advance(frameSeconds);
   for (let i = 0; i < steps; i++) {
     const controls = input.update(cfg.dt);
@@ -215,7 +230,8 @@ function frame(now: number): void {
   view.navigation.sighting = wantedReading === 'bearing';
   memory.update(navigation, view.mode === 'cockpit');
   view.navigation.chart.debugPosition = showNavigationTruth ? { x: curr.x, z: curr.z } : null;
-  view.render(lastPose);
+  lastRemotes = server?.client.remote.sample(now / 1000);
+  view.render(lastPose, lastRemotes);
 
   if (overlay.visible) vectors.update(diagnostics, view.boat.yaw.position, overlay.arrows);
   else vectors.hideAll();
@@ -239,11 +255,11 @@ if (params.get('perf') === '1') {
     const pixel = new Uint8Array(4);
     const t0 = performance.now();
     for (let i = 0; i < BENCH_FRAMES; i++) {
-      view.render(lastPose);
+      view.render(lastPose, lastRemotes);
       gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
     }
     const ms = (performance.now() - t0) / BENCH_FRAMES;
     const size = view.renderer.getDrawingBufferSize(new Vector2());
-    console.log(`bench: ${ms.toFixed(2)} ms/frame at ${size.x}x${size.y}, ${view.renderer.info.render.triangles} triangles, ${view.renderer.info.render.calls} draw calls`);
+    console.log(`bench: ${ms.toFixed(2)} ms/frame at ${size.x}x${size.y}, ${view.renderer.info.render.triangles} triangles, ${view.renderer.info.render.calls} draw calls, ${view.remoteBoats.count} remote boats`);
   }, BENCH_DELAY_MS);
 }

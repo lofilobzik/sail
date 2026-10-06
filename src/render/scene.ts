@@ -15,6 +15,8 @@ import { createLand, type LandView } from './land';
 import { Binoculars } from './binoculars';
 import type { Navigation } from '../nav/navigation';
 import { NavigationView } from './navigation';
+import { RemoteBoatsView } from './remoteBoats';
+import type { RemotePose } from '../net/remote';
 
 const GRID_CELL = 5; // TUNING GUESS: grid cell size, m (grid snaps to multiples of this)
 const GRID_CELLS = 80; // TUNING GUESS: grid cells per side
@@ -30,6 +32,7 @@ const CAMERA_FAR = 30000; // m
 const MAX_PIXEL_RATIO = 2; // quality cap for high-DPI laptop screens
 const OUTSIDE_DISTANCE = 9; // visual estimate: outside camera distance from the boat, m
 const OUTSIDE_TARGET_HEIGHT = 1.8; // visual estimate, m
+const NO_REMOTES: ReadonlyMap<number, RemotePose> = new Map();
 
 export type CameraMode = 'cockpit' | 'outside';
 
@@ -53,6 +56,8 @@ export class SceneView {
   readonly camera: THREE.PerspectiveCamera;
   readonly outsideCamera: THREE.PerspectiveCamera;
   readonly boat: BoatMesh;
+  /** Other players' boats (server mode). */
+  readonly remoteBoats: RemoteBoatsView;
   readonly wake: WakeView;
   readonly sky: SkyView;
   readonly navigation: NavigationView;
@@ -101,6 +106,8 @@ export class SceneView {
     this.scene.add(this.land.group);
 
     this.scene.add(this.boat.yaw);
+    this.remoteBoats = new RemoteBoatsView(model);
+    this.scene.add(this.remoteBoats.group);
 
     this.camera = new THREE.PerspectiveCamera(FOV_DEG, 1, 0.05, CAMERA_FAR);
     this.camera.rotation.order = 'YXZ';
@@ -131,7 +138,8 @@ export class SceneView {
     this.grid.visible = on && waveAmplitude(this.waves) === 0;
   }
 
-  render(pose: RenderPose): void {
+  /** Draws one frame: the own boat at `pose`, the other players' boats at `remotes`. */
+  render(pose: RenderPose, remotes: ReadonlyMap<number, RemotePose> = NO_REMOTES): void {
     const b = this.boat;
     // Rebase drawing only. Double-precision logical positions remain untouched.
     this.origin.x = pose.x;
@@ -147,6 +155,7 @@ export class SceneView {
     // Fixed buoy and land transforms compose in JS doubles before GPU matrix upload/culling.
     this.buoys.position.set(-this.origin.x, 0, -this.origin.z);
     this.land.update(this.origin);
+    this.remoteBoats.update(remotes, this.origin, this.waves, pose.t, pose.dt);
     this.wake.update(pose, this.origin, this.waves, this.surface.y, b.pitch.rotation.x);
     this.water.update(this.origin, pose.t);
     this.gusts.update(this.wind, this.origin, pose.t);

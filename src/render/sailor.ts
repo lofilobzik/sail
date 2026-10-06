@@ -35,7 +35,11 @@ export interface Sailor {
   /** Heel-group local position of the sheet hand (mainsheet tail end). */
   sheetHand: THREE.Vector3;
   update(pose: SailorPose): void;
-  setVisible(on: boolean): void;
+  /**
+   * Shows or hides the first-person forearms and hands (no body behind them, so they float when seen
+   * from outside, e.g. on other players' boats). The tiller extension is boat hardware and stays.
+   */
+  setArmsVisible(on: boolean): void;
 }
 
 /** Two-bone IK: elbow for shoulder S, hand H, segment lengths a, b, bending toward `pole`. */
@@ -86,8 +90,8 @@ export function createSailor(layout: BoatLayout, parent: THREE.Group): Sailor {
   return {
     eye,
     sheetHand,
-    setVisible(on) {
-      for (const [name, p] of Object.entries(parts)) p.visible = on && !(HIDE_ARMS && name !== 'extension');
+    setArmsVisible(on) {
+      for (const [name, p] of Object.entries(parts)) p.visible = name === 'extension' || (on && !HIDE_ARMS);
     },
     update(pose) {
       // The eye follows crewY continuously: across the cockpit between the two sitting positions
