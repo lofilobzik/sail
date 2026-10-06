@@ -1,6 +1,6 @@
 # [dinghysail.ing](https://dinghysail.ing)
 
-![A dinghy sailing upwind on the bay](docs/images/sailing-screenshot.webp)
+<img width="1400" alt="A dinghy sailing upwind on the bay" src="docs/images/sailing-screenshot.webp" />
 
 A realistic-ish multiplayer dinghy sailing simulator based on scientific papers
 
