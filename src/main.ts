@@ -6,12 +6,13 @@ import { ControlInput, isTypingTarget } from './input/controls';
 import { MouseLook } from './input/mouseLook';
 import { BinocularInput } from './input/binoculars';
 import { NavigationInput } from './input/navigation';
-import { Navigation, type ReadingKind } from './nav/navigation';
+import { Navigation } from './nav/navigation';
 import { MemoryReadout } from './render/memory';
 import { Vector2 } from 'three';
+import { interpolatePose } from './render/pose';
 import { SceneView, type RenderPose } from './render/scene';
 import { ForceVectors } from './render/vectors';
-import { DEG, FixedStep, WAVE_PARAMETERS, browserConfig, buildBoat, clamp, evaluate, initialState, setWaveParameters, step, wrapPi, type BoatState, type Diagnostics } from './sim';
+import { DEG, FixedStep, WAVE_PARAMETERS, browserConfig, buildBoat, clamp, evaluate, initialState, setWaveParameters, step, type BoatState, type Diagnostics } from './sim';
 import { joinServer, serverChoice } from './net/link';
 import type { RemotePose } from './net/remote';
 import { SailSound } from './audio/sound';
@@ -172,14 +173,11 @@ if (opts.look) {
   look.pitch = opts.look.pitchDeg * DEG;
 }
 
-const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
-
 let last = performance.now();
 let frameMs = 16.7;
 let cpuMs = 0;
 let lastPose: RenderPose | null = null;
 let lastRemotes: ReadonlyMap<number, RemotePose> | undefined;
-let wantedReading: ReadingKind | null = null;
 function frame(now: number): void {
   const t0 = performance.now();
   const frameSeconds = (now - last) / 1000;
@@ -187,30 +185,11 @@ function frame(now: number): void {
   frameMs += (frameSeconds * 1000 - frameMs) * FRAME_SMOOTHING;
 
   // B raises the binoculars unless a reading is under way; while they are up F is ignored.
-  const glassesUp = binocularInput.held && !wantedReading;
+  const glassesUp = binocularInput.held && !navigationInput.reading;
   view.binoculars.update(frameSeconds, glassesUp);
   look.sensitivityScale = 1 / view.binoculars.zoom;
+  navigationInput.update(navigation, view.navigation, glassesUp);
 
-  // F starts one reading when pressed: the wake if the sailor is looking astern with no mark under the
-  // crosshair, otherwise a compass bearing (a mark astern is still a bearing). It is not repeated
-  // until the key is released, and the kind is fixed for the whole press.
-  if (!navigationInput.held || glassesUp) {
-    if (wantedReading) navigation.cancelReading();
-    wantedReading = null;
-  } else if (!wantedReading) {
-    wantedReading = view.navigation.lookingAstern && !view.navigation.aimedMark ? 'speed' : 'bearing';
-    navigation.beginReading(wantedReading);
-  }
-  navigation.setAim(wantedReading === 'bearing' ? view.navigation.bearing : null);
-  navigation.setAimedMark(wantedReading === 'bearing' ? view.navigation.aimedMark : null);
-  navigation.setAimedBow(wantedReading === 'bearing' && view.navigation.aimedBow);
-  navigation.setAstern(view.navigation.lookingAstern);
-  const lookingAtChart = view.navigation.chartInView;
-  navigation.setLooking(lookingAtChart);
-  if (navigationInput.takeReckon()) {
-    if (lookingAtChart) navigation.beginAutoPlot();
-    else navigation.message = 'Look down at the chart to reckon.';
-  }
   // Server mode: fold in a reconnect's welcome and the newest snapshot first; a jump is not
   // interpolated, and a new boat (fresh spawn or reset) restarts navigation from its spawn.
   if (server) {
@@ -230,31 +209,9 @@ function frame(now: number): void {
     navigation.advance({ t: curr.t, speed: (prev.u + curr.u) / 2 }, cfg.dt);
   }
 
-  const a = fixed.alpha;
-  const x = lerp(prev.x, curr.x, a);
-  const z = lerp(prev.z, curr.z, a);
   const c = diagnostics.controls;
-  lastPose = {
-    t: lerp(prev.t, curr.t, a),
-    x,
-    z,
-    heading: prev.heading + wrapPi(curr.heading - prev.heading) * a,
-    surge: lerp(prev.u, curr.u, a),
-    heel: lerp(prev.heel, curr.heel, a),
-    pitch: lerp(prev.pitch, curr.pitch, a),
-    boom: lerp(prev.boom, curr.boom, a),
-    crewY: lerp(prev.crewY, curr.crewY, a),
-    rudderAngle: c.tiller * boat.cfg.rudder.maxAngleDeg * DEG,
-    sheet: c.sheet,
-    apparentU: diagnostics.apparent.u,
-    apparentV: diagnostics.apparent.v,
-    luffAmount: diagnostics.sail?.luffAmount ?? 0,
-    stallAmount: diagnostics.sail?.stallAmount ?? 0,
-    dt: frameSeconds,
-    lookYaw: look.yaw,
-    lookPitch: look.pitch,
-  };
-  view.navigation.sighting = wantedReading === 'bearing';
+  lastPose = interpolatePose(prev, curr, fixed.alpha, diagnostics, boat, frameSeconds, look);
+  view.navigation.sighting = navigationInput.reading === 'bearing';
   memory.update(navigation, view.mode === 'cockpit');
   view.navigation.chart.debugPosition = showNavigationTruth ? { x: curr.x, z: curr.z } : null;
   lastRemotes = server?.client.remote.sample(now / 1000);
@@ -265,7 +222,7 @@ function frame(now: number): void {
       dt: frameSeconds,
       camera: view.camera,
       looking: document.pointerLockElement === view.renderer.domElement,
-      busy: view.mode !== 'cockpit' || glassesUp || wantedReading !== null,
+      busy: view.mode !== 'cockpit' || glassesUp || navigationInput.reading !== null,
       tiller: c.tiller,
       speed: diagnostics.speed,
       luffAmount,
