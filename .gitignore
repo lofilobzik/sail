@@ -3,6 +3,7 @@ dist/
 polar-out/
 .DS_Store
 WATCHDOG.yml
+*.swp
 
 # Reference PDFs/OCR text and browser recordings
 docs/*.pdf
