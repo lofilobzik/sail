@@ -129,12 +129,15 @@ if (sailParam !== null) {
 } else if (prefs.sail !== null && sail.designs.some((d) => d.id === prefs.sail)) {
   sail.setDesign(prefs.sail);
 }
+// Both the Esc menu and the debug panel pick the sail; either choice updates the other.
 const chooseSail = (id: string): void => {
   sail.setDesign(id);
   prefs.sail = id;
   savePrefs(prefs);
+  debugSailPicker.value = id;
+  menu.setSailDesign(id);
 };
-overlay.addSelect('sail design', sail.designs.map((d) => ({ value: d.id, label: d.name })), sail.design, chooseSail);
+const debugSailPicker = overlay.addSelect('sail design', sail.designs.map((d) => ({ value: d.id, label: d.name })), sail.design, chooseSail);
 const hud = new TestHud(boat);
 
 const sound = new SailSound(prefs.volume, prefs.muted);

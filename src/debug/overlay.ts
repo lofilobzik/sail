@@ -241,8 +241,8 @@ export class DebugOverlay {
     this.numberInput(this.root, label, initial, onChange);
   }
 
-  /** Extra render-side dropdown appended at the end of the panel (e.g. the sail design). */
-  addSelect(label: string, options: readonly { value: string; label: string }[], initial: string, onChange: (value: string) => void): void {
+  /** Extra render-side dropdown appended at the end of the panel (e.g. the sail design); returned so others can keep it in step. */
+  addSelect(label: string, options: readonly { value: string; label: string }[], initial: string, onChange: (value: string) => void): HTMLSelectElement {
     const el = document.createElement('label');
     el.style.display = 'block';
     const input = document.createElement('select');
@@ -253,6 +253,7 @@ export class DebugOverlay {
     });
     el.append(`${label} `, input);
     this.root.appendChild(el);
+    return input;
   }
 
   private checkbox(parent: HTMLElement, label: string, initial: boolean, onChange: (v: boolean) => void): HTMLLabelElement {
