@@ -13,6 +13,10 @@ import { ForceVectors } from './render/vectors';
 import { DEG, FixedStep, WAVE_PARAMETERS, browserConfig, buildBoat, clamp, evaluate, initialState, setWaveParameters, step, wrapPi, type BoatState, type Diagnostics } from './sim';
 import { joinServer, serverChoice } from './net/link';
 import type { RemotePose } from './net/remote';
+import { SailSound } from './audio/sound';
+import { LookGuide } from './ui/lookGuide';
+import { Menu } from './ui/menu';
+import { loadPrefs, savePrefs } from './ui/prefs';
 import { SKY } from './render/skyModel';
 
 const START_HEADING_DEG = 90; // TUNING GUESS: beam reach for the default wind from 0°
@@ -92,12 +96,9 @@ function resetBoat(start: BoatState): void {
 }
 resetBoat(server ? server.spawn : initialState(START_HEADING_DEG * DEG, START_SPEED));
 
-// Server mode: the reset button respawns the server's boat; the local one follows on the next snapshot.
-const overlay = new DebugOverlay(
-  cfg,
-  server ? () => server.reset() : () => resetBoat(initialState(START_HEADING_DEG * DEG, START_SPEED)),
-  server !== null,
-);
+// Server mode: respawning resets the server's boat; the local one follows on the next snapshot.
+const respawn = server ? () => server.reset() : () => resetBoat(initialState(START_HEADING_DEG * DEG, START_SPEED));
+const overlay = new DebugOverlay(cfg, respawn, server !== null);
 let showNavigationTruth = false;
 overlay.addToggle('navigation: show true position on chart', false, (v) => { showNavigationTruth = v; });
 overlay.addToggle('wake: Kelvin waves', true, (v) => view.wake.setLayer('kelvin', v));
@@ -118,15 +119,55 @@ overlay.addNumber('cloud coverage (0–1)', view.sky.cloudCoverage, (v, el) => {
   el.value = String(view.sky.cloudCoverage);
 });
 
-// ?sail=<id> picks a printed sail design (data/sail-designs.json); the debug panel lists them all.
+// The sail design is a player preference; ?sail=<id> (data/sail-designs.json) overrides it.
+const prefs = loadPrefs();
 const sail = view.boat.sail;
 const sailParam = params.get('sail');
 if (sailParam !== null) {
   if (sail.designs.some((d) => d.id === sailParam)) sail.setDesign(sailParam);
   else console.warn(`unknown ?sail=${sailParam}; known: ${sail.designs.map((d) => d.id).join(', ')}`);
+} else if (prefs.sail !== null && sail.designs.some((d) => d.id === prefs.sail)) {
+  sail.setDesign(prefs.sail);
 }
-overlay.addSelect('sail design', sail.designs.map((d) => ({ value: d.id, label: d.name })), sail.design, (id) => sail.setDesign(id));
+const chooseSail = (id: string): void => {
+  sail.setDesign(id);
+  prefs.sail = id;
+  savePrefs(prefs);
+};
+overlay.addSelect('sail design', sail.designs.map((d) => ({ value: d.id, label: d.name })), sail.design, chooseSail);
 const hud = new TestHud(boat);
+
+const sound = new SailSound(prefs.volume, prefs.muted);
+const guide = new LookGuide(view.boat.lookTargets, prefs);
+const menu = new Menu({
+  canvas: view.renderer.domElement,
+  sailDesigns: sail.designs,
+  sailDesign: sail.design,
+  onSailDesign: chooseSail,
+  volume: prefs.volume,
+  muted: prefs.muted,
+  onVolume: (v) => {
+    sound.setVolume(v);
+    prefs.volume = v;
+    savePrefs(prefs);
+  },
+  onMuted: (m) => {
+    sound.setMuted(m);
+    prefs.muted = m;
+    savePrefs(prefs);
+  },
+  onRespawn: respawn,
+  onShowGuidance: () => guide.reset(),
+});
+// M: mute or unmute.
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyM' || e.repeat || isTypingTarget(e.target)) return;
+  const muted = !sound.isMuted;
+  sound.setMuted(muted);
+  menu.setMuted(muted);
+  prefs.muted = muted;
+  savePrefs(prefs);
+});
 
 // V: switch between the first-person view and an outside view for checking the model.
 window.addEventListener('keydown', (e) => {
@@ -232,6 +273,20 @@ function frame(now: number): void {
   view.navigation.chart.debugPosition = showNavigationTruth ? { x: curr.x, z: curr.z } : null;
   lastRemotes = server?.client.remote.sample(now / 1000);
   view.render(lastPose, lastRemotes);
+  const luffAmount = diagnostics.sail?.luffAmount ?? 0;
+  guide.update(
+    {
+      dt: frameSeconds,
+      camera: view.camera,
+      looking: document.pointerLockElement === view.renderer.domElement,
+      busy: view.mode !== 'cockpit' || glassesUp || wantedReading !== null,
+      tiller: c.tiller,
+      luffAmount,
+      stallAmount: diagnostics.sail?.stallAmount ?? 0,
+    },
+    menu.open,
+  );
+  sound.update({ speed: diagnostics.speed, apparentSpeed: diagnostics.apparent.speed, luffAmount });
 
   if (overlay.visible) vectors.update(diagnostics, view.boat.yaw.position, overlay.arrows);
   else vectors.hideAll();

@@ -11,14 +11,23 @@ export class MouseLook {
   sensitivityScale = 1;
 
   constructor(private readonly canvas: HTMLElement) {
-    canvas.addEventListener('click', () => {
-      if (document.pointerLockElement !== canvas) void canvas.requestPointerLock();
-    });
+    canvas.addEventListener('click', () => requestLook(canvas));
     document.addEventListener('mousemove', (e) => {
       if (document.pointerLockElement !== this.canvas) return;
       const s = SENSITIVITY * this.sensitivityScale;
       this.yaw -= e.movementX * s;
       this.pitch = Math.min(MAX_PITCH, Math.max(-MAX_PITCH, this.pitch - e.movementY * s));
     });
+  }
+}
+
+/** Captures the mouse for looking around. A refused request (browser cooldown after Esc) is harmless. */
+export function requestLook(canvas: HTMLElement): void {
+  if (document.pointerLockElement === canvas) return;
+  try {
+    const p = canvas.requestPointerLock() as unknown;
+    if (p instanceof Promise) p.catch(() => {});
+  } catch {
+    // Older browsers throw synchronously; the next click tries again.
   }
 }

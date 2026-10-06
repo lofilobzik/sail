@@ -33,6 +33,8 @@ export interface SailInput {
 
 export interface SailView {
   object: THREE.Object3D;
+  /** Follows the attachment point of the middle luff telltale (boom frame). */
+  telltaleMark: THREE.Object3D;
   /** Available printed designs (data/sail-designs.json). */
   designs: readonly DesignInfo[];
   /** Id of the design currently shown. */
@@ -151,6 +153,9 @@ export function createSail(layout: BoatLayout): SailView {
   const ribbons = new THREE.Mesh(ribbonGeom, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }));
   ribbons.frustumCulled = false;
   group.add(ribbons);
+  const telltaleMark = new THREE.Object3D();
+  group.add(telltaleMark);
+  const [markC, markH] = tt.luff[Math.floor(tt.luff.length / 2)]!;
 
   const chain = new Float32Array((seg + 1) * 3);
   const a: [number, number, number] = [0, 0, 0];
@@ -161,6 +166,7 @@ export function createSail(layout: BoatLayout): SailView {
 
   return {
     object: group,
+    telltaleMark,
     designs: paint.designs,
     get design() {
       return design;
@@ -210,6 +216,8 @@ export function createSail(layout: BoatLayout): SailView {
         }
       });
       ribbonAttr.needsUpdate = true;
+      cloth.sample(markC!, markH!, a);
+      telltaleMark.position.set(a[0], a[1], a[2]);
     },
   };
 }

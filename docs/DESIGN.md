@@ -63,6 +63,8 @@ src/
   net/      Browser client for the Go server (joined by default on the built site): input up, snapshots down,
             local TS prediction corrected toward server state.
   debug/    Overlay: apparent wind, force vectors, speed, heel, polar plot.
+  ui/       Esc menu, first-time look guides, player preferences (localStorage). Reads render/sim, never writes sim.
+  audio/    Procedural Web Audio cues from boat speed, apparent wind and luff. Reads only.
 data/       JSON config shared by TS (Vite imports) and Go (data/embed.go, go:embed). No magic numbers in code.
 server/     Go module `sail` (go.mod at the repo root).
   sim/      Go port of src/sim: the authoritative simulation (no render helpers). Golden fixtures
@@ -169,6 +171,8 @@ Rules:
 | B (hold) | Raise the binoculars: the view glides to 10x through a two-lens mask, mouse look slows to match, and lowering them glides back. For checking landmarks from afar; bearings still come from the compass (F), and B is ignored during a reading and F while the glasses are up |
 | R | Reckon, with the chart in view: plot bearings taken since the last plot (a fix), otherwise the dead-reckoning leg |
 | H | Toggle test instruments (hidden by default) |
+| M | Mute / unmute |
+| Esc | Menu: controls, volume, sail design, respawn, reset hints. The sim keeps running |
 
 Inputs are **continuous with rate limits**: no snapping. A tiller key ramps the tiller over a
 fraction of a second and holds its position. Same idea for the sheet.
@@ -267,8 +271,19 @@ fraction of a second and holds its position. Same idea for the sheet.
 ## In-world cues (no HUD)
 
 Telltales on the sail, sail luffing and flutter, a masthead fly or burgee, water ripples
-and cat's-paws showing wind direction, heel angle, and sound (luff flap, water rush) if added.
+and cat's-paws showing wind direction, heel angle, and sound (luff flap, water rush).
 The debug overlay is a developer tool, not a player aid, and is toggled off by default.
+
+- **Sound** (`src/audio/sound.ts`): procedural, no samples. Water rush rises with boat speed, wind
+  with apparent wind, and the sail flogs as loud as `luffAmount`, so a luffing sail is heard before
+  it is seen. Starts on the first click or key press (browser autoplay rules); `M` or the menu mutes.
+- **First-time guidance** (`src/ui/lookGuide.ts`) shows where to look, never what to think: a
+  "click to look" mouse glyph while the pointer is free, then one guide at a time, a chevron at the
+  screen edge or a ring when on screen, toward the Windex (shortly after the first look), the tiller
+  (after the tiller first moves) and the telltales (after the sail first luffs or stalls). No text
+  tips, no wind streaks or arrows in the world. A guide completes once its part is held near the
+  middle of the view, is remembered in localStorage, and can be reset from the Esc menu.
+- **Esc menu** (`src/ui/menu.ts`) lists the controls; the boat keeps sailing behind it.
 
 ## Navigation
 

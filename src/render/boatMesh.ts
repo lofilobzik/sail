@@ -37,6 +37,16 @@ export interface BoatPose {
   dt: number;
 }
 
+/** Points on the boat a newcomer is shown where to look at (src/ui/lookGuide.ts); world positions via getWorldPosition. */
+export interface LookTargets {
+  /** Masthead wind indicator. */
+  windex: THREE.Object3D;
+  /** Middle luff telltale on the sail, following the cloth. */
+  telltales: THREE.Object3D;
+  /** Tiller end, where the extension joins it. */
+  tiller: THREE.Object3D;
+}
+
 export interface BoatMesh {
   yaw: THREE.Group;
   pitch: THREE.Group;
@@ -44,6 +54,7 @@ export interface BoatMesh {
   sailor: Sailor;
   sail: SailView;
   layout: BoatLayout;
+  lookTargets: LookTargets;
   update(pose: BoatPose): void;
 }
 
@@ -75,6 +86,8 @@ export function createBoatMesh(model: BoatModel): BoatMesh {
   heel.add(ratchetMesh);
   const mainsheet = lineMesh(5);
   heel.add(mainsheet);
+  const tillerEnd = new THREE.Object3D();
+  heel.add(tillerEnd);
 
   const travellerZ = layout.sheerAt(layout.transomX) + v.traveller.aboveDeck;
   const travellerX = layout.transomX + 0.05; // visual estimate: just forward of the transom
@@ -94,11 +107,14 @@ export function createBoatMesh(model: BoatModel): BoatMesh {
     sailor,
     sail,
     layout,
+    lookTargets: { windex: rig.indicator, telltales: sail.telltaleMark, tiller: tillerEnd },
     update(pose) {
       pitch.rotation.x = pose.pitch;
       heel.rotation.z = -pose.heel;
       rig.boomPivot.rotation.y = pose.boom;
       rudder.pivot.rotation.y = -pose.rudderAngle;
+      const tEnd = layout.tillerEnd(pose.rudderAngle);
+      bodyToLocal(tEnd.x, tEnd.y, tEnd.z, tillerEnd.position);
 
       bodyToLocal(pose.apparentU, pose.apparentV, 0, tmp.flow);
       const aws = tmp.flow.length();
