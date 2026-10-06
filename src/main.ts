@@ -1,6 +1,7 @@
 /** Entry: fixed-step sim loop + interpolated rendering. render/ and debug/ only read sim state. */
 import { TestHud } from './debug/hud';
 import { DebugOverlay } from './debug/overlay';
+import { parseDevOptions } from './debug/urlParams';
 import { ControlInput, isTypingTarget } from './input/controls';
 import { MouseLook } from './input/mouseLook';
 import { BinocularInput } from './input/binoculars';
@@ -27,6 +28,7 @@ const BENCH_DELAY_MS = 2000;
 
 const boat = buildBoat();
 const params = new URLSearchParams(location.search);
+const opts = parseDevOptions(params);
 // The built site joins its own server (wss://<host>/ws); `npm run dev` sails offline unless
 // ?server[=ws://host:port/ws] is given, and ?offline always sails locally. With a server, the Go
 // server owns the seed, the config and the boat (src/net), the page predicts with the TS sim, and
@@ -38,38 +40,24 @@ const cfg = server?.cfg ?? browserConfig(Math.floor(Math.random() * 0x100000000)
 if (!server) {
   // Browser sailing has gusts and shifts (seeded like the sea); ?gusts=0 keeps the wind constant.
   // Headless runs and the polar use defaultConfig, where they are off.
-  if (cfg.wind.gusts) cfg.wind.gusts.enabled = params.get('gusts') !== '0';
-  if (params.get('waves') === '0') cfg.waves.enabled = false;
-  const waveScale = params.get('waveAmplitude');
-  if (waveScale !== null && Number.isFinite(Number(waveScale))) {
-    cfg.waves.amplitudeScale = clamp(Number(waveScale), 0, WAVE_PARAMETERS.maxAmplitudeScale);
+  if (cfg.wind.gusts) cfg.wind.gusts.enabled = opts.gusts;
+  if (!opts.waves) cfg.waves.enabled = false;
+  if (opts.waveAmplitude !== null) {
+    cfg.waves.amplitudeScale = clamp(opts.waveAmplitude, 0, WAVE_PARAMETERS.maxAmplitudeScale);
   }
-  const wavePeriod = params.get('wavePeriod');
-  const waveDirection = params.get('waveDirection');
-  setWaveParameters(
-    cfg.waves,
-    wavePeriod !== null && Number.isFinite(Number(wavePeriod)) ? Number(wavePeriod) : cfg.waves.periodSeconds,
-    waveDirection !== null && Number.isFinite(Number(waveDirection)) ? Number(waveDirection) : cfg.waves.directionDeg,
-  );
+  setWaveParameters(cfg.waves, opts.wavePeriod ?? cfg.waves.periodSeconds, opts.waveDirection ?? cfg.waves.directionDeg);
 }
 const fixed = new FixedStep(cfg.dt);
 
 const navigation = new Navigation();
 const memory = new MemoryReadout();
 const view = new SceneView(boat, cfg.waves, cfg.env, cfg.wind, navigation);
-// ?wake=0 starts with the boat wake and bow wave off.
-if (params.get('wake') === '0') view.wake.enabled = false;
+if (!opts.wake) view.wake.enabled = false;
 
-// Checking aids: ?sunElevation=<deg>, ?sunAzimuth=<compass deg>, ?clouds=<0..1 coverage>.
-const numberParam = (name: string): number | null => {
-  const raw = params.get(name);
-  return raw !== null && Number.isFinite(Number(raw)) ? Number(raw) : null;
-};
-let sunElevation = clamp(numberParam('sunElevation') ?? SKY.sunElevationDeg, -10, 90);
-let sunAzimuth = numberParam('sunAzimuth') ?? SKY.sunAzimuthDeg;
+let sunElevation = clamp(opts.sunElevation ?? SKY.sunElevationDeg, -10, 90);
+let sunAzimuth = opts.sunAzimuth ?? SKY.sunAzimuthDeg;
 view.sky.setSun(sunElevation, sunAzimuth);
-const clouds = numberParam('clouds');
-if (clouds !== null) view.sky.setCloudCoverage(clouds);
+if (opts.clouds !== null) view.sky.setCloudCoverage(opts.clouds);
 const input = new ControlInput(view.renderer.domElement);
 const look = new MouseLook(view.renderer.domElement);
 const navigationInput = new NavigationInput(() => view.mode === 'cockpit');
@@ -124,10 +112,9 @@ overlay.addNumber('cloud coverage (0–1)', view.sky.cloudCoverage, (v, el) => {
 // The sail design is a player preference; ?sail=<id> (data/sail-designs.json) overrides it.
 const prefs = loadPrefs();
 const sail = view.boat.sail;
-const sailParam = params.get('sail');
-if (sailParam !== null) {
-  if (sail.designs.some((d) => d.id === sailParam)) sail.setDesign(sailParam);
-  else console.warn(`unknown ?sail=${sailParam}; known: ${sail.designs.map((d) => d.id).join(', ')}`);
+if (opts.sail !== null) {
+  if (sail.designs.some((d) => d.id === opts.sail)) sail.setDesign(opts.sail);
+  else console.warn(`unknown ?sail=${opts.sail}; known: ${sail.designs.map((d) => d.id).join(', ')}`);
 } else if (prefs.sail !== null && sail.designs.some((d) => d.id === prefs.sail)) {
   sail.setDesign(prefs.sail);
 }
@@ -180,14 +167,12 @@ window.addEventListener('keydown', (e) => {
   view.mode = view.mode === 'cockpit' ? 'outside' : 'cockpit';
 });
 
-// Checking aids: ?view=outside&look=<yawDeg>,<pitchDeg> sets the initial view without pointer lock;
-// ?water=0 hides the water and grid to show the foils.
-if (params.get('view') === 'outside') view.mode = 'outside';
-if (params.get('water') === '0') view.setWaterVisible(false);
-const lookParam = params.get('look')?.split(',').map(Number);
-if (lookParam && lookParam.length === 2 && lookParam.every(Number.isFinite)) {
-  look.yaw = lookParam[0]! * DEG;
-  look.pitch = lookParam[1]! * DEG;
+// Checking aids: ?view=outside&look=<yawDeg>,<pitchDeg> sets the initial view without pointer lock.
+if (opts.outsideView) view.mode = 'outside';
+if (!opts.water) view.setWaterVisible(false);
+if (opts.look) {
+  look.yaw = opts.look.yawDeg * DEG;
+  look.pitch = opts.look.pitchDeg * DEG;
 }
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
@@ -308,7 +293,7 @@ requestAnimationFrame(frame);
 
 // Checking aid: ?perf=1 renders BENCH_FRAMES frames back to back, each followed by a 1-pixel
 // readPixels (which waits for the GPU, unlike gl.finish in Chrome), and logs the mean frame cost.
-if (params.get('perf') === '1') {
+if (opts.perf) {
   setTimeout(() => {
     if (!lastPose) return;
     const gl = view.renderer.getContext();
