@@ -211,9 +211,14 @@ fraction of a second and holds its position. Same idea for the sheet.
   target at 30 % of the screen size, clipped to what stands above sea level, without the sky dome, water or
   grid, and refreshed every second frame (`REFLECTION_EVERY`; its matrix maps world positions, so an old
   image stays consistent with itself). The water shader bends it with the surface normal and puts it
-  over the analytic sky reflection where its alpha says something is there. Trees sit on the
-  `NOT_REFLECTED` layer: drawn for the player's cameras, skipped in the mirror. Measured about 14.3 ms vs
-  13.0 ms without it at 2880x1454 (+1.2 ms; every frame instead of every other costs about +3 ms).
+  over the analytic sky reflection where its alpha says something is there. Nothing is left out of the
+  mirror. Terrain, 74 % of the triangles, is drawn per 1.28 km tile as a `THREE.LOD` with strides of 1, 2
+  and 4 grid cells from 0, 2 and 4.5 km (`TERRAIN_LODS`, VISUAL ESTIMATE), with skirts on every tile
+  edge in the terrain's own colour so neighbours of different detail never show cracks. That took the
+  main pass from 481.7k to 319.3k triangles and the mirror pass from 237.3k to 74.9k (the debug HUD, `H`,
+  shows both). Far trees and houses stand on the fine ground height, so on a coarse tile they can sit a
+  metre or two off it, which is a few pixels at 2 km or more. Measured about 13.9 ms vs 13.0 ms without
+  the mirror at 2880x1454 (+0.9 ms; refreshing every frame instead of every other costs about +1.5 ms).
 - **Wake and bow wave (visual only):** the water shader adds a Kelvin wake (transverse and divergent
   waves, 19.47 degree cusp), a bow wave hugging the waterline, and turbulent foam behind the transom
   and on the bow crest. Only new bow emissions follow the foremost hull/sea contact using heave,

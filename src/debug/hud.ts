@@ -35,6 +35,9 @@ export interface FrameStats {
   cpuMs: number;
   triangles: number;
   calls: number;
+  /** The water's mirror pass, drawn on top of the main pass every other frame. */
+  mirrorTriangles: number;
+  mirrorCalls: number;
 }
 
 const deg = (rad: number, digits = 0) => `${Math.abs(rad / DEG).toFixed(digits)}°`;
@@ -132,6 +135,7 @@ export class TestHud {
     this.stallBar.style.width = `${(stall * 100).toFixed(0)}%`;
     this.perf.textContent =
       `frame ${perf.frameMs.toFixed(1)} ms · cpu ${perf.cpuMs.toFixed(2)} ms · ` +
-      `${(perf.triangles / 1000).toFixed(1)}k tris · ${perf.calls} calls`;
+      `${(perf.triangles / 1000).toFixed(1)}k tris · ${perf.calls} calls · ` +
+      `mirror ${(perf.mirrorTriangles / 1000).toFixed(1)}k tris · ${perf.mirrorCalls} calls`;
   }
 }

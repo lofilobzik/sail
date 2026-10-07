@@ -12,9 +12,6 @@ import * as THREE from 'three';
 /** Fraction of the drawing buffer's size the reflection is rendered at (VISUAL ESTIMATE, cost control). */
 const RESOLUTION_SCALE = 0.3;
 
-/** Objects on this layer are drawn for the player's cameras but not in the water's mirror (cost control). */
-export const NOT_REFLECTED = 1;
-
 const SEA_LEVEL = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
 export class PlanarReflection {

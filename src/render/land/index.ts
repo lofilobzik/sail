@@ -10,7 +10,6 @@ import { terrainGrid } from '../../sim/terrain';
 import type { Vec2 } from '../../sim/frames';
 import type { SkyView } from '../sky';
 import { Footprints, waterDistance } from './ground';
-import { NOT_REFLECTED } from '../reflection';
 import { createHarbour } from './harbour';
 import { createHouseMeshes, placeHouses } from './houses';
 import { createLandmarks } from './landmarks';
@@ -47,13 +46,9 @@ export function createLand(sky: SkyView): LandView {
   const harbour = createHarbour(structures);
   for (const sign of harbour.signs) fogTowardSky(sign.material as THREE.MeshStandardMaterial, sky);
 
-  // Trees are many small triangles and read poorly once rippled: the mirror skips them, but keeps the houses.
-  const treeMeshes = createTreeMeshes(trees, foliage);
-  for (const m of treeMeshes) m.layers.set(NOT_REFLECTED);
-
   group.add(
     ...createTerrainMeshes(grid, ground),
-    ...treeMeshes,
+    ...createTreeMeshes(trees, foliage),
     ...createHouseMeshes(houses, buildings),
     ...createLandmarks(grid, structures),
     harbour.structures,
