@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BAY, terrainGrid } from '../../sim/terrain';
 import { groundHeight, waterDistance } from './ground';
 import { houseGeometry, type HouseSpec } from './houseModels';
+import { cottageRow, type CottageRow } from './harbour';
 import { placeHouses } from './houses';
 import { faceted } from './parts';
 import { ROADS, sampleRoad } from './roads';
@@ -63,6 +64,13 @@ describe('house models', () => {
     }
     // A door, its trim and a dozen windows of frame and glass, two triangles each.
     expect(details).toBeGreaterThan(6 * 10);
+  });
+
+  it('builds barn doors and board-and-batten siding as extra faded detail', () => {
+    const plain = houseGeometry(spec({ porch: false, chimney: false }));
+    const shed = houseGeometry(spec({ porch: false, chimney: false, barnDoor: true, battens: true }));
+    expect(triangles(shed)).toBeGreaterThan(triangles(plain) + 40);
+    expect(hasFaceNormals(shed)).toBe(true);
   });
 
   it('stays within its footprint, rooted on the ground and below the chimney top', () => {
@@ -134,5 +142,34 @@ describe('Westcove roads and houses', () => {
         expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThan(4);
       }
     }
+  });
+});
+
+describe('harbour cottage rows', () => {
+  it('lines separate cottages up inside each row, small gaps apart, fronts toward the row facing', () => {
+    let total = 0;
+    (BAY.harbour.cottageRows as CottageRow[]).forEach((row, i) => {
+      let seed = 1 + i;
+      const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+      const cottages = cottageRow(row, random);
+      expect(cottages.length).toBeGreaterThan(2);
+      total += cottages.length;
+      const facing = (row.facingDeg * Math.PI) / 180;
+      const alongX = Math.abs(Math.cos(facing)) > Math.abs(Math.sin(facing));
+      cottages.forEach((c, k) => {
+        const half = c.spec.length / 2;
+        const [centre, lo, hi] = alongX ? [c.x, row.x0, row.x1] : [c.z, row.z0, row.z1];
+        expect(centre - half).toBeGreaterThanOrEqual(lo - 1e-9);
+        expect(centre + half).toBeLessThanOrEqual(hi + 1e-9);
+        expect(Math.sin(c.yaw)).toBeCloseTo(Math.sin(facing), 6);
+        expect(Math.cos(c.yaw)).toBeCloseTo(-Math.cos(facing), 6);
+        if (k > 0) {
+          const prev = cottages[k - 1]!;
+          const gap = alongX ? c.x - prev.x : c.z - prev.z;
+          expect(gap - (c.spec.length + prev.spec.length) / 2).toBeGreaterThanOrEqual(2 - 1e-9);
+        }
+      });
+    });
+    expect(total).toBeGreaterThan(15);
   });
 });

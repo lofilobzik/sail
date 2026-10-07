@@ -319,6 +319,11 @@ fraction of a second and holds its position. Same idea for the sheet.
   and the Harbour Office, Sail Loft (the future shop and customisation) and Boat Shed with painted
   signs. PIER is the green-banded light on the mole head, a landmark for bearings. Buoys N, NE, E, SE
   and S are 0.65-1.1 km out from the harbour. `NAVIGATION.start` equals the departure (tested).
+  The quay has a plank boardwalk along the water, an asphalt street in front of the sheds and a pale plaza before
+  the Sail Loft (all 10 cm proud of the slab), tarred fender piles and steel ladders down its face. The three
+  sheds are house models (`houseModels.ts`) with board-and-batten siding, the Sail Loft and Boat Shed with
+  barn doors; `harbour.cottageRows` lines separate cottages up with 2-4 m gaps along the quay's north
+  waterfront (split around the street) and along the terrace overlooking the harbour.
   Pontoons, buildings and moored boats are visual only: no collisions, and no shop UI yet.
 - **One elevation function** (`sim/terrain.ts`, pure and seeded): a mainland polygon and island
   ellipses as signed distances, their coasts perturbed by fractal noise; beaches, then low hills

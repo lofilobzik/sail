@@ -54,7 +54,7 @@ function shade(colour: number, factor: number): number {
 }
 
 /** A random house: cottages, two-storey houses and cabins, in the weathered palette with a few accents. */
-function makeSpec(random: () => number, sink: number): HouseSpec {
+export function makeSpec(random: () => number, sink: number): HouseSpec {
   const kind = random();
   const cottage = kind < 0.45, tall = !cottage && kind < 0.75;
   const roll = random();

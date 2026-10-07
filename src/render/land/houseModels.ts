@@ -32,6 +32,10 @@ export interface HouseSpec {
   roofColour: number;
   doorColour: number;
   chimneyColour: number;
+  /** A wide double barn door in the middle of the front instead of the house door (boathouses, sheds). */
+  barnDoor?: boolean;
+  /** Board-and-batten siding: vertical battens a shade darker than the wall on every face. */
+  battens?: boolean;
 }
 
 const PLINTH = 0x77746e; // concrete and stone
@@ -170,6 +174,25 @@ function fadesTo(part: THREE.BufferGeometry, colour?: number): THREE.BufferGeome
   return part;
 }
 
+const BATTEN_SPACING = 0.7; // m
+const BATTEN_WIDTH = 0.09; // m
+const BATTEN_SHADE = 0.8; // of the wall colour
+
+/** Vertical battens over every wall face, from the plinth to the eaves, a shade darker than the wall. */
+function battens(s: HouseSpec): THREE.BufferGeometry[] {
+  const { length: L, width: W, wall: H } = s;
+  const colour = new THREE.Color(s.wallColour).multiplyScalar(BATTEN_SHADE).getHex();
+  const h = H - PLINTH_HEIGHT, y = PLINTH_HEIGHT + h / 2;
+  const out: THREE.BufferGeometry[] = [];
+  for (let x = -L / 2 + BATTEN_SPACING / 2; x < L / 2; x += BATTEN_SPACING) {
+    out.push(pane(BATTEN_WIDTH, h, colour, 0, x, y, W / 2 + 0.01), pane(BATTEN_WIDTH, h, colour, 1, x, y, -W / 2 - 0.01));
+  }
+  for (let z = -W / 2 + BATTEN_SPACING / 2; z < W / 2; z += BATTEN_SPACING) {
+    out.push(pane(BATTEN_WIDTH, h, colour, 2, L / 2 + 0.01, y, z), pane(BATTEN_WIDTH, h, colour, 3, -L / 2 - 0.01, y, z));
+  }
+  return out;
+}
+
 /** Height of the ridge above the eaves, for the chimney. */
 function ridgeRise(s: HouseSpec): number {
   const rise = (s.width / 2 + EAVE) * Math.tan((s.pitch * Math.PI) / 180);
@@ -194,15 +217,24 @@ export function houseGeometry(s: HouseSpec): THREE.BufferGeometry {
   // The door stands on top of the plinth, which sticks out 0.1 m past the walls.
   // Windows and doors are details: too small on screen, they fade into the wall (detailFade.ts).
   const details: THREE.BufferGeometry[] = [];
-  details.push(pane(1.25, 2.3, s.trimColour, 0, doorX, PLINTH_HEIGHT + 1.15, W / 2 + 0.015));
-  details.push(pane(1.0, 2.1, s.doorColour, 0, doorX, PLINTH_HEIGHT + 1.05, W / 2 + 0.03));
+  // Front door, or a barn door: a wide pair of leaves with a dark seam, centred on the front.
+  const barn = s.barnDoor ? { width: Math.min(L * 0.4, 6), height: Math.min((H / s.storeys) * 0.85, 3.6) } : null;
+  if (barn) {
+    details.push(pane(barn.width + 0.3, barn.height + 0.2, s.trimColour, 0, 0, PLINTH_HEIGHT + (barn.height + 0.2) / 2, W / 2 + 0.015));
+    details.push(pane(barn.width, barn.height, s.doorColour, 0, 0, PLINTH_HEIGHT + barn.height / 2, W / 2 + 0.03));
+    details.push(pane(0.08, barn.height, GLASS, 0, 0, PLINTH_HEIGHT + barn.height / 2, W / 2 + 0.04));
+  } else {
+    details.push(pane(1.25, 2.3, s.trimColour, 0, doorX, PLINTH_HEIGHT + 1.15, W / 2 + 0.015));
+    details.push(pane(1.0, 2.1, s.doorColour, 0, doorX, PLINTH_HEIGHT + 1.05, W / 2 + 0.03));
+  }
+  if (s.battens) details.push(...battens(s));
   const bays = Math.max(1, Math.floor((L - 1.5) / 3.1));
   const storeyHeight = H / s.storeys;
   for (let storey = 0; storey < s.storeys; storey++) {
     const y = storey * storeyHeight + Math.min(storeyHeight * 0.58, 1.9);
     for (let i = 0; i < bays; i++) {
       const x = -L / 2 + ((i + 0.5) * L) / bays;
-      const nearDoor = storey === 0 && Math.abs(x - doorX) < 1.4;
+      const nearDoor = storey === 0 && (barn ? Math.abs(x) < barn.width / 2 + 0.9 : Math.abs(x - doorX) < 1.4);
       if (!nearDoor) details.push(...windowParts(0, x, y, W / 2, s.trimColour));
       details.push(...windowParts(1, x, y, -W / 2, s.trimColour));
     }

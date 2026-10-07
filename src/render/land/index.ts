@@ -49,7 +49,7 @@ export function createLand(sky: SkyView): LandView {
   for (const road of ROADS) for (const p of sampleRoad(road, 5, grid)) plots.add(p.x, p.z, road.width / 2 + 2);
   const trees = placeTrees(grid, shore, plots);
 
-  const harbour = createHarbour(structures);
+  const harbour = createHarbour(structures, buildings, grid);
   for (const sign of harbour.signs) fogTowardSky(sign.material as THREE.MeshStandardMaterial, sky);
 
   group.add(
@@ -58,6 +58,7 @@ export function createLand(sky: SkyView): LandView {
     ...createHouseMeshes(houses, buildings),
     ...createLandmarks(grid, structures),
     harbour.structures,
+    harbour.buildings,
     ...[createRoadMesh(grid, ground)].filter((m) => m !== null),
     ...harbour.signs,
   );

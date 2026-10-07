@@ -6,7 +6,10 @@
  * except the signs, which are one small textured quad each. Sizes and colours are VISUAL ESTIMATE.
  */
 import * as THREE from 'three';
-import { BAY } from '../../sim/terrain';
+import { BAY, type TerrainGrid } from '../../sim/terrain';
+import { groundHeight, seededRandom } from './ground';
+import { houseGeometry, type HouseSpec, type RoofShape } from './houseModels';
+import { makeSpec } from './houses';
 import { merge, paint } from './parts';
 
 const SLAB_LIFT = 0.05; // m: the slab top stands this far above the terrain plane so the two never z-fight
@@ -23,7 +26,6 @@ const PONTOON_FREEBOARD = 0.4; // m above the water: the pontoons do not move wi
 const PONTOON_DECK = 0x8b7355;
 const PONTOON_FLOAT = 0x4d5a63;
 const PILE = 0x3d3a34;
-const DOOR = 0x2f3a40;
 // Quay dressing. Anything laid on the slab stands at least OVERLAY_RISE proud of it, so it never
 // z-fights with the paving from across the bay.
 const OVERLAY_RISE = 0.1; // m
@@ -41,7 +43,10 @@ const FENDER_FOOT = -1.5; // m: piles reach this far below the water
 const LADDER = 0x5a5f63; // galvanised steel
 const LADDER_SPACING = 32; // m along the quay face
 const SIGN_BOARD = { width: 0.6, height: 0.17 }; // fractions of the building's long side and wall height
-const EAVE_OVERHANG = 0.5; // m
+const COTTAGE_GAP = [2, 4]; // m between neighbours in a cottage row
+const COTTAGE_SINK = 0.4; // m the plinth reaches below the ground
+const SHED_TRIM = 0xe8e6df;
+const SHED_CHIMNEY = 0x6f6d68;
 
 const at = (x: number, y: number, z: number) => new THREE.Matrix4().makeTranslation(x, y, z);
 const box = (w: number, h: number, d: number, colour: THREE.ColorRepresentation, x: number, y: number, z: number) =>
@@ -152,32 +157,45 @@ function quayDressing(quay: Rect, mole: Rect, slabTop: number, buildings: readon
 interface Building {
   name: string; sign: string; x: number; z: number; length: number; width: number; wall: number;
   wallColor: string; roofColor: string; signColor: string;
+  roof?: RoofShape; door?: 'barn'; doorColor?: string; chimney?: boolean;
 }
 
+const hex = (colour: string): number => new THREE.Color(colour).getHex();
+
 /**
- * A gable-roofed shed on the quay. Its long face (`length`, along z) looks east to the water, where
- * the sign hangs above a wide door; the ridge runs along z.
+ * A harbour building as a house model (houseModels.ts): board-and-batten siding, its long face
+ * (`length`, along z) looking east to the water, a barn door or a front door there, under the sign.
  */
-function building(b: Building, quayTop: number): THREE.BufferGeometry[] {
-  const y = quayTop, halfW = b.width / 2, halfL = b.length / 2;
-  const rise = halfW * 0.5; // roof pitch about 27 degrees
-  const roof = new THREE.BufferGeometry();
-  const ex = halfW + EAVE_OVERHANG, ez = halfL + EAVE_OVERHANG;
-  roof.setAttribute('position', new THREE.Float32BufferAttribute([
-    // Two slopes (west -x, east +x) rising to the ridge, then the two gable ends.
-    -ex, 0, -ez, -ex, 0, ez, 0, rise, ez, -ex, 0, -ez, 0, rise, ez, 0, rise, -ez,
-    ex, 0, ez, ex, 0, -ez, 0, rise, -ez, ex, 0, ez, 0, rise, -ez, 0, rise, ez,
-    -halfW, 0, ez, halfW, 0, ez, 0, rise, ez,
-    halfW, 0, -ez, -halfW, 0, -ez, 0, rise, -ez,
-  ], 3));
-  roof.computeVertexNormals();
-  const doorWidth = Math.min(b.length * 0.45, 9), doorHeight = Math.min(b.wall * 0.7, 4.4);
-  return [
-    box(b.width, b.wall, b.length, b.wallColor, b.x, y + b.wall / 2, b.z),
-    paint(roof, b.roofColor, at(b.x, y + b.wall, b.z)),
-    // Door on the east face, standing a whisker proud of the wall.
-    box(0.15, doorHeight, doorWidth, DOOR, b.x + halfW + 0.05, y + doorHeight / 2, b.z),
-  ];
+function shedSpec(b: Building): HouseSpec {
+  return {
+    length: b.length, width: b.width, wall: b.wall, storeys: b.wall >= 5.5 ? 2 : 1,
+    roof: b.roof ?? 'gable', pitch: b.roof === 'hip' ? 28 : 34, chimney: b.chimney ?? false, porch: false,
+    sink: COTTAGE_SINK, doorSide: 1, wallColour: hex(b.wallColor), trimColour: SHED_TRIM, roofColour: hex(b.roofColor),
+    doorColour: hex(b.doorColor ?? '#2f3a40'), chimneyColour: SHED_CHIMNEY, barnDoor: b.door === 'barn', battens: true,
+  };
+}
+
+export interface CottageRow { name: string; x0: number; z0: number; x1: number; z1: number; facingDeg: number }
+
+/** Placed house models: separate cottages with small gaps along a row, fronts toward its compass `facingDeg`. */
+export function cottageRow(row: CottageRow, random: () => number): { spec: HouseSpec; x: number; z: number; yaw: number }[] {
+  const facing = (row.facingDeg * Math.PI) / 180;
+  const dx = Math.sin(facing), dz = -Math.cos(facing); // compass bearing to world x east, z south
+  const alongX = Math.abs(dz) > Math.abs(dx); // a row facing north or south runs east-west
+  const [start, end] = alongX ? [row.x0, row.x1] : [row.z0, row.z1];
+  const depth = alongX ? row.z1 - row.z0 : row.x1 - row.x0;
+  const across = alongX ? (row.z0 + row.z1) / 2 : (row.x0 + row.x1) / 2;
+  const out: { spec: HouseSpec; x: number; z: number; yaw: number }[] = [];
+  let s = start + random() * COTTAGE_GAP[1]!;
+  for (;;) {
+    const spec = makeSpec(random, COTTAGE_SINK);
+    spec.width = Math.min(spec.width, depth);
+    if (s + spec.length > end) break;
+    const along = s + spec.length / 2;
+    out.push({ spec, x: alongX ? along : across, z: alongX ? across : along, yaw: Math.atan2(dx, dz) });
+    s += spec.length + COTTAGE_GAP[0]! + random() * (COTTAGE_GAP[1]! - COTTAGE_GAP[0]!);
+  }
+  return out;
 }
 
 /** A one-quad painted sign: lettering on a coloured board, facing east. */
@@ -206,11 +224,13 @@ function sign(b: Building, quayTop: number): THREE.Mesh {
 export interface HarbourMeshes {
   /** The merged vertex-coloured structure mesh (uses the land `structures` material). */
   structures: THREE.Mesh;
+  /** The harbour buildings and the waterfront cottages (uses the land `buildings` material). */
+  buildings: THREE.Mesh;
   /** Sign boards: own textured materials, handed over so the caller can fog them toward the sky. */
   signs: THREE.Mesh[];
 }
 
-export function createHarbour(structures: THREE.Material): HarbourMeshes {
+export function createHarbour(structures: THREE.Material, buildingMaterial: THREE.Material, grid: TerrainGrid): HarbourMeshes {
   const h = BAY.harbour;
   const parts: THREE.BufferGeometry[] = [];
   const paved = h.reclaimed.filter((r) => 'paved' in r && r.paved) as (Rect & { height: number })[];
@@ -223,8 +243,21 @@ export function createHarbour(structures: THREE.Material): HarbourMeshes {
   for (const p of h.pontoons) parts.push(...pontoon(p, quayTop));
   const buildings = h.buildings as Building[];
   parts.push(...quayDressing(quay, mole, quay.height + SLAB_LIFT, buildings));
-  for (const b of buildings) parts.push(...building(b, quayTop));
   const mesh = new THREE.Mesh(merge(parts), structures);
   mesh.name = 'harbour';
-  return { structures: mesh, signs: buildings.map((b) => sign(b, quayTop)) };
+
+  // Buildings stand on the slab where they are on the quay or mole, on the ground elsewhere.
+  const slabTop = quay.height + SLAB_LIFT;
+  const groundAt = (x: number, z: number): number =>
+    paved.some((r) => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1) ? slabTop : groundHeight(grid, x, z);
+  const placed = [
+    ...buildings.map((b) => ({ spec: shedSpec(b), x: b.x, z: b.z, yaw: Math.PI / 2 })),
+    ...(h.cottageRows as CottageRow[]).flatMap((row, i) => cottageRow(row, seededRandom(BAY.seed * 6007 + i))),
+  ];
+  const up = new THREE.Vector3(0, 1, 0), q = new THREE.Quaternion(), position = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
+  const houses = new THREE.Mesh(merge(placed.map((p) => houseGeometry(p.spec).applyMatrix4(
+    new THREE.Matrix4().compose(position.set(p.x, groundAt(p.x, p.z), p.z), q.setFromAxisAngle(up, p.yaw), one),
+  ))), buildingMaterial);
+  houses.name = 'harbour-buildings';
+  return { structures: mesh, buildings: houses, signs: buildings.map((b) => sign(b, slabTop)) };
 }

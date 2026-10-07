@@ -80,10 +80,15 @@
       { "x0": -1840, "z0": 797, "x1": -1804, "z1": 800 },
       { "x0": -1840, "z0": 827, "x1": -1804, "z1": 830 }
     ],
+    "cottageRows": [
+      { "name": "Quay waterfront west", "x0": -1986, "z0": 724, "x1": -1950, "z1": 733, "facingDeg": 0 },
+      { "name": "Quay waterfront east", "x0": -1935, "z0": 724, "x1": -1858, "z1": 733, "facingDeg": 0 },
+      { "name": "Terrace", "x0": -2016, "z0": 706, "x1": -2006, "z1": 894, "facingDeg": 90 }
+    ],
     "buildings": [
-      { "name": "Harbour Office", "sign": "HARBOUR", "x": -1958, "z": 748, "length": 14, "width": 9, "wall": 5, "wallColor": "#d9d4c4", "roofColor": "#4c535a", "signColor": "#1f4e6b" },
-      { "name": "Sail Loft", "sign": "SAIL LOFT", "x": -1958, "z": 800, "length": 26, "width": 13, "wall": 6.5, "wallColor": "#c0463a", "roofColor": "#3b4046", "signColor": "#f2ead3" },
-      { "name": "Boat Shed", "sign": "BOAT SHED", "x": -1958, "z": 852, "length": 20, "width": 12, "wall": 6, "wallColor": "#6d8aa0", "roofColor": "#6e4634", "signColor": "#f2ead3" }
+      { "name": "Harbour Office", "sign": "HARBOUR", "x": -1958, "z": 748, "length": 14, "width": 9, "wall": 5, "wallColor": "#d9d4c4", "roofColor": "#4c535a", "signColor": "#1f4e6b", "roof": "hip", "chimney": true, "doorColor": "#1f4e6b" },
+      { "name": "Sail Loft", "sign": "SAIL LOFT", "x": -1958, "z": 800, "length": 26, "width": 13, "wall": 6.5, "wallColor": "#a13a2e", "roofColor": "#3b4046", "signColor": "#f2ead3", "roof": "gable", "door": "barn", "doorColor": "#3b2f2a" },
+      { "name": "Boat Shed", "sign": "BOAT SHED", "x": -1958, "z": 852, "length": 20, "width": 12, "wall": 6, "wallColor": "#5f7a8c", "roofColor": "#6d5a49", "signColor": "#f2ead3", "roof": "gable", "door": "barn", "doorColor": "#2f3a40" }
     ]
   },
   "grounding": { "pushStiffness": 3000, "damping": 2000, "yawDamping": 400, "maxPenetration": 2, "gradientStep": 2 },
@@ -93,7 +98,7 @@
     "seabed": "VISUAL ESTIMATE / TUNING GUESS: depth falls away from each shore with a seeded nearshore slope between 1:60 and 1:20 and saturates at maxDepth, so the bay centre is about 20-25 m deep. Shoals are Gaussian bumps rising to topDepth below mean sea level, deep enough to float the hull but shallow enough to ground the daggerboard.",
     "grid": "Render/chart bake only: heights sampled every cell metres over the bounds. Physics evaluates the analytic function directly.",
     "landmarks": "Sandbox landmarks for bearings, not real aids to navigation. height is the structure above the ground at its foot; colours are VISUAL ESTIMATE.",
-    "harbour": "VISUAL ESTIMATE / sandbox design: Westcove Harbour on the west shore. Rectangles, applied in order so later ones win where blends overlap (world x east, z south, metres) are blended into the elevation: `reclaimed` land is flattened to `height` m above sea level (quay, breakwater mole, a terrace behind them), `dredged` water is deepened to at least `depth` m, `paved` rectangles get a crisp quay slab, and `edge` is the blend width in metres outside each rectangle. Boats spawn at `departure` heading `headingDeg`, in the basin the mole shelters. Pontoons, buildings and the PIER light are VISUAL ESTIMATE dressing for the quay.",
+    "harbour": "VISUAL ESTIMATE / sandbox design: Westcove Harbour on the west shore. Rectangles, applied in order so later ones win where blends overlap (world x east, z south, metres) are blended into the elevation: `reclaimed` land is flattened to `height` m above sea level (quay, breakwater mole, a terrace behind them), `dredged` water is deepened to at least `depth` m, `paved` rectangles get a crisp quay slab, and `edge` is the blend width in metres outside each rectangle. Boats spawn at `departure` heading `headingDeg`, in the basin the mole shelters. Pontoons, buildings, cottage rows (separate cottages with small gaps along each rectangle, fronts toward compass `facingDeg`) and the PIER light are VISUAL ESTIMATE dressing for the quay.",
     "roads": "VISUAL ESTIMATE / sandbox design: The two roads of Westcove are contour lines of the baked terrain (Harbour Road at 8 m, Hill Road at 20 m above sea level, 260 to 1340 m south), smoothed and thinned to a point every 25 m or so, so they follow the hillside the way a real road would. A town with `layout: roads` has its houses placed in clusters along the roads of that town, facing downhill toward the water; the other towns scatter houses at random. Roads are drawn as flat gravel ribbons laid on the terrain.",
     "towns": "VISUAL ESTIMATE: house counts and radii so the shore does not look bare. Houses are only placed on gentle, dry ground.",
     "grounding": "TUNING GUESS: when the seabed is shallower than the daggerboard tip, penetration (m, capped at maxPenetration) pushes the boat toward deeper water (pushStiffness N/m along the seabed gradient) and damps its motion (damping N s/m^2 times penetration times velocity, yawDamping N m s/rad per metre of penetration). Sized so a Laser at full drive stops within a few metres of touching on a 1:40 slope, and slides back off when the sheet is eased or the boat is turned away. gradientStep is the finite-difference step, m."
