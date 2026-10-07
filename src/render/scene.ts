@@ -75,12 +75,45 @@ export class SceneView {
   private readonly buoys = createBuoys();
   private readonly surface = createWaveSample();
   private readonly land: LandView;
+  /**
+   * The scene is drawn into this target, not straight to the canvas: its depth buffer is 32-bit float,
+   * which the reversed depth mapping needs to be precise far away. The canvas's own depth buffer is
+   * fixed-point (24-bit): there, reversed depth gains nothing, and with the near plane at 5 cm depth
+   * resolves only about 0.3 m at 500 m and 19 m at 4 km, so window panes 3 cm proud of a wall
+   * z-fought into jagged shapes and far houses and low trees flickered against the hillside behind
+   * them (three's reversed-depth example uses a float depth texture for the same reason). 4x MSAA
+   * replaces the canvas antialiasing; depth is never resolved because nothing reads it.
+   */
+  private readonly frame = (() => {
+    const target = new THREE.WebGLRenderTarget(1, 1, {
+      samples: 4,
+      colorSpace: THREE.SRGBColorSpace,
+      depthTexture: new THREE.DepthTexture(1, 1, THREE.FloatType),
+    });
+    target.resolveDepthBuffer = false;
+    return target;
+  })();
+  /** A full-screen quad that copies `frame` to the canvas. */
+  private readonly present = (() => {
+    const scene = new THREE.Scene();
+    const quad = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 2),
+      new THREE.MeshBasicMaterial({ map: this.frame.texture, depthTest: false, depthWrite: false, toneMapped: false }),
+    );
+    quad.frustumCulled = false;
+    scene.add(quad);
+    return { scene, camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1) };
+  })();
 
   constructor(
     model: BoatModel, private readonly waves: WaveConfig, env: EnvironmentConfig,
     private readonly wind: WindConfig, navigation: Navigation,
   ) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, reversedDepthBuffer: true });
+    // The canvas needs no depth or antialiasing of its own: the scene is drawn into `frame` (below) and
+    // copied to the canvas.
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, depth: false, reversedDepthBuffer: true });
+    // Count the scene's triangles, not just the last pass (the copy to the canvas).
+    this.renderer.info.autoReset = false;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     document.body.appendChild(this.renderer.domElement);
     this.scene.fog = new THREE.Fog(0xffffff, FOG_NEAR, FOG_FAR); // colour set by the sky
@@ -119,7 +152,10 @@ export class SceneView {
     this.outsideCamera = new THREE.PerspectiveCamera(OUTSIDE_FOV_DEG, 1, 0.1, CAMERA_FAR);
     this.navigation = new NavigationView(navigation, this.boat, this.camera, this.origin);
     // Raising the compass for the first time must not compile shaders or upload textures mid-frame.
+    // Shaders depend on the render target, so compile them for the frame they will draw into.
+    this.renderer.setRenderTarget(this.frame);
     this.navigation.compass.prewarm(this.renderer, this.scene, this.camera);
+    this.renderer.setRenderTarget(null);
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -129,6 +165,8 @@ export class SceneView {
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.renderer.setSize(w, h);
+    const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    this.frame.setSize(size.x, size.y);
     for (const cam of [this.camera, this.outsideCamera]) {
       cam.aspect = w / h;
       cam.updateProjectionMatrix();
@@ -202,6 +240,10 @@ export class SceneView {
     this.sky.update(pose.t, meanWind(this.wind));
     this.sky.follow(cam);
     this.navigation.update(this.mode === 'cockpit');
+    this.renderer.info.reset();
+    this.renderer.setRenderTarget(this.frame);
     this.renderer.render(this.scene, cam);
+    this.renderer.setRenderTarget(null);
+    this.renderer.render(this.present.scene, this.present.camera);
   }
 }
