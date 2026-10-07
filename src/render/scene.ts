@@ -30,6 +30,7 @@ const FOG_FAR = 9000; // m
 // buffer keeps the shoreline free of z-fighting at this near/far ratio.
 const CAMERA_FAR = 30000; // m
 const MAX_PIXEL_RATIO = 2; // quality cap for high-DPI laptop screens
+const OUTSIDE_FOV_DEG = FOV_DEG * 0.8; // the orbit camera sees a little narrower than the cockpit
 const OUTSIDE_DISTANCE = 9; // visual estimate: outside camera distance from the boat, m
 const OUTSIDE_TARGET_HEIGHT = 1.8; // visual estimate, m
 const NO_REMOTES: ReadonlyMap<number, RemotePose> = new Map();
@@ -115,7 +116,7 @@ export class SceneView {
     this.camera.rotation.order = 'YXZ';
     this.boat.sailor.eye.add(this.camera);
     this.binoculars = new Binoculars(this.camera, FOV_DEG);
-    this.outsideCamera = new THREE.PerspectiveCamera(FOV_DEG * 0.8, 1, 0.1, CAMERA_FAR);
+    this.outsideCamera = new THREE.PerspectiveCamera(OUTSIDE_FOV_DEG, 1, 0.1, CAMERA_FAR);
     this.navigation = new NavigationView(navigation, this.boat, this.camera, this.origin);
     // Raising the compass for the first time must not compile shaders or upload textures mid-frame.
     this.navigation.compass.prewarm(this.renderer, this.scene, this.camera);
@@ -174,12 +175,21 @@ export class SceneView {
       c.position.set(this.fly.x - this.origin.x, this.fly.y, this.fly.z - this.origin.z);
       c.rotation.order = 'YXZ';
       c.rotation.set(pose.lookPitch, pose.lookYaw, 0);
+      // The binoculars narrow the cockpit camera's field of view; the free camera follows it.
+      if (c.fov !== this.camera.fov) {
+        c.fov = this.camera.fov;
+        c.updateProjectionMatrix();
+      }
       cam = c;
     } else {
       // Orbit: behind the boat at look yaw 0; mouse look turns and tilts the orbit.
       const az = pose.heading + Math.PI - pose.lookYaw;
       const el = Math.min(Math.max(0.3 - pose.lookPitch, 0.03), 1.4);
       const c = this.outsideCamera;
+      if (c.fov !== OUTSIDE_FOV_DEG) {
+        c.fov = OUTSIDE_FOV_DEG;
+        c.updateProjectionMatrix();
+      }
       c.position.set(
         OUTSIDE_DISTANCE * Math.cos(el) * Math.sin(az),
         this.surface.y + OUTSIDE_TARGET_HEIGHT + OUTSIDE_DISTANCE * Math.sin(el),

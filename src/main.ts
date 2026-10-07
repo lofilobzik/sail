@@ -74,7 +74,7 @@ if (opts.clouds !== null) view.sky.setCloudCoverage(opts.clouds);
 const input = new ControlInput(view.renderer.domElement);
 const look = new MouseLook(view.renderer.domElement);
 const navigationInput = new NavigationInput(() => view.mode === 'cockpit');
-const binocularInput = new BinocularInput(() => view.mode === 'cockpit');
+const binocularInput = new BinocularInput(() => view.mode === 'cockpit' || view.mode === 'fly');
 const vectors = new ForceVectors(boat, view.scene, view.boat.yaw, view.boat.heel);
 
 let prev: BoatState;
