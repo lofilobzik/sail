@@ -290,7 +290,7 @@ function frame(now: number): void {
   overlay.update(diagnostics, curr);
   if (server && overlay.visible) overlay.setNetwork(server.describe());
   const info = view.renderer.info.render;
-  hud.update(diagnostics, curr, { frameMs, cpuMs, triangles: info.triangles, calls: info.calls, reversedDepth: view.reversedDepth }, now);
+  hud.update(diagnostics, curr, { frameMs, cpuMs, triangles: info.triangles, calls: info.calls }, now);
   cpuMs += (performance.now() - t0 - cpuMs) * FRAME_SMOOTHING;
 
   requestAnimationFrame(frame);

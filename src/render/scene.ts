@@ -72,8 +72,6 @@ export class SceneView {
   /** Logical position of render-local zero, continuously following the interpolated boat. */
   readonly origin: Vec2 = { x: 0, z: 0 };
   mode: CameraMode = 'cockpit';
-  /** True when the reversed depth mapping is in effect (the browser has EXT_clip_control). */
-  readonly reversedDepth: boolean;
   /** Debug free-fly camera position, logical world metres (y up); used in 'fly' mode, where the look yaw is absolute. */
   readonly fly = { x: 0, y: 3, z: 0 };
   private readonly water: WaterView;
@@ -99,13 +97,9 @@ export class SceneView {
     model: BoatModel, private readonly waves: WaveConfig, env: EnvironmentConfig,
     private readonly wind: WindConfig, navigation: Navigation,
   ) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, reversedDepthBuffer: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
     // The frame is drawn in two passes (see render): count both.
     this.renderer.info.autoReset = false;
-    // three falls back to the standard depth mapping, with only a console warning, when the browser
-    // lacks EXT_clip_control; say plainly which one is in use.
-    this.reversedDepth = this.renderer.state.buffers.depth.getReversed();
-    console.info(`depth: split at ${NEAR_SPLIT} m, ${this.reversedDepth ? 'reversed' : 'standard (no EXT_clip_control)'}`);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     document.body.appendChild(this.renderer.domElement);
     this.scene.fog = new THREE.Fog(0xffffff, FOG_NEAR, FOG_FAR); // colour set by the sky
@@ -235,8 +229,8 @@ export class SceneView {
     this.navigation.update(this.mode === 'cockpit');
     this.renderer.info.reset();
     setDetailScale(this.bufferHeight, cam.fov);
-    // Split depth: the depth buffer cannot hold 5 cm to 30 km precisely (the canvas's is fixed-point;
-    // reversed depth only helps with a float one, and Firefox has no EXT_clip_control). So the scene is
+    // Split depth: one depth range from 5 cm to 30 km is not precise far away in the canvas's
+    // fixed-point depth buffer. So the scene is
     // drawn beyond NEAR_SPLIT first, with the near plane pushed out there, which is precise enough that
     // far houses, trees and window panes stop z-fighting; then the depth is cleared and everything
     // within NEAR_SPLIT (hands, compass, chart, the near hull and water) is drawn again on top with the

@@ -177,13 +177,8 @@ export class SkyView {
           skyDirection = position;
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
           // Far plane: drawn after the opaque scene, depth testing rejects every pixel the water,
-          // boat or buoys already cover before the sky shader runs. A reversed depth buffer puts
-          // the far plane at 0 instead of 1.
-          #ifdef USE_REVERSED_DEPTH_BUFFER
-          gl_Position.z = 0.0;
-          #else
+          // boat or buoys already cover before the sky shader runs.
           gl_Position.z = gl_Position.w;
-          #endif
         }
       `,
       fragmentShader: `

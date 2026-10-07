@@ -247,8 +247,8 @@ fraction of a second and holds its position. Same idea for the sheet.
   depth, and fogs toward the sky's horizon colour like the water. The water shader reads a baked
   seabed-height texture and tints the shallows sand/turquoise. To see land across the bay the fog
   runs 0-9 km, the water mesh is 40 km across, the dome radius is 25 km and the far plane 30 km;
-  the renderer uses a reversed depth buffer (the dome writes the far plane at z = 0) so distant
-  shorelines do not z-fight. Measured on an M1 the bay adds well under 1 ms per frame (within noise).
+  the frame is drawn in two depth passes (near plane 2 m, then 5 cm for the nearest 2 m; see below) so
+  distant shorelines do not z-fight. Measured on an M1 the bay adds well under 1 ms per frame (within noise).
 - **Boat:** procedural hull lofted from a few cross-sections using class dimensions,
   plus spars and fittings. Low triangle count.
 - **Sail:** cloth-like visual (small Verlet grid, around 20x12 points, pinned along luff / foot).
@@ -478,7 +478,7 @@ capsize, planing and stronger wind, third-person camera, cruising / management l
   plane at 2 m, then depth is cleared and everything within 2 m (hands, compass, chart, near hull and a small
   water patch under the camera) is drawn again with the near plane at 5 cm, without the sky dome or the colour
   background (three clears colour whenever the background is a colour). One depth range from 5 cm to 30 km
-  cannot be precise far away in a fixed-point depth buffer, and reversed depth only helps with a float one
-  (Firefox has no EXT_clip_control at all; a float-depth render target fixed it in Chrome but was slow): window
+  cannot be precise far away in a fixed-point depth buffer (reversed depth needs a float one and
+  EXT_clip_control, which Firefox lacks; a float-depth render target fixed it in Chrome but was slow): window
   panes 3 cm proud of their walls z-fought into jagged shapes and far houses and trees flickered against the
-  hillside. The HUD (H) and the console say whether reversed depth is in effect.
+  hillside. The renderer uses the standard depth mapping everywhere.
