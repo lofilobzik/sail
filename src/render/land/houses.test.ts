@@ -1,8 +1,10 @@
+import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { BAY, terrainGrid } from '../../sim/terrain';
 import { groundHeight, waterDistance } from './ground';
 import { houseGeometry, type HouseSpec } from './houseModels';
 import { placeHouses } from './houses';
+import { faceted } from './parts';
 import { ROADS, sampleRoad } from './roads';
 
 const spec = (over: Partial<HouseSpec> = {}): HouseSpec => ({
@@ -11,6 +13,22 @@ const spec = (over: Partial<HouseSpec> = {}): HouseSpec => ({
 });
 
 const triangles = (g: ReturnType<typeof houseGeometry>): number => g.getAttribute('position').count / 3;
+
+/** True when all three vertices of every triangle share one unit normal that is perpendicular to the triangle. */
+function hasFaceNormals(g: ReturnType<typeof houseGeometry>): boolean {
+  const p = g.getAttribute('position'), n = g.getAttribute('normal');
+  for (let t = 0; t < p.count; t += 3) {
+    const a = new THREE.Vector3().fromBufferAttribute(p, t), b = new THREE.Vector3().fromBufferAttribute(p, t + 1), c = new THREE.Vector3().fromBufferAttribute(p, t + 2);
+    const face = b.clone().sub(a).cross(c.clone().sub(a));
+    if (face.lengthSq() < 1e-12) continue; // a degenerate sliver has no normal to check
+    face.normalize();
+    for (let k = 0; k < 3; k++) {
+      const v = new THREE.Vector3().fromBufferAttribute(n, t + k);
+      if (Math.abs(v.length() - 1) > 1e-4 || v.dot(face) < 0.999) return false;
+    }
+  }
+  return true;
+}
 
 describe('house models', () => {
   it('builds every roof shape as a coloured, normalled triangle soup', () => {
@@ -21,6 +39,11 @@ describe('house models', () => {
       expect(triangles(g)).toBeGreaterThan(60);
       expect(triangles(g)).toBeLessThan(400);
     }
+  });
+
+  it('bakes one face normal per triangle, so flat shading needs no screen-space derivatives', () => {
+    for (const roof of ['gable', 'hip', 'saltbox', 'lean'] as const) expect(hasFaceNormals(houseGeometry(spec({ roof })))).toBe(true);
+    expect(() => faceted(new THREE.BoxGeometry(1, 1, 1))).toThrow();
   });
 
   it('stays within its footprint, rooted on the ground and below the chimney top', () => {

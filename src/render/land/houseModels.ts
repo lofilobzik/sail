@@ -9,7 +9,7 @@
  * Every size and colour here is VISUAL ESTIMATE.
  */
 import * as THREE from 'three';
-import { merge, paint } from './parts';
+import { faceted, merge, paint } from './parts';
 
 export type RoofShape = 'gable' | 'hip' | 'saltbox' | 'lean';
 
@@ -206,5 +206,5 @@ export function houseGeometry(s: HouseSpec): THREE.BufferGeometry {
     parts.push(box(0.95, 0.14, 0.95, PLINTH, cx, top + 0.07, cz));
   }
 
-  return merge(parts);
+  return faceted(merge(parts));
 }

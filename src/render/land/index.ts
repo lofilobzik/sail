@@ -33,9 +33,11 @@ export function createLand(sky: SkyView): LandView {
 
   // Roughness values are VISUAL ESTIMATE: matte ground and foliage, slightly smoother masonry.
   const ground = fogTowardSky(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }), sky);
+  // Houses and trees look faceted from face normals baked into their geometry (parts.ts `faceted`), not
+  // from `flatShading`, whose screen-space derivatives shimmer on faces a few pixels across (far shores).
   // Open-ended cones and trunks: double-sided, so a hillside tree seen from below is not hollow.
-  const foliage = fogTowardSky(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true, side: THREE.DoubleSide }), sky);
-  const buildings = fogTowardSky(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, flatShading: true }), sky);
+  const foliage = fogTowardSky(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }), sky);
+  const buildings = fogTowardSky(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), sky);
   const structures = fogTowardSky(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), sky);
 
   const shore = waterDistance(grid);

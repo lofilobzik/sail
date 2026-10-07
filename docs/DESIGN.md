@@ -273,6 +273,11 @@ fraction of a second and holds its position. Same idea for the sheet.
   (about 1.3 x 0.7 km, 75 m hill with a stone tower) lies in the north-west of the bay, Little Holm
   (about 380 x 280 m) toward the mouth in the east. Two shoals (Holm Spit, Little Holm Ledge) rise to
   0.3-0.5 m. Westcove Harbour (below) is the departure; every buoy is in 10-21 m of water.
+- **Faceted look without `flatShading`**: houses and trees get their per-face normals baked into the
+  geometry (`faceted` in `render/land/parts.ts`) and their materials do not use `flatShading`. Three's flat
+  shading guesses each pixel's normal from screen-space derivatives of the position, which shimmers on
+  faces only a few pixels across: bright far houses and broadleaf trees blinked through binoculars while
+  the dark firs, on dark ground, hid it. Baked normals look the same and cost less.
 - **Trees and the forest belt** (`render/land/trees.ts`, `forest.ts`): trees cover all the land, from a
   jittered 15 m lattice over the mainland and islands within 2.2 km of the water (about 83k trees, 81 %
   conifers). Density is about half on open ground, up to full in woods and the belt, with meadow clearings,

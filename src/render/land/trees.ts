@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { BAY, LANDMARKS, fbm, type TerrainGrid } from '../../sim/terrain';
 import { beltAmount } from './forest';
 import { type Footprints, groundGradient, groundHeight, nearestSample, seededRandom } from './ground';
-import { merge, paint } from './parts';
+import { faceted, merge, paint } from './parts';
 import { rockAmount, woodAmount } from './terrainMesh';
 
 /** Placement, all VISUAL ESTIMATE. */
@@ -50,20 +50,20 @@ const TINT = 0.12; // +/- per channel instance tint
 /** Unit-height conifer: short trunk and two stacked open cones (the material is double-sided). */
 function coniferGeometry(): THREE.BufferGeometry {
   const at = (y: number) => new THREE.Matrix4().makeTranslation(0, y, 0);
-  return merge([
+  return faceted(merge([
     paint(new THREE.CylinderGeometry(0.035, 0.05, 0.25, 4, 1, true), TRUNK, at(0.125)),
     paint(new THREE.ConeGeometry(0.22, 0.55, 6, 1, true), CONIFER_CROWN, at(0.42)),
     paint(new THREE.ConeGeometry(0.16, 0.45, 6, 1, true), CONIFER_CROWN, at(0.775)),
-  ]);
+  ]));
 }
 
 /** Unit-height broadleaf: trunk and a squashed icosahedral crown. */
 function broadleafGeometry(): THREE.BufferGeometry {
-  return merge([
+  return faceted(merge([
     paint(new THREE.CylinderGeometry(0.04, 0.06, 0.45, 4, 1, true), TRUNK, new THREE.Matrix4().makeTranslation(0, 0.225, 0)),
     paint(new THREE.IcosahedronGeometry(0.34, 0), BROADLEAF_CROWN,
       new THREE.Matrix4().makeTranslation(0, 0.64, 0).multiply(new THREE.Matrix4().makeScale(1, 0.95, 1))),
-  ]);
+  ]));
 }
 
 /**
@@ -72,13 +72,13 @@ function broadleafGeometry(): THREE.BufferGeometry {
  */
 function farConiferGeometry(): THREE.BufferGeometry {
   const at = (y: number) => new THREE.Matrix4().makeTranslation(0, y, 0);
-  return merge([
+  return faceted(merge([
     paint(new THREE.ConeGeometry(0.22, 0.55, 5, 1, true), CONIFER_CROWN, at(0.42)),
     paint(new THREE.ConeGeometry(0.16, 0.45, 5, 1, true), CONIFER_CROWN, at(0.775)),
-  ]);
+  ]));
 }
 const farBroadleafGeometry = (): THREE.BufferGeometry =>
-  merge([paint(new THREE.OctahedronGeometry(0.4, 0), BROADLEAF_CROWN, new THREE.Matrix4().makeTranslation(0, 0.6, 0))]);
+  faceted(merge([paint(new THREE.OctahedronGeometry(0.4, 0), BROADLEAF_CROWN, new THREE.Matrix4().makeTranslation(0, 0.6, 0))]));
 
 export interface Tree { x: number; z: number; y: number; height: number; width: number; yaw: number; conifer: boolean; shade: number }
 

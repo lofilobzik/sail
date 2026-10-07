@@ -24,3 +24,15 @@ export function merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
   merged.computeBoundingSphere();
   return merged;
 }
+
+/**
+ * Per-face normals for a merged, non-indexed geometry: every vertex of a triangle gets that triangle's
+ * normal, so the model looks faceted with ordinary lighting. This replaces `flatShading`, which guesses
+ * each pixel's normal from screen-space derivatives of the position and shimmers on faces only a few
+ * pixels across, such as far houses and trees.
+ */
+export function faceted(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
+  if (geometry.index) throw new Error('faceted: geometry must be non-indexed');
+  geometry.computeVertexNormals();
+  return geometry;
+}
