@@ -10,6 +10,7 @@ import { createBuoys } from './environment';
 import { SkyView } from './sky';
 import { GustMap } from './gustMap';
 import { WakeView } from './wake';
+import { NOT_REFLECTED, PlanarReflection } from './reflection';
 import { createWater, type WaterView } from './water';
 import { createLand, type LandView } from './land';
 import { Binoculars } from './binoculars';
@@ -18,6 +19,7 @@ import { NavigationView } from './navigation';
 import { RemoteBoatsView } from './remoteBoats';
 import type { RemotePose } from '../net/remote';
 
+const REFLECTION_EVERY = 2; // TUNING GUESS: frames between refreshes of the water's mirror (cost control)
 const GRID_CELL = 5; // TUNING GUESS: grid cell size, m (grid snaps to multiples of this)
 const GRID_CELLS = 80; // TUNING GUESS: grid cells per side
 const FOV_DEG = 85; // User-selected vertical cockpit field of view, degrees
@@ -72,6 +74,8 @@ export class SceneView {
   private readonly buoys = createBuoys();
   private readonly surface = createWaveSample();
   private readonly land: LandView;
+  private readonly reflection = new PlanarReflection();
+  private frameCount = 0;
 
   constructor(
     model: BoatModel, private readonly waves: WaveConfig, env: EnvironmentConfig,
@@ -95,6 +99,7 @@ export class SceneView {
     this.wake = new WakeView(model, this.boat.layout, env);
     this.water = createWater(waves, this.sky, this.gusts, sun, hemisphere, this.wake);
     this.scene.add(this.water.mesh);
+    this.water.useReflection(this.reflection.target.texture, this.reflection.textureMatrix);
 
     this.grid = new THREE.GridHelper(GRID_CELL * GRID_CELLS, GRID_CELLS, 0x6f9fbf, 0x4a7a9a);
     this.grid.position.y = 0.01;
@@ -110,10 +115,12 @@ export class SceneView {
     this.scene.add(this.remoteBoats.group);
 
     this.camera = new THREE.PerspectiveCamera(FOV_DEG, 1, 0.05, CAMERA_FAR);
+    this.camera.layers.enable(NOT_REFLECTED);
     this.camera.rotation.order = 'YXZ';
     this.boat.sailor.eye.add(this.camera);
     this.binoculars = new Binoculars(this.camera, FOV_DEG);
     this.outsideCamera = new THREE.PerspectiveCamera(FOV_DEG * 0.8, 1, 0.1, CAMERA_FAR);
+    this.outsideCamera.layers.enable(NOT_REFLECTED);
     this.navigation = new NavigationView(navigation, this.boat, this.camera, this.origin);
     // Raising the compass for the first time must not compile shaders or upload textures mid-frame.
     this.navigation.compass.prewarm(this.renderer, this.scene, this.camera);
@@ -184,6 +191,11 @@ export class SceneView {
     this.sky.update(pose.t, meanWind(this.wind));
     this.sky.follow(cam);
     this.navigation.update(this.mode === 'cockpit');
+    // The mirror is refreshed every other frame: its matrix maps world positions, so a frame-old image
+    // stays consistent with itself and only lags by the few centimetres the boat moved.
+    if (this.water.mesh.visible && this.frameCount++ % REFLECTION_EVERY === 0) {
+      this.reflection.render(this.renderer, this.scene, cam, [this.water.mesh, this.grid, this.sky.mesh]);
+    }
     this.renderer.render(this.scene, cam);
   }
 }

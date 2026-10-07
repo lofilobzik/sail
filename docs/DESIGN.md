@@ -206,6 +206,14 @@ fraction of a second and holds its position. Same idea for the sheet.
   ripple tilt otherwise streaks the reflected sky with white scratches (`GRAZING_*`). Ripples now fade
   at 14 to 7 samples per wavelength instead of 8 to 4. Constants are VISUAL ESTIMATE / TUNING GUESS.
   `?start=x,z[,heading]` places the boat anywhere offline to look at a shore or shoal.
+- **Planar reflection (visual only, `render/reflection.ts`):** the shore, houses, harbour, buoys and
+  boats mirror in the water. The scene is drawn again from the camera's image below the surface into a
+  target at 30 % of the screen size, clipped to what stands above sea level, without the sky dome, water or
+  grid, and refreshed every second frame (`REFLECTION_EVERY`; its matrix maps world positions, so an old
+  image stays consistent with itself). The water shader bends it with the surface normal and puts it
+  over the analytic sky reflection where its alpha says something is there. Trees sit on the
+  `NOT_REFLECTED` layer: drawn for the player's cameras, skipped in the mirror. Measured about 14.3 ms vs
+  13.0 ms without it at 2880x1454 (+1.2 ms; every frame instead of every other costs about +3 ms).
 - **Wake and bow wave (visual only):** the water shader adds a Kelvin wake (transverse and divergent
   waves, 19.47 degree cusp), a bow wave hugging the waterline, and turbulent foam behind the transom
   and on the bow crest. Only new bow emissions follow the foremost hull/sea contact using heave,

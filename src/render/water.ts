@@ -49,6 +49,9 @@ const CAPS_COVERAGE = 0.85; // fraction of the highest crests that break at full
 // Light scattered through thin crests toward a viewer looking at the sun.
 const SCATTER_COLOUR = 0x2a9a86;
 const SCATTER_GAIN = 0.45;
+// How far the surface normal bends the planar reflection, in reflection-texture units per unit of
+// slope (VISUAL ESTIMATE): enough to wobble the shore's image with the ripples, not to smear it.
+const REFLECTION_DISTORTION = 0.25;
 
 /**
  * Seabed elevation baked once from terrainGrid() into a single-channel half-float texture in
@@ -74,6 +77,8 @@ function createShallowsTexture(): { texture: THREE.DataTexture; bounds: THREE.Ve
 
 export interface WaterView {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
+  /** Uses the planar reflection target and its world-to-texture matrix (see reflection.ts). */
+  useReflection(texture: THREE.Texture, matrix: THREE.Matrix4): void;
   /** The patch is centred at render-local zero; origin stays in logical world coordinates. */
   update(origin: Readonly<Vec2>, t: number): void;
 }
@@ -169,6 +174,8 @@ export function createWater(
       },
     ]), wake.uniforms, sky.uniforms, gusts.uniforms, {
       // By reference: merge would clone the texture and upload it twice.
+      reflectionMap: { value: new THREE.DataTexture(new Uint8Array(4), 1, 1) },
+      reflectionMatrix: { value: new THREE.Matrix4() },
       shallowsTexture: { value: shallows.texture },
       shallowsBounds: { value: shallows.bounds },
       // Logical world position of render-local zero, for the world-anchored seabed lookup.
@@ -211,6 +218,8 @@ export function createWater(
       uniform vec3 scatterColour;
       uniform float waterTime;
       uniform float waveHeight;
+      uniform sampler2D reflectionMap;
+      uniform mat4 reflectionMatrix;
       uniform sampler2D shallowsTexture;
       uniform vec4 shallowsBounds; // world corner x, z; 1 / world width, 1 / world depth
       uniform vec2 renderOrigin;
@@ -269,6 +278,11 @@ export function createWater(
         // data/sky.json) so steep, weakly reflecting views skip the cloud noise.
         vec3 reflectedSky = skyRadiance(reflection, ${SKY.waterCloudOctaves}, 0.0,
           smoothstep(${SKY.waterCloudFresnelFrom}, ${SKY.waterCloudFresnelFull}, fresnel));
+        // Shore, boats and buoys mirrored in the surface, where the reflection pass drew something
+        // (it stores premultiplied colour over alpha 0), bent by the ripples.
+        vec4 mirrorCoord = reflectionMatrix * vec4(waterPosition.x, 0.0, waterPosition.z, 1.0);
+        vec4 mirror = texture2D(reflectionMap, mirrorCoord.xy / mirrorCoord.w + normal.xz * ${REFLECTION_DISTORTION.toFixed(2)});
+        reflectedSky = reflectedSky * (1.0 - mirror.a) + mirror.rgb;
         vec3 ambient = mix(hemisphereGround, hemisphereSky, normal.y * 0.5 + 0.5);
         // Shallows: one filtered fetch of the baked seabed, in logical world coordinates. Outside
         // the bake the sea is deep.
@@ -351,6 +365,10 @@ export function createWater(
   mesh.frustumCulled = false;
   return {
     mesh,
+    useReflection(texture, matrix) {
+      material.uniforms.reflectionMap!.value = texture;
+      material.uniforms.reflectionMatrix!.value = matrix;
+    },
     update(origin, t) {
       const u = material.uniforms;
       (u.sunDirection!.value as THREE.Vector3).copy(sun.position).sub(sun.target.position).normalize();
