@@ -1,7 +1,7 @@
 /**
  * Westcove Harbour's built parts (data/bay.json `harbour`): crisp paved slabs over the quay and the
- * breakwater mole (the 20 m terrain grid alone would round their edges), bollards and lamp posts along
- * the water edge, floating finger pontoons with a ramp down from the quay, and the shop and sheds
+ * breakwater mole (the 20 m terrain grid alone would round their edges), a boardwalk, street and plaza
+ * on the quay, fender piles and ladders down its face, bollards and lamp posts along the water edge, floating finger pontoons with a ramp down from the quay, and the shop and sheds
  * with painted signs on the faces toward the water. Everything is merged vertex-coloured geometry
  * except the signs, which are one small textured quad each. Sizes and colours are VISUAL ESTIMATE.
  */
@@ -24,6 +24,22 @@ const PONTOON_DECK = 0x8b7355;
 const PONTOON_FLOAT = 0x4d5a63;
 const PILE = 0x3d3a34;
 const DOOR = 0x2f3a40;
+// Quay dressing. Anything laid on the slab stands at least OVERLAY_RISE proud of it, so it never
+// z-fights with the paving from across the bay.
+const OVERLAY_RISE = 0.1; // m
+const BOARDWALK_WIDTH = 14; // m of timber deck along the quay's seaward edge
+const BOARD_WIDTH = 2.4; // m per run of planks; alternate runs are a shade apart
+const DECK = [0x8b7355, 0x7c6650];
+const STREET_WIDTH = 8; // m of asphalt in front of the sheds, the full length of the quay
+const STREET_SETBACK = 5; // m between the sheds' fronts and the street
+const ASPHALT = 0x55585a;
+const PLAZA = 0xa7a296; // pale stone in front of the Sail Loft
+const PLAZA_MARGIN = 6; // m the plaza reaches past the Sail Loft at each end
+const FENDER = 0x4a3f33; // tarred timber piles along the quay face
+const FENDER_SPACING = 3; // m
+const FENDER_FOOT = -1.5; // m: piles reach this far below the water
+const LADDER = 0x5a5f63; // galvanised steel
+const LADDER_SPACING = 32; // m along the quay face
 const SIGN_BOARD = { width: 0.6, height: 0.17 }; // fractions of the building's long side and wall height
 const EAVE_OVERHANG = 0.5; // m
 
@@ -86,6 +102,50 @@ function pontoon(r: Rect, quayTop: number): THREE.BufferGeometry[] {
   const run = 8, drop = quayTop - PONTOON_FREEBOARD, slope = Math.atan2(drop, run);
   const ramp = new THREE.BoxGeometry(Math.hypot(run, drop), 0.12, d * 0.8);
   parts.push(paint(ramp, PONTOON_DECK, at(r.x0 - run / 2 - 0.1, quayTop - drop / 2, z).multiply(new THREE.Matrix4().makeRotationZ(slope))));
+  return parts;
+}
+
+/** A flat deck or paving patch, OVERLAY_RISE proud of the slab top. */
+function overlay(x0: number, z0: number, x1: number, z1: number, colour: number, slabTop: number): THREE.BufferGeometry {
+  return box(x1 - x0, OVERLAY_RISE, z1 - z0, colour, (x0 + x1) / 2, slabTop + OVERLAY_RISE / 2, (z0 + z1) / 2);
+}
+
+/**
+ * The quay's surface and seaward face: a timber boardwalk along the water, a street in front of the
+ * sheds, a pale plaza before the Sail Loft, and tarred fender piles with steel ladders down the face.
+ */
+function quayDressing(quay: Rect, mole: Rect, slabTop: number, buildings: readonly Building[]): THREE.BufferGeometry[] {
+  const parts: THREE.BufferGeometry[] = [];
+  const edge = quay.x1 - COPING_WIDTH;
+  // Boardwalk: runs of planks across the quay's seaward strip, alternating in shade.
+  const deckX0 = edge - BOARDWALK_WIDTH;
+  for (let z = quay.z0 + COPING_WIDTH, i = 0; z < mole.z0; z += BOARD_WIDTH, i++) {
+    parts.push(overlay(deckX0, z, edge, Math.min(z + BOARD_WIDTH, mole.z0), DECK[i % 2]!, slabTop));
+  }
+  // Street in front of the sheds, and the plaza before the Sail Loft between street and boardwalk.
+  const front = Math.max(...buildings.map((b) => b.x + b.width / 2));
+  const streetX0 = front + STREET_SETBACK;
+  parts.push(overlay(streetX0, quay.z0 + COPING_WIDTH, streetX0 + STREET_WIDTH, quay.z1 - COPING_WIDTH, ASPHALT, slabTop));
+  const loft = buildings.find((b) => b.name === 'Sail Loft');
+  if (loft) {
+    parts.push(overlay(streetX0 + STREET_WIDTH, loft.z - loft.length / 2 - PLAZA_MARGIN, deckX0, loft.z + loft.length / 2 + PLAZA_MARGIN, PLAZA, slabTop));
+  }
+  // Fender piles down the quay face and along the mole's basin side, with a waler near the top.
+  const pileHeight = slabTop + 0.25 - FENDER_FOOT;
+  for (let z = quay.z0 + 1.5; z < mole.z0; z += FENDER_SPACING) {
+    parts.push(box(0.32, pileHeight, 0.32, FENDER, quay.x1 + 0.16, FENDER_FOOT + pileHeight / 2, z));
+  }
+  for (let x = mole.x0 + 1.5; x < mole.x1; x += FENDER_SPACING) {
+    parts.push(box(0.32, pileHeight, 0.32, FENDER, x, FENDER_FOOT + pileHeight / 2, mole.z0 - 0.16));
+  }
+  parts.push(box(0.2, 0.3, mole.z0 - quay.z0, FENDER, quay.x1 + 0.42, slabTop - 0.5, (quay.z0 + mole.z0) / 2));
+  parts.push(box(mole.x1 - mole.x0, 0.3, 0.2, FENDER, (mole.x0 + mole.x1) / 2, slabTop - 0.5, mole.z0 - 0.42));
+  // Ladders between the pontoon gangways: two rails and a rung every 30 cm.
+  for (let z = quay.z0 + LADDER_SPACING / 2; z < mole.z0 - 4; z += LADDER_SPACING) {
+    const x = quay.x1 + 0.38, bottom = -1, top = slabTop + 0.9;
+    for (const dz of [-0.22, 0.22]) parts.push(box(0.06, top - bottom, 0.06, LADDER, x, (top + bottom) / 2, z + dz));
+    for (let y = bottom + 0.3; y < slabTop; y += 0.3) parts.push(box(0.05, 0.05, 0.44, LADDER, x, y, z));
+  }
   return parts;
 }
 
@@ -162,6 +222,7 @@ export function createHarbour(structures: THREE.Material): HarbourMeshes {
   parts.push(...waterEdge([mole.x0 + 10, mole.z0 + COPING_WIDTH], [mole.x1 - 14, mole.z0 + COPING_WIDTH], [0, 1], quayTop));
   for (const p of h.pontoons) parts.push(...pontoon(p, quayTop));
   const buildings = h.buildings as Building[];
+  parts.push(...quayDressing(quay, mole, quay.height + SLAB_LIFT, buildings));
   for (const b of buildings) parts.push(...building(b, quayTop));
   const mesh = new THREE.Mesh(merge(parts), structures);
   mesh.name = 'harbour';
