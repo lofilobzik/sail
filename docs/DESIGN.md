@@ -474,4 +474,11 @@ capsize, planing and stronger wind, third-person camera, cruising / management l
   Tune by feel for now; measured response would be needed for calibration.
 - Bay: grounding feel (push/damping are TUNING GUESS), chart framing (buoys plus landmarks in use,
   others pointed at from the edge) and landmark visibility (the spire is small from mid-bay) await
-  player feedback. The HUD (H) and the console say whether reversed depth is actually in effect (it needs EXT_clip_control; three falls back silently), and `?near=<m>` moves the near plane to test far depth precision. The scene renders into a target with a 32-bit float depth buffer and 4x MSAA, then is copied to the canvas (`render/scene.ts` `frame`): the canvas's own depth buffer is fixed-point, where reversed depth gains nothing, and window panes and far houses z-fought.
+  player feedback. Depth is split in two passes (`render/scene.ts`): everything beyond 2 m is drawn with the near
+  plane at 2 m, then depth is cleared and everything within 2 m (hands, compass, chart, near hull and a small
+  water patch under the camera) is drawn again with the near plane at 5 cm, without the sky dome or the colour
+  background (three clears colour whenever the background is a colour). One depth range from 5 cm to 30 km
+  cannot be precise far away in a fixed-point depth buffer, and reversed depth only helps with a float one
+  (Firefox has no EXT_clip_control at all; a float-depth render target fixed it in Chrome but was slow): window
+  panes 3 cm proud of their walls z-fought into jagged shapes and far houses and trees flickered against the
+  hillside. The HUD (H) and the console say whether reversed depth is in effect.

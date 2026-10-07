@@ -27,9 +27,12 @@ const FOV_DEG = 85; // User-selected vertical cockpit field of view, degrees
 // at the screen edges, so it meets the horizon without a seam.
 const FOG_NEAR = 0; // m
 const FOG_FAR = 9000; // m
-// Beyond the water mesh corners (20 km half-extent) and the sky dome (25 km). A reversed depth
-// buffer keeps the shoreline free of z-fighting at this near/far ratio.
+// Beyond the water mesh corners (20 km half-extent) and the sky dome (25 km). The split-depth passes in
+// render keep the far shore free of z-fighting at this range.
 const CAMERA_FAR = 30000; // m
+// Split depth (see render): the far pass's near plane, m, and how far the near pass reaches past it.
+const NEAR_SPLIT = 2; // TUNING GUESS: everything the sailor holds or touches is closer
+const SPLIT_OVERLAP = 1.02;
 const MAX_PIXEL_RATIO = 2; // quality cap for high-DPI laptop screens
 const OUTSIDE_FOV_DEG = FOV_DEG * 0.8; // the orbit camera sees a little narrower than the cockpit
 const OUTSIDE_DISTANCE = 9; // visual estimate: outside camera distance from the boat, m
@@ -78,49 +81,31 @@ export class SceneView {
   private readonly buoys = createBuoys();
   private readonly surface = createWaveSample();
   private readonly land: LandView;
-  /**
-   * The scene is drawn into this target, not straight to the canvas: its depth buffer is 32-bit float,
-   * which the reversed depth mapping needs to be precise far away. The canvas's own depth buffer is
-   * fixed-point (24-bit): there, reversed depth gains nothing, and with the near plane at 5 cm depth
-   * resolves only about 0.3 m at 500 m and 19 m at 4 km, so window panes 3 cm proud of a wall
-   * z-fought into jagged shapes and far houses and low trees flickered against the hillside behind
-   * them (three's reversed-depth example uses a float depth texture for the same reason). 4x MSAA
-   * replaces the canvas antialiasing; depth is never resolved because nothing reads it.
-   */
-  private readonly frame = (() => {
-    const target = new THREE.WebGLRenderTarget(1, 1, {
-      samples: 4,
-      colorSpace: THREE.SRGBColorSpace,
-      depthTexture: new THREE.DepthTexture(1, 1, THREE.FloatType),
-    });
-    target.resolveDepthBuffer = false;
-    return target;
-  })();
-  /** A full-screen quad that copies `frame` to the canvas. */
-  private readonly present = (() => {
-    const scene = new THREE.Scene();
-    const quad = new THREE.Mesh(
-      new THREE.PlaneGeometry(2, 2),
-      new THREE.MeshBasicMaterial({ map: this.frame.texture, depthTest: false, depthWrite: false, toneMapped: false }),
-    );
-    quad.frustumCulled = false;
-    scene.add(quad);
-    return { scene, camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1) };
-  })();
+  /** The far and near passes' cameras (see render); never in the scene graph, placed from the real camera. */
+  private readonly farPass = SceneView.passCameraObject();
+  private readonly nearPass = SceneView.passCameraObject();
+
+  private static passCameraObject(): THREE.PerspectiveCamera {
+    const camera = new THREE.PerspectiveCamera();
+    camera.matrixAutoUpdate = false;
+    camera.matrixWorldAutoUpdate = false;
+    return camera;
+  }
+
+  /** Drawing buffer height, px: the detail fade measures on-screen size against it. */
+  private bufferHeight = 1;
 
   constructor(
     model: BoatModel, private readonly waves: WaveConfig, env: EnvironmentConfig,
     private readonly wind: WindConfig, navigation: Navigation,
   ) {
-    // The canvas needs no depth or antialiasing of its own: the scene is drawn into `frame` (below) and
-    // copied to the canvas.
-    this.renderer = new THREE.WebGLRenderer({ antialias: false, depth: false, reversedDepthBuffer: true });
-    // Count the scene's triangles, not just the last pass (the copy to the canvas).
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, reversedDepthBuffer: true });
+    // The frame is drawn in two passes (see render): count both.
     this.renderer.info.autoReset = false;
     // three falls back to the standard depth mapping, with only a console warning, when the browser
     // lacks EXT_clip_control; say plainly which one is in use.
     this.reversedDepth = this.renderer.state.buffers.depth.getReversed();
-    console.info(`depth buffer: 32-bit float, ${this.reversedDepth ? 'reversed' : 'STANDARD (no EXT_clip_control): far depth is imprecise'}`);
+    console.info(`depth: split at ${NEAR_SPLIT} m, ${this.reversedDepth ? 'reversed' : 'standard (no EXT_clip_control)'}`);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     document.body.appendChild(this.renderer.domElement);
     this.scene.fog = new THREE.Fog(0xffffff, FOG_NEAR, FOG_FAR); // colour set by the sky
@@ -137,7 +122,7 @@ export class SceneView {
     this.boat = createBoatMesh(model);
     this.wake = new WakeView(model, this.boat.layout, env);
     this.water = createWater(waves, this.sky, this.gusts, sun, hemisphere, this.wake);
-    this.scene.add(this.water.mesh);
+    this.scene.add(this.water.mesh, this.water.nearMesh);
 
     this.grid = new THREE.GridHelper(GRID_CELL * GRID_CELLS, GRID_CELLS, 0x6f9fbf, 0x4a7a9a);
     this.grid.position.y = 0.01;
@@ -159,10 +144,7 @@ export class SceneView {
     this.outsideCamera = new THREE.PerspectiveCamera(OUTSIDE_FOV_DEG, 1, 0.1, CAMERA_FAR);
     this.navigation = new NavigationView(navigation, this.boat, this.camera, this.origin);
     // Raising the compass for the first time must not compile shaders or upload textures mid-frame.
-    // Shaders depend on the render target, so compile them for the frame they will draw into.
-    this.renderer.setRenderTarget(this.frame);
     this.navigation.compass.prewarm(this.renderer, this.scene, this.camera);
-    this.renderer.setRenderTarget(null);
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -172,25 +154,11 @@ export class SceneView {
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.renderer.setSize(w, h);
-    const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
-    this.frame.setSize(size.x, size.y);
+    this.bufferHeight = this.renderer.getDrawingBufferSize(new THREE.Vector2()).y;
     for (const cam of [this.camera, this.outsideCamera]) {
       cam.aspect = w / h;
       cam.updateProjectionMatrix();
     }
-  }
-
-  /**
-   * Checking aid (?near=): move both cameras' near plane, m. A deeper near plane buys depth precision
-   * far away, so if far z-fighting stops at ?near=1 the depth buffer is the culprit; cockpit parts
-   * closer than this (hands, compass, chart) are clipped meanwhile.
-   */
-  setNear(near: number): void {
-    for (const cam of [this.camera, this.outsideCamera]) {
-      cam.near = near;
-      cam.updateProjectionMatrix();
-    }
-    console.info(`camera near plane: ${near} m`);
   }
 
   /** Checking aid (?detailfade=0): draw windows and doors at every size instead of fading them out. */
@@ -266,10 +234,49 @@ export class SceneView {
     this.sky.follow(cam);
     this.navigation.update(this.mode === 'cockpit');
     this.renderer.info.reset();
-    setDetailScale(this.frame.height, cam.fov);
-    this.renderer.setRenderTarget(this.frame);
-    this.renderer.render(this.scene, cam);
-    this.renderer.setRenderTarget(null);
-    this.renderer.render(this.present.scene, this.present.camera);
+    setDetailScale(this.bufferHeight, cam.fov);
+    // Split depth: the depth buffer cannot hold 5 cm to 30 km precisely (the canvas's is fixed-point;
+    // reversed depth only helps with a float one, and Firefox has no EXT_clip_control). So the scene is
+    // drawn beyond NEAR_SPLIT first, with the near plane pushed out there, which is precise enough that
+    // far houses, trees and window panes stop z-fighting; then the depth is cleared and everything
+    // within NEAR_SPLIT (hands, compass, chart, the near hull and water) is drawn again on top with the
+    // usual near plane. The sky dome is skipped there: it sits on the far plane and would cover the
+    // first pass. A little overlap hides the seam.
+    // Each pass has its own camera object: three re-uploads a projection only when the camera changes.
+    this.scene.updateMatrixWorld();
+    cam.updateMatrixWorld();
+    this.renderer.render(this.scene, this.passCamera(this.farPass, cam, NEAR_SPLIT, cam.far));
+    // A colour background makes three clear the colour on every render, autoClear or not: drop it
+    // for the near pass so the far pass's picture survives.
+    const background = this.scene.background;
+    this.scene.background = null;
+    this.sky.mesh.visible = false;
+    // Only the water near the camera can be within the near pass's reach: draw a small patch of it.
+    const waterVisible = this.water.mesh.visible;
+    this.water.mesh.visible = false;
+    this.water.nearMesh.visible = waterVisible;
+    const eye = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
+    this.water.placeNear(eye.x, eye.z);
+    this.renderer.autoClear = false;
+    this.renderer.clearDepth();
+    this.renderer.render(this.scene, this.passCamera(this.nearPass, cam, cam.near, NEAR_SPLIT * SPLIT_OVERLAP));
+    this.renderer.autoClear = true;
+    this.sky.mesh.visible = true;
+    this.water.mesh.visible = waterVisible;
+    this.water.nearMesh.visible = false;
+    this.scene.background = background;
+  }
+
+  /** `pass` placed and aimed like `cam`, with its own near and far planes. */
+  private passCamera(pass: THREE.PerspectiveCamera, cam: THREE.PerspectiveCamera, near: number, far: number): THREE.PerspectiveCamera {
+    pass.matrixWorld.copy(cam.matrixWorld);
+    pass.matrixWorldInverse.copy(cam.matrixWorld).invert();
+    pass.fov = cam.fov;
+    pass.aspect = cam.aspect;
+    pass.zoom = cam.zoom;
+    pass.near = near;
+    pass.far = far;
+    pass.updateProjectionMatrix();
+    return pass;
   }
 }

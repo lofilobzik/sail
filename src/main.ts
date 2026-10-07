@@ -212,7 +212,6 @@ window.addEventListener('keydown', (e) => {
 // Checking aids: ?view=outside&look=<yawDeg>,<pitchDeg> sets the initial view without pointer lock.
 if (opts.outsideView) view.mode = 'outside';
 if (!opts.water) view.setWaterVisible(false);
-if (opts.near !== null) view.setNear(opts.near);
 if (!opts.detailFade) view.setDetailFade(false);
 if (opts.look) {
   look.yaw = opts.look.yawDeg * DEG;

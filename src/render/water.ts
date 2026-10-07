@@ -74,8 +74,30 @@ function createShallowsTexture(): { texture: THREE.DataTexture; bounds: THREE.Ve
 
 export interface WaterView {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
+  /**
+   * A small patch of the same water for the split-depth near pass (scene.ts), which only needs the
+   * water within a couple of metres of the camera: redrawing the whole mesh there would run the wave
+   * vertex shader on every vertex again. Place it under the camera with `placeNear`; hidden otherwise.
+   */
+  nearMesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
+  /** Centres `nearMesh` under the render-local point (x, z), snapped to its cells so the waves do not swim. */
+  placeNear(x: number, z: number): void;
   /** The patch is centred at render-local zero; origin stays in logical world coordinates. */
   update(origin: Readonly<Vec2>, t: number): void;
+}
+
+const NEAR_PATCH_SIZE = 8; // m: comfortably more than twice the near pass's 2 m reach
+const NEAR_PATCH_CELL = 0.2; // m: the inner patch's cell size (data/waves.json waterInnerSize / waterInnerSegments)
+
+/** A uniform grid of NEAR_PATCH_CELL cells, NEAR_PATCH_SIZE across, centred at zero. */
+function createNearWaterGrid(): THREE.BufferGeometry {
+  const cells = Math.round(NEAR_PATCH_SIZE / NEAR_PATCH_CELL);
+  const geometry = new THREE.PlaneGeometry(NEAR_PATCH_SIZE, NEAR_PATCH_SIZE, cells, cells).rotateX(-Math.PI / 2);
+  const count = geometry.getAttribute('position').count;
+  geometry.setAttribute('cellFootprint', new THREE.BufferAttribute(new Float32Array(count * 2).fill(NEAR_PATCH_CELL), 2));
+  geometry.deleteAttribute('normal');
+  geometry.deleteAttribute('uv');
+  return geometry;
 }
 
 /** Uniform near-boat cells; smoothly growing outer cells cover the fog horizon. */
@@ -349,8 +371,15 @@ export function createWater(
   const mesh = new THREE.Mesh(createWaterGrid(), material);
   // Shader displacement and a recentered horizon invalidate CPU frustum bounds.
   mesh.frustumCulled = false;
+  const nearMesh = new THREE.Mesh(createNearWaterGrid(), material);
+  nearMesh.frustumCulled = false;
+  nearMesh.visible = false;
   return {
     mesh,
+    nearMesh,
+    placeNear(x, z) {
+      nearMesh.position.set(Math.round(x / NEAR_PATCH_CELL) * NEAR_PATCH_CELL, 0, Math.round(z / NEAR_PATCH_CELL) * NEAR_PATCH_CELL);
+    },
     update(origin, t) {
       const u = material.uniforms;
       (u.sunDirection!.value as THREE.Vector3).copy(sun.position).sub(sun.target.position).normalize();
