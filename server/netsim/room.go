@@ -15,8 +15,7 @@ import (
 
 // Start of every boat and every reset, mirrored from src/main.ts resetBoat.
 const (
-	StartHeadingDeg = 90 // TUNING GUESS (main.ts START_HEADING_DEG): beam reach for the default wind from 0°
-	StartSpeed      = 1  // TUNING GUESS (main.ts START_SPEED): initial boat speed, m/s
+	StartSpeed = 1 // TUNING GUESS (main.ts START_SPEED): initial boat speed, m/s
 )
 
 const (
@@ -417,7 +416,7 @@ func (r *Room) reset(m *member) {
 // spawn is the start state at the first spawn slot with no sailing boat other than self within
 // spawnSpacing / 2.
 func (r *Room) spawn(self *roomBoat) sim.BoatState {
-	s := sim.InitialState(StartHeadingDeg*math.Pi/180, StartSpeed)
+	s := sim.InitialState(sim.Bay.Harbour.Departure.HeadingDeg*sim.DEG, StartSpeed)
 	s.T = r.time()
 	slot := r.slots[len(r.slots)-1] // unreachable: a boat blocks at most one slot and there are maxBoats
 	for _, p := range r.slots {
@@ -437,7 +436,7 @@ func (r *Room) spawn(self *roomBoat) sim.BoatState {
 	return s
 }
 
-// spawnSlots is the first n points of the spawnSpacing grid around the departure point (0, 0),
+// spawnSlots is the first n points of the spawnSpacing grid around the harbour departure point,
 // nearest first; ties in the order (0, +), (0, -), (+, 0), (-, 0), then (+, +), (+, -), (-, +), (-, -).
 func spawnSlots(n int) []sim.Vec2 {
 	extent := int(math.Ceil(math.Sqrt(float64(n)))) // the n nearest grid points lie within this many steps
@@ -454,9 +453,10 @@ func spawnSlots(n int) []sim.Vec2 {
 		}
 	}
 	slices.SortStableFunc(cells, func(a, b cell) int { return (a.i*a.i + a.j*a.j) - (b.i*b.i + b.j*b.j) })
+	dep := sim.Bay.Harbour.Departure
 	slots := make([]sim.Vec2, n)
 	for k := range slots {
-		slots[k] = sim.Vec2{X: float64(cells[k].i) * spawnSpacing, Z: float64(cells[k].j) * spawnSpacing}
+		slots[k] = sim.Vec2{X: dep.X + float64(cells[k].i)*spawnSpacing, Z: dep.Z + float64(cells[k].j)*spawnSpacing}
 	}
 	return slots
 }

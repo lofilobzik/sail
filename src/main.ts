@@ -20,12 +20,18 @@ import { LookGuide } from './ui/lookGuide';
 import { Menu } from './ui/menu';
 import { Preferences } from './ui/prefs';
 import { SKY } from './render/skyModel';
+import { BAY } from './sim/terrain';
 
-const START_HEADING_DEG = 90; // TUNING GUESS: beam reach for the default wind from 0°
 const START_SPEED = 1; // TUNING GUESS: initial boat speed, m/s
 const FRAME_SMOOTHING = 0.05; // exponential smoothing of the frame-time readout
 const BENCH_FRAMES = 200; // ?perf=1: frames rendered back to back, each synchronised with a 1-pixel readback
 const BENCH_DELAY_MS = 2000;
+
+/** Offline start: afloat in Westcove Harbour, bow where data/bay.json `harbour.departure` points it (a beam reach for the default wind from 0°). */
+function harbourStart(): BoatState {
+  const { x, z, headingDeg } = BAY.harbour.departure;
+  return { ...initialState(headingDeg * DEG, START_SPEED), x, z };
+}
 
 const boat = buildBoat();
 const params = new URLSearchParams(location.search);
@@ -83,12 +89,12 @@ function resetBoat(start: BoatState): void {
   input.reset();
   diagnostics = evaluate(curr, input.update(0), boat, cfg);
 }
-resetBoat(server ? server.spawn : initialState(START_HEADING_DEG * DEG, START_SPEED));
+resetBoat(server ? server.spawn : harbourStart());
 // The first launch is a departure, not a restart: the reset's "Dead reckoning restarted" note is for respawns.
 navigation.message = '';
 
 // Server mode: respawning resets the server's boat; the local one follows on the next snapshot.
-const respawn = server ? () => server.reset() : () => resetBoat(initialState(START_HEADING_DEG * DEG, START_SPEED));
+const respawn = server ? () => server.reset() : () => resetBoat(harbourStart());
 const overlay = new DebugOverlay(cfg, respawn, server !== null);
 let showNavigationTruth = false;
 overlay.addToggle('navigation: show true position on chart', false, (v) => { showNavigationTruth = v; });

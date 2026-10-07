@@ -61,6 +61,15 @@ type BayParameters struct {
 		Color  string  `json:"color"`
 		Band   string  `json:"band"`
 	} `json:"landmarks"`
+	Harbour struct {
+		Departure struct {
+			X          float64 `json:"x"`
+			Z          float64 `json:"z"`
+			HeadingDeg float64 `json:"headingDeg"`
+		} `json:"departure"`
+		Reclaimed []HarbourRect `json:"reclaimed"`
+		Dredged   []HarbourRect `json:"dredged"`
+	} `json:"harbour"`
 	Grounding struct {
 		PushStiffness  float64 `json:"pushStiffness"`
 		Damping        float64 `json:"damping"`
@@ -68,6 +77,18 @@ type BayParameters struct {
 		MaxPenetration float64 `json:"maxPenetration"`
 		GradientStep   float64 `json:"gradientStep"`
 	} `json:"grounding"`
+}
+
+// HarbourRect is one rectangle of Westcove Harbour (TS HarbourRect). Height is the flat level of a
+// reclaimed rectangle, Depth the least depth of a dredged one; Edge is the blend width outside it, m.
+type HarbourRect struct {
+	X0     float64 `json:"x0"`
+	Z0     float64 `json:"z0"`
+	X1     float64 `json:"x1"`
+	Z1     float64 `json:"z1"`
+	Edge   float64 `json:"edge"`
+	Height float64 `json:"height"`
+	Depth  float64 `json:"depth"`
 }
 
 // Bay is data/bay.json. Read-only.
@@ -208,6 +229,27 @@ func profile(d, hillHeight, hillRise, x, z float64) float64 {
 	return beachPart + hills
 }
 
+// rectWeight is 1 inside the rectangle, easing (smoothstep) to 0 over Edge metres outside it.
+func rectWeight(r *HarbourRect, x, z float64) float64 {
+	dx, dz := max(r.X0-x, 0, x-r.X1), max(r.Z0-z, 0, z-r.Z1)
+	t := min(math.Sqrt(dx*dx+dz*dz)/r.Edge, 1)
+	return 1 - t*t*(3-2*t)
+}
+
+// harbourHeight is Westcove Harbour (data/bay.json harbour): the basin is deepened, then the quay,
+// mole and terrace are raised or cut to their flat height.
+func harbourHeight(h, x, z float64) float64 {
+	for i := range Bay.Harbour.Dredged {
+		d := &Bay.Harbour.Dredged[i]
+		h += (min(h, -d.Depth) - h) * rectWeight(d, x, z)
+	}
+	for i := range Bay.Harbour.Reclaimed {
+		r := &Bay.Harbour.Reclaimed[i]
+		h += (r.Height - h) * rectWeight(r, x, z)
+	}
+	return h
+}
+
 // TerrainHeight is the elevation above mean sea level, m (negative = depth). Deterministic; cheap
 // enough per physics substep.
 func TerrainHeight(x, z float64) float64 {
@@ -226,7 +268,7 @@ func TerrainHeight(x, z float64) float64 {
 		r2 := (math.Pow(x-s.X, 2) + math.Pow(z-s.Z, 2)) / (s.Radius * s.Radius)
 		h = max(h, -maxDepth+(maxDepth-s.TopDepth)*math.Exp(-r2))
 	}
-	return h
+	return harbourHeight(h, x, z)
 }
 
 // TerrainGradient is the horizontal gradient of the elevation (finite difference), per metre,

@@ -1,5 +1,5 @@
 /**
- * The bay's land: terrain, trees, houses and towns, and the four landmarks, built once at startup
+ * The bay's land: terrain, trees, houses and towns, Westcove Harbour and the landmarks, built once at startup
  * from sim/terrain.ts `terrainGrid()` and data/bay.json. Everything is stored in logical world
  * coordinates inside one group that is rebased with the floating origin each frame, like the buoys.
  * Land fogs toward the sky horizon (skyFog.ts) and draws before the water, so hills hide water
@@ -10,6 +10,7 @@ import { terrainGrid } from '../../sim/terrain';
 import type { Vec2 } from '../../sim/frames';
 import type { SkyView } from '../sky';
 import { Footprints, waterDistance } from './ground';
+import { createHarbour } from './harbour';
 import { createHouseMeshes, placeHouses } from './houses';
 import { createLandmarks } from './landmarks';
 import { fogTowardSky } from './skyFog';
@@ -42,11 +43,16 @@ export function createLand(sky: SkyView): LandView {
   for (const h of houses) plots.add(h.x, h.z, 0.5 * Math.hypot(h.length, h.width));
   const trees = placeTrees(grid, shore, plots);
 
+  const harbour = createHarbour(structures);
+  for (const sign of harbour.signs) fogTowardSky(sign.material as THREE.MeshStandardMaterial, sky);
+
   group.add(
     ...createTerrainMeshes(grid, ground),
     ...createTreeMeshes(trees, foliage),
     ...createHouseMeshes(houses, buildings),
     ...createLandmarks(grid, structures),
+    harbour.structures,
+    ...harbour.signs,
   );
   group.traverse((o) => { o.renderOrder = LAND_RENDER_ORDER; });
 

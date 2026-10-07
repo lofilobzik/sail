@@ -8,6 +8,13 @@ function note(id: number, markId: string, from = { x: 0, z: 0 }, t = 0): Observa
   return { id, markId, bearing: worldToBearing(mark.x - from.x, mark.z - from.z), t };
 }
 
+/** A navigator departing from (0, 0): these tests check the maths around the origin, wherever the game starts. */
+function fromOrigin(): Navigation {
+  const nav = new Navigation();
+  nav.reset({ x: 0, z: 0, t: 0 });
+  return nav;
+}
+
 /** Step the navigation model through simulated time. */
 function run(nav: Navigation, seconds: number, speed = 2, dt = 0.1): void {
   const steps = Math.round(seconds / dt);
@@ -33,14 +40,14 @@ function track(nav: Navigation, start: number, rate: number, seconds: number, dt
 
 describe('timed readings', () => {
   it('shows no motion estimate until course and speed have been read', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     run(nav, 30);
     expect(nav.velocity).toBeNull();
     expect(nav.plotted).toMatchObject({ x: 0, z: 0, t: 0 });
   });
 
   it('takes the wake reading only after it has been watched long enough, and remembers its time', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     nav.setAstern(true);
     nav.beginReading('speed');
     run(nav, NAVIGATION.timing.speedRead - 0.5, 2.5);
@@ -53,7 +60,7 @@ describe('timed readings', () => {
   });
 
   it('only judges the wake while looking astern, and the ring starts over when the sailor turns away', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     nav.beginReading('speed');
     run(nav, 5, 2);
     expect(nav.speed).toBeNull();
@@ -69,7 +76,7 @@ describe('timed readings', () => {
   });
 
   it('calls a remembered speed old after a couple of minutes', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     nav.setAstern(true);
     nav.beginReading('speed');
     run(nav, NAVIGATION.timing.speedRead + 0.2, 2);
@@ -79,14 +86,14 @@ describe('timed readings', () => {
   });
 
   it('records the bearing in view at the end of a steady hold', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     sight(nav, 40 * DEG);
     expect(nav.observations).toHaveLength(1);
     expect(nav.observations[0]!.bearing / DEG).toBeCloseTo(40, 6);
   });
 
   it('restarts when the compass sweeps off the mark or points at nothing, and a released hold records nothing', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     nav.beginReading('bearing');
     track(nav, 10 * DEG, 0, 2);
     track(nav, 10 * DEG + 12 * DEG, 0, 0.1); // 12 degrees in one step: a sweep, not a hold
@@ -100,7 +107,7 @@ describe('timed readings', () => {
   });
 
   it('lets a slow track on a mark finish and records its recent mean direction', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     const rate = 3 * DEG; // the boat is swinging and the eye follows the buoy: the mean moves with it
     nav.beginReading('bearing');
     track(nav, 100 * DEG, rate, NAVIGATION.timing.bearingRead + 0.1);
@@ -111,7 +118,7 @@ describe('timed readings', () => {
   });
 
   it('averages out the rocking of the boat in waves', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     nav.beginReading('bearing');
     const steps = Math.round((NAVIGATION.timing.bearingRead + 0.1) / 0.1);
     for (let i = 1; i <= steps; i++) {
@@ -123,7 +130,7 @@ describe('timed readings', () => {
   });
 
   it('tracks smoothly across north', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     nav.beginReading('bearing');
     track(nav, 358 * DEG, 2 * DEG, NAVIGATION.timing.bearingRead + 0.1);
     expect(nav.observations).toHaveLength(1);
@@ -144,41 +151,41 @@ describe('timed readings', () => {
   }
 
   it('names the mark under the crosshair as the eye reads it, while the bearing stays the compass\'s', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     holdWith(nav, () => 'NE');
     expect(nav.observations[0]!.markId).toBe('NE');
     expect(nav.observations[0]!.bearing / DEG).toBeCloseTo(50, 6);
   });
 
   it('forgives the rocking boat taking the crosshair off the mark for part of the hold', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     holdWith(nav, (i) => (i % 5 < 3 ? 'E' : i % 5 === 3 ? 'N' : null)); // E 60%, N 20%, nothing 20%
     expect(nav.observations[0]!.markId).toBe('E');
   });
 
   it('names nothing when the crosshair was on a mark for too little of the hold', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     holdWith(nav, (i) => (i % 10 === 0 ? 'E' : null));
     expect(nav.observations).toHaveLength(1);
     expect(nav.observations[0]!.markId).toBeNull();
   });
 
   it('takes a bow bearing as the remembered course, ahead of any mark in line, and leaves no note', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     holdWith(nav, () => 'N', () => true);
     expect(nav.course?.value).toBeCloseTo(50 * DEG, 6);
     expect(nav.observations).toHaveLength(0);
   });
 
   it('does not take the course from a bow that was only briefly in line', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     holdWith(nav, () => 'S', (i) => i % 3 === 0);
     expect(nav.course).toBeNull();
     expect(nav.observations[0]!.markId).toBe('S');
   });
 
   it('plots the newest named note of each mark taken since the last plot, skipping untagged, old and plotted ones', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     run(nav, 1);
     nav.record(0); nav.identify(1, 'N');
     run(nav, 1);
@@ -202,7 +209,7 @@ describe('timed readings', () => {
   });
 
   it('keeps a pencil track of every plotted position and caps its length', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     nav.course = { value: Math.PI / 2, t: 0 };
     nav.speed = { value: 2, t: 0 };
     expect(nav.track).toEqual([{ x: 0, z: 0, t: 0, radius: NAVIGATION.accuracy.departure }]);
@@ -218,7 +225,7 @@ describe('timed readings', () => {
   });
 
   it('pauses pencil work while the chart is out of view and resumes where it left off', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     nav.course = { value: 0, t: 0 };
     nav.speed = { value: 1, t: 0 };
     nav.beginPlot('leg');
@@ -233,7 +240,7 @@ describe('timed readings', () => {
   });
 
   it('keeps timed wake readings running while the chart is out of view', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     nav.setLooking(false);
     nav.setAstern(true);
     nav.beginReading('speed');
@@ -242,7 +249,7 @@ describe('timed readings', () => {
   });
 
   it('turns a note taken along the bow into the remembered course', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     sight(nav, 90 * DEG);
     nav.assignCourse(1);
     expect(nav.course?.value).toBeCloseTo(Math.PI / 2, 6);
@@ -252,7 +259,7 @@ describe('timed readings', () => {
 
 describe('plotting the dead-reckoning leg', () => {
   function sailingEast(): Navigation {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     sight(nav, 90 * DEG);
     nav.assignCourse(1);
     nav.setAstern(true);
@@ -262,7 +269,7 @@ describe('plotting the dead-reckoning leg', () => {
   }
 
   it('refuses until a course and a speed are remembered', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     expect(nav.beginPlot('leg')).toBe(false);
     sight(nav, 90 * DEG);
     nav.assignCourse(1);
@@ -310,7 +317,7 @@ describe('plotting the dead-reckoning leg', () => {
   it('resets to the known departure, forgetting every reading', () => {
     const nav = sailingEast();
     nav.reset();
-    expect(nav.plotted).toEqual({ x: 0, z: 0, t: 0, radius: NAVIGATION.accuracy.departure });
+    expect(nav.plotted).toEqual({ ...NAVIGATION.start, t: 0, radius: NAVIGATION.accuracy.departure });
     expect(nav.course).toBeNull();
     expect(nav.speed).toBeNull();
     expect(nav.t).toBe(0);
@@ -326,7 +333,7 @@ describe('plotting the dead-reckoning leg', () => {
   });
 
   it('ignores invalid instrument steps', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     nav.advance({ t: NaN, speed: 2 }, 1);
     nav.advance({ t: 1, speed: 2 }, -1);
     expect(nav.t).toBe(0);
@@ -411,7 +418,7 @@ describe('bearing lines and fixes', () => {
   });
 
   it('plots a fix only after the pencil time, moves the marker there and tightens the doubt', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     nav.course = { value: 0, t: 0 };
     nav.speed = { value: 0, t: 0 };
     const mark = NAV_MARKS.find((m) => m.name === 'N')!;
@@ -427,7 +434,7 @@ describe('bearing lines and fixes', () => {
   });
 
   it('requires a named note before a fix, keeps readings, and bounds notes', () => {
-    const nav = new Navigation();
+    const nav = fromOrigin();
     nav.course = { value: 0, t: 0 };
     nav.speed = { value: 1, t: 0 };
     run(nav, 1, 0);

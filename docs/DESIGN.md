@@ -261,7 +261,18 @@ fraction of a second and holds its position. Same idea for the sheet.
   4.4 km north-south, open to the south through a 2.6 km mouth between two headlands. Great Holm
   (about 1.3 x 0.7 km, 75 m hill with a stone tower) lies in the north-west of the bay, Little Holm
   (about 380 x 280 m) toward the mouth in the east. Two shoals (Holm Spit, Little Holm Ledge) rise to
-  0.3-0.5 m. The departure (0, 0) and every buoy are in 10-20 m of water.
+  0.3-0.5 m. Westcove Harbour (below) is the departure; every buoy is in 10-21 m of water.
+- **Westcove Harbour** (`data/bay.json` `harbour`): the starting town on the west shore, where every
+  boat spawns (offline and on the server) at `harbour.departure` (-1740, 760), bow east, in a basin a
+  breakwater mole shelters. The same elevation function carves it: `dredged` rectangles deepen the
+  basin, `reclaimed` ones are flattened to a quay, the mole and a terrace for houses behind them
+  (smoothstep blend of `edge` metres, applied in order; identical in `sim/terrain.ts` and
+  `server/sim/terrain.go`). `render/land/harbour.ts` draws crisp paved slabs over the quay and mole
+  (the 20 m grid alone rounds their faces into a short ramp), bollards, lamps, four finger pontoons
+  and the Harbour Office, Sail Loft (the future shop and customisation) and Boat Shed with painted
+  signs. PIER is the green-banded light on the mole head, a landmark for bearings. Buoys N, NE, E, SE
+  and S are 0.65-1.1 km out from the harbour. `NAVIGATION.start` equals the departure (tested).
+  Pontoons, buildings and moored boats are visual only: no collisions, and no shop UI yet.
 - **One elevation function** (`sim/terrain.ts`, pure and seeded): a mainland polygon and island
   ellipses as signed distances, their coasts perturbed by fractal noise; beaches, then low hills
   modulated by noise ashore; a seeded 1:60-1:20 nearshore slope saturating at 28 m offshore.
@@ -272,7 +283,7 @@ fraction of a second and holds its position. Same idea for the sheet.
   shallows and slides off again when the sheet is eased or it turns away. Toggle with `cfg.land`
   ("seabed grounding (bay)" in the debug panel); the debug panel shows depth and AGROUND.
 - **Landmarks** for bearings: LIGHT (lighthouse on the east headland), SPIRE (church in Northhaven),
-  TOWER (on Great Holm) and MAST (radio mast in the western hills). Towns (Northhaven, Westcove,
+  TOWER (on Great Holm), MAST (radio mast in the western hills) and PIER (the harbour light). Towns (Northhaven, Westcove,
   Eastport) and scattered houses line the shore; trees clump on the grass. All of it is visual only:
   land does not shelter the wind or shorten the sea.
 

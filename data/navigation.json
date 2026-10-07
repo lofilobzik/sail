@@ -1,5 +1,5 @@
 {
-  "start": { "x": 0, "z": 0 },
+  "start": { "x": -1740, "z": 760 },
   "timing": {
     "bearingRead": 2.5,
     "speedRead": 2,
@@ -57,7 +57,7 @@
     "reticleSize": 0.006
   },
   "sources": {
-    "start": "DESIGN.md: known departure position. This matches initialState's origin; resetting navigation uses this known point, never the live boat position.",
+    "start": "DESIGN.md: known departure position, the harbour departure in data/bay.json (a test keeps the two equal). Resetting navigation uses this known point, never the live boat position.",
     "timing": "TUNING GUESS: seconds of simulated time. Holding a hand-bearing compass steady on a mark, glancing at the wake for speed, and pencilling a DR leg or a bearing line each take time while the boat keeps sailing.",
     "aimToleranceDeg/aimAverageSeconds": "TUNING GUESS: a reading restarts if the aim strays this far from its own mean over the last 1.5 s. Waves rock the boat and swing the aim a few degrees either way (measured about +-5 degrees at a 1.5 s period), which averages out; a slow track on a mark moves the mean with it. The recorded bearing is that mean.",
     "markAimDeg/landmarkSightFraction": "VISUAL ESTIMATE: a mark (buoy or landmark ashore) counts as under the crosshair within this angle of the line of sight, generous because the boat rocks the crosshair around. A buoy is sighted at half its height; a landmark at landmarkSightFraction of its height above its foot. The mark named is the one under the crosshair for the largest share of the hold, at least markHoldFraction (30%) of it, so a moment off the mark is forgiven. The sailor reads a buoy's painted ID or recognises a landmark's shape by eye; the bearing still comes from the compass and no true boat position is used.",

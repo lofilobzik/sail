@@ -169,7 +169,8 @@ func find(boats []RemoteBoat, id int) (RemoteBoat, bool) {
 
 func TestSpawnSlots(t *testing.T) {
 	s := 15.0
-	want := []sim.Vec2{{}, {X: 0, Z: s}, {X: 0, Z: -s}, {X: s, Z: 0}, {X: -s, Z: 0}, {X: s, Z: s}, {X: s, Z: -s}, {X: -s, Z: s}, {X: -s, Z: -s}}
+	dep := sim.Bay.Harbour.Departure
+	want := []sim.Vec2{{X: dep.X, Z: dep.Z}, {X: dep.X, Z: dep.Z + s}, {X: dep.X, Z: dep.Z - s}, {X: dep.X + s, Z: dep.Z}, {X: dep.X - s, Z: dep.Z}, {X: dep.X + s, Z: dep.Z + s}, {X: dep.X + s, Z: dep.Z - s}, {X: dep.X - s, Z: dep.Z + s}, {X: dep.X - s, Z: dep.Z - s}}
 	slots := spawnSlots(DefaultMaxBoats)
 	if len(slots) != DefaultMaxBoats {
 		t.Fatalf("%d slots, want %d", len(slots), DefaultMaxBoats)
@@ -320,7 +321,9 @@ func TestWelcome(t *testing.T) {
 	if w.Seed != testSeed || w.Dt != cfg.Dt || w.SnapshotHz != DefaultSnapshotHz || w.ID < 1 || w.Resume == "" || w.Resumed {
 		t.Fatalf("welcome = seed %d dt %v hz %v id %d resume %q resumed %v", w.Seed, w.Dt, w.SnapshotHz, w.ID, w.Resume, w.Resumed)
 	}
-	start := sim.InitialState(StartHeadingDeg*math.Pi/180, StartSpeed)
+	dep := sim.Bay.Harbour.Departure
+	start := sim.InitialState(dep.HeadingDeg*sim.DEG, StartSpeed)
+	start.X, start.Z = dep.X, dep.Z
 	start.T = float64(w.Tick) * w.Dt
 	if w.State != start {
 		t.Fatalf("welcome state %+v, want %+v (slot 0 at the room time)", w.State, start)

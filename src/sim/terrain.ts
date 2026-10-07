@@ -99,6 +99,22 @@ function profile(d: number, hillHeight: number, hillRise: number, x: number, z: 
   return beachPart + hills;
 }
 
+interface HarbourRect { x0: number; z0: number; x1: number; z1: number; edge: number }
+
+/** 1 inside the rectangle, easing (smoothstep) to 0 over `edge` metres outside it. */
+function rectWeight(r: HarbourRect, x: number, z: number): number {
+  const dx = Math.max(r.x0 - x, 0, x - r.x1), dz = Math.max(r.z0 - z, 0, z - r.z1);
+  const t = Math.min(Math.sqrt(dx * dx + dz * dz) / r.edge, 1);
+  return 1 - t * t * (3 - 2 * t);
+}
+
+/** Westcove Harbour (data/bay.json `harbour`): the basin is deepened, then the quay, mole and terrace are raised or cut to their flat height. */
+function harbourHeight(h: number, x: number, z: number): number {
+  for (const d of bay.harbour.dredged) h += (Math.min(h, -d.depth) - h) * rectWeight(d, x, z);
+  for (const r of bay.harbour.reclaimed) h += (r.height - h) * rectWeight(r, x, z);
+  return h;
+}
+
 /** Elevation above mean sea level, m (negative = depth). Deterministic; cheap enough per physics substep. */
 export function terrainHeight(x: number, z: number): number {
   const c = bay.coastNoise;
@@ -115,7 +131,7 @@ export function terrainHeight(x: number, z: number): number {
     const r2 = ((x - s.x) ** 2 + (z - s.z) ** 2) / (s.radius * s.radius);
     h = Math.max(h, -maxDepth + (maxDepth - s.topDepth) * Math.exp(-r2));
   }
-  return h;
+  return harbourHeight(h, x, z);
 }
 
 /** Horizontal gradient of the elevation (finite difference), per metre. */
