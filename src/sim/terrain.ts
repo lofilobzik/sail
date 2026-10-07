@@ -102,7 +102,7 @@ function profile(d: number, hillHeight: number, hillRise: number, x: number, z: 
 interface HarbourRect { x0: number; z0: number; x1: number; z1: number; edge: number }
 
 /** 1 inside the rectangle, easing (smoothstep) to 0 over `edge` metres outside it. */
-function rectWeight(r: HarbourRect, x: number, z: number): number {
+export function rectWeight(r: HarbourRect, x: number, z: number): number {
   const dx = Math.max(r.x0 - x, 0, x - r.x1), dz = Math.max(r.z0 - z, 0, z - r.z1);
   const t = Math.min(Math.sqrt(dx * dx + dz * dz) / r.edge, 1);
   return 1 - t * t * (3 - 2 * t);

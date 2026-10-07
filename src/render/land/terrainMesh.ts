@@ -5,13 +5,19 @@
  * world coordinates; the owning group is rebased with the floating origin.
  */
 import * as THREE from 'three';
-import { BAY, fbm, type TerrainGrid } from '../../sim/terrain';
+import { BAY, fbm, rectWeight, type TerrainGrid } from '../../sim/terrain';
 import { sampleGradient, splitsMainDiagonal } from './ground';
 
 const TILE_CELLS = 64; // VISUAL ESTIMATE: 1.28 km tiles; few draw calls, off-screen tiles culled
 // Cells whose highest corner is deeper than this are skipped: the opaque water hides them.
 const HIDDEN_DEPTH = -12; // m, VISUAL ESTIMATE: well below the deepest wave trough
 const SKIRT_DEPTH = -20; // m, VISUAL ESTIMATE: grid-edge skirt bottom, below HIDDEN_DEPTH
+
+// Rubble stone where the harbour's quay and mole slope into the water, so the 20 m terrain grid's
+// ramp in front of their crisp slabs reads as a stone revetment instead of a sandy beach.
+const RUBBLE = 0x6f6d68;
+const RUBBLE_DARK = 0x4d4c49;
+const PAVED = BAY.harbour.reclaimed.filter((r) => 'paved' in r && r.paved);
 
 // Palette (sRGB), all VISUAL ESTIMATE from photographs of temperate sandy/grassy coasts.
 const SEABED_SHALLOW = 0xc4b28a; // rippled sand just under the surface
@@ -58,6 +64,7 @@ const P = {
   seabedShallow: linear(SEABED_SHALLOW), seabedDeep: linear(SEABED_DEEP), wetSand: linear(WET_SAND),
   drySand: linear(DRY_SAND), grassLush: linear(GRASS_LUSH), grassDry: linear(GRASS_DRY), scrub: linear(SCRUB),
   woodland: linear(WOODLAND), rock: linear(ROCK), rockDark: linear(ROCK_DARK),
+  rubble: linear(RUBBLE), rubbleDark: linear(RUBBLE_DARK),
 };
 
 /**
@@ -102,7 +109,19 @@ function landColour(x: number, z: number, h: number, slope: number, out: Float32
     mix(grass, rock, rockAmount(x, z, h, slope), c);
     mix(c, sand, sandAmount, c);
   }
+  const stone = harbourStone(x, z);
+  if (stone > 0) {
+    mix(P.rubble, P.rubbleDark, 0.5 + 0.5 * fbm(x / PATCH_WAVELENGTH, z / PATCH_WAVELENGTH, 2, NOISE_SEED + 19), rock);
+    mix(c, rock, stone, c);
+  }
   out[o] = c[0]!; out[o + 1] = c[1]!; out[o + 2] = c[2]!;
+}
+
+/** 0..1: how much of the quay and mole's slope this point lies on (1 inside, easing out over each rectangle's edge). */
+function harbourStone(x: number, z: number): number {
+  let w = 0;
+  for (const r of PAVED) w = Math.max(w, rectWeight(r, x, z));
+  return w;
 }
 
 /** One tile's geometry, or null if every cell in it lies deeper than HIDDEN_DEPTH. */
