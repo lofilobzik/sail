@@ -29,6 +29,8 @@ export interface DevOptions {
   fly: { x: number; z: number; height: number; bearingDeg: number; pitchDeg: number } | null;
   /** ?near=<m>: both cameras' near plane, to test far depth precision. */
   near: number | null;
+  /** ?detailfade=0 draws house windows and doors at every size instead of fading them into the wall. */
+  detailFade: boolean;
   /** ?perf=1 runs the frame-cost benchmark. */
   perf: boolean;
 }
@@ -60,6 +62,7 @@ export function parseDevOptions(params: URLSearchParams): DevOptions {
     fly: fly && fly.length >= 3 && fly.length <= 5 && fly.every(Number.isFinite)
       ? { x: fly[0]!, z: fly[1]!, height: fly[2]!, bearingDeg: fly[3] ?? 0, pitchDeg: fly[4] ?? 0 } : null,
     near: number('near') !== null && number('near')! > 0 ? number('near') : null,
+    detailFade: params.get('detailfade') !== '0',
     perf: params.get('perf') === '1',
   };
 }

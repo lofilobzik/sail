@@ -10,6 +10,7 @@ import { createBuoys } from './environment';
 import { SkyView } from './sky';
 import { GustMap } from './gustMap';
 import { WakeView } from './wake';
+import { setDetailFade, setDetailScale } from './land/detailFade';
 import { createWater, type WaterView } from './water';
 import { createLand, type LandView } from './land';
 import { Binoculars } from './binoculars';
@@ -192,6 +193,11 @@ export class SceneView {
     console.info(`camera near plane: ${near} m`);
   }
 
+  /** Checking aid (?detailfade=0): draw windows and doors at every size instead of fading them out. */
+  setDetailFade(on: boolean): void {
+    setDetailFade(on);
+  }
+
   /** Checking aid: hide water and grid to see the underwater parts. */
   setWaterVisible(on: boolean): void {
     this.water.mesh.visible = on;
@@ -260,6 +266,7 @@ export class SceneView {
     this.sky.follow(cam);
     this.navigation.update(this.mode === 'cockpit');
     this.renderer.info.reset();
+    setDetailScale(this.frame.height, cam.fov);
     this.renderer.setRenderTarget(this.frame);
     this.renderer.render(this.scene, cam);
     this.renderer.setRenderTarget(null);

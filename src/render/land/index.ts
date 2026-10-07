@@ -10,6 +10,7 @@ import { terrainGrid } from '../../sim/terrain';
 import type { Vec2 } from '../../sim/frames';
 import type { SkyView } from '../sky';
 import { Footprints, waterDistance } from './ground';
+import { fadeDetailBySize } from './detailFade';
 import { createHarbour } from './harbour';
 import { ROADS, createRoadMesh, sampleRoad } from './roads';
 import { createHouseMeshes, placeHouses } from './houses';
@@ -37,7 +38,7 @@ export function createLand(sky: SkyView): LandView {
   // from `flatShading`, whose screen-space derivatives shimmer on faces a few pixels across (far shores).
   // Open-ended cones and trunks: double-sided, so a hillside tree seen from below is not hollow.
   const foliage = fogTowardSky(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }), sky);
-  const buildings = fogTowardSky(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), sky);
+  const buildings = fadeDetailBySize(fogTowardSky(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), sky));
   const structures = fogTowardSky(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), sky);
 
   const shore = waterDistance(grid);

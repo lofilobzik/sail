@@ -46,6 +46,25 @@ describe('house models', () => {
     expect(() => faceted(new THREE.BoxGeometry(1, 1, 1))).toThrow();
   });
 
+  it('gives every vertex a fade colour: windows and doors melt into their wall, the rest into itself', () => {
+    const s = spec();
+    const g = houseGeometry(s);
+    const colour = g.getAttribute('color'), base = g.getAttribute('baseColor');
+    expect(base.count).toBe(colour.count);
+    const wall = new THREE.Color(s.wallColour);
+    let details = 0;
+    for (let i = 0; i < base.count; i++) {
+      const same = Math.abs(base.getX(i) - colour.getX(i)) + Math.abs(base.getY(i) - colour.getY(i)) + Math.abs(base.getZ(i) - colour.getZ(i)) < 1e-6;
+      if (same) continue;
+      details++;
+      expect(base.getX(i)).toBeCloseTo(wall.r, 6);
+      expect(base.getY(i)).toBeCloseTo(wall.g, 6);
+      expect(base.getZ(i)).toBeCloseTo(wall.b, 6);
+    }
+    // A door, its trim and a dozen windows of frame and glass, two triangles each.
+    expect(details).toBeGreaterThan(6 * 10);
+  });
+
   it('stays within its footprint, rooted on the ground and below the chimney top', () => {
     const s = spec();
     const g = houseGeometry(s);

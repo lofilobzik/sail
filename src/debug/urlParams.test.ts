@@ -22,6 +22,7 @@ describe('parseDevOptions', () => {
       start: null,
       fly: null,
       near: null,
+      detailFade: true,
       perf: false,
     });
   });

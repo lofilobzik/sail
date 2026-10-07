@@ -213,6 +213,7 @@ window.addEventListener('keydown', (e) => {
 if (opts.outsideView) view.mode = 'outside';
 if (!opts.water) view.setWaterVisible(false);
 if (opts.near !== null) view.setNear(opts.near);
+if (!opts.detailFade) view.setDetailFade(false);
 if (opts.look) {
   look.yaw = opts.look.yawDeg * DEG;
   look.pitch = opts.look.pitchDeg * DEG;

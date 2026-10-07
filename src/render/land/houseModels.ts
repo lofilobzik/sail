@@ -153,6 +153,23 @@ function roofParts(s: HouseSpec): THREE.BufferGeometry[] {
   }
 }
 
+/**
+ * Sets the colour a part fades to when it is too small on screen (detailFade.ts): `colour` (sRGB) for a
+ * window or door, which melts into its wall, or the part's own colour when omitted.
+ */
+function fadesTo(part: THREE.BufferGeometry, colour?: number): THREE.BufferGeometry {
+  const own = part.getAttribute('color') as THREE.BufferAttribute;
+  if (colour === undefined) {
+    part.setAttribute('baseColor', own.clone());
+    return part;
+  }
+  const c = new THREE.Color(colour);
+  const base = new Float32Array(own.count * 3);
+  for (let i = 0; i < own.count; i++) base.set([c.r, c.g, c.b], i * 3);
+  part.setAttribute('baseColor', new THREE.BufferAttribute(base, 3));
+  return part;
+}
+
 /** Height of the ridge above the eaves, for the chimney. */
 function ridgeRise(s: HouseSpec): number {
   const rise = (s.width / 2 + EAVE) * Math.tan((s.pitch * Math.PI) / 180);
@@ -175,8 +192,10 @@ export function houseGeometry(s: HouseSpec): THREE.BufferGeometry {
   // Front: a door near one end, windows in the rest of each storey.
   const doorX = s.doorSide * (L / 2 - 1.6);
   // The door stands on top of the plinth, which sticks out 0.1 m past the walls.
-  parts.push(pane(1.25, 2.3, s.trimColour, 0, doorX, PLINTH_HEIGHT + 1.15, W / 2 + 0.015));
-  parts.push(pane(1.0, 2.1, s.doorColour, 0, doorX, PLINTH_HEIGHT + 1.05, W / 2 + 0.03));
+  // Windows and doors are details: too small on screen, they fade into the wall (detailFade.ts).
+  const details: THREE.BufferGeometry[] = [];
+  details.push(pane(1.25, 2.3, s.trimColour, 0, doorX, PLINTH_HEIGHT + 1.15, W / 2 + 0.015));
+  details.push(pane(1.0, 2.1, s.doorColour, 0, doorX, PLINTH_HEIGHT + 1.05, W / 2 + 0.03));
   const bays = Math.max(1, Math.floor((L - 1.5) / 3.1));
   const storeyHeight = H / s.storeys;
   for (let storey = 0; storey < s.storeys; storey++) {
@@ -184,10 +203,10 @@ export function houseGeometry(s: HouseSpec): THREE.BufferGeometry {
     for (let i = 0; i < bays; i++) {
       const x = -L / 2 + ((i + 0.5) * L) / bays;
       const nearDoor = storey === 0 && Math.abs(x - doorX) < 1.4;
-      if (!nearDoor) parts.push(...windowParts(0, x, y, W / 2, s.trimColour));
-      parts.push(...windowParts(1, x, y, -W / 2, s.trimColour));
+      if (!nearDoor) details.push(...windowParts(0, x, y, W / 2, s.trimColour));
+      details.push(...windowParts(1, x, y, -W / 2, s.trimColour));
     }
-    parts.push(...windowParts(2, L / 2, y, 0, s.trimColour), ...windowParts(3, -L / 2, y, 0, s.trimColour));
+    details.push(...windowParts(2, L / 2, y, 0, s.trimColour), ...windowParts(3, -L / 2, y, 0, s.trimColour));
   }
 
   if (s.porch) {
@@ -206,5 +225,5 @@ export function houseGeometry(s: HouseSpec): THREE.BufferGeometry {
     parts.push(box(0.95, 0.14, 0.95, PLINTH, cx, top + 0.07, cz));
   }
 
-  return faceted(merge(parts));
+  return faceted(merge([...parts.map((p) => fadesTo(p)), ...details.map((d) => fadesTo(d, s.wallColour))]));
 }

@@ -273,6 +273,12 @@ fraction of a second and holds its position. Same idea for the sheet.
   (about 1.3 x 0.7 km, 75 m hill with a stone tower) lies in the north-west of the bay, Little Holm
   (about 380 x 280 m) toward the mouth in the east. Two shoals (Holm Spit, Little Holm Ledge) rise to
   0.3-0.5 m. Westcove Harbour (below) is the departure; every buoy is in 10-21 m of water.
+- **Window and door fade** (`render/land/detailFade.ts`): once a metre spans fewer than 6 pixels on
+  screen, a house's windows, doors and their trim blend toward the wall colour, gone by 2.5 pixels. Smaller
+  than that a dark pane in a pale frame cannot be sampled cleanly and breaks up into jagged shapes as the
+  camera moves. Every house vertex carries a `baseColor` (the wall's for details, its own otherwise) and a
+  vertex-shader hook on the buildings material blends toward it by on-screen size, so the binoculars bring
+  the detail back. `?detailfade=0` turns it off.
 - **Faceted look without `flatShading`**: houses and trees get their per-face normals baked into the
   geometry (`faceted` in `render/land/parts.ts`) and their materials do not use `flatShading`. Three's flat
   shading guesses each pixel's normal from screen-space derivatives of the position, which shimmers on
