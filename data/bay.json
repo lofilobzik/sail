@@ -33,8 +33,34 @@
   ],
   "towns": [
     { "name": "Northhaven", "x": 0, "z": -2480, "radius": 380, "houses": 140 },
-    { "name": "Westcove", "x": -2090, "z": 800, "radius": 320, "houses": 150 },
+    { "name": "Westcove", "x": -2090, "z": 800, "radius": 320, "houses": 150, "layout": "roads" },
     { "name": "Eastport", "x": 2150, "z": -350, "radius": 300, "houses": 100 }
+  ],
+  "roads": [
+      {
+        "name": "Harbour Road", "town": "Westcove", "width": 5,
+        "points": [
+          [-2005, 260], [-2002, 285], [-1999, 315], [-1998, 345], [-1997, 375], [-2003, 405],
+          [-2008, 435], [-2008, 465], [-2008, 495], [-2013, 525], [-2020, 555], [-2024, 585],
+          [-2024, 615], [-2027, 645], [-2044, 665], [-2080, 685], [-2105, 705], [-2110, 735],
+          [-2110, 765], [-2110, 795], [-2109, 825], [-2109, 855], [-2109, 885], [-2091, 905],
+          [-2048, 925], [-2015, 945], [-1999, 975], [-1993, 1005], [-1985, 1035], [-1976, 1065],
+          [-1974, 1095], [-1971, 1125], [-1966, 1155], [-1959, 1185], [-1947, 1215], [-1936, 1245],
+          [-1931, 1275], [-1930, 1305], [-1930, 1333], [-1930, 1340]
+        ]
+      },
+      {
+        "name": "Hill Road", "town": "Westcove", "width": 4.5,
+        "points": [
+          [-2053, 260], [-2049, 285], [-2048, 315], [-2052, 345], [-2055, 375], [-2053, 405],
+          [-2054, 435], [-2062, 465], [-2071, 495], [-2071, 525], [-2071, 555], [-2074, 585],
+          [-2076, 615], [-2097, 645], [-2112, 665], [-2127, 695], [-2132, 725], [-2132, 755],
+          [-2131, 785], [-2130, 815], [-2130, 845], [-2130, 875], [-2126, 905], [-2108, 935],
+          [-2084, 955], [-2057, 975], [-2042, 1005], [-2038, 1035], [-2033, 1065], [-2029, 1095],
+          [-2025, 1125], [-2021, 1155], [-2015, 1185], [-2008, 1215], [-2003, 1245], [-1997, 1275],
+          [-1989, 1305], [-1980, 1333], [-1977, 1340]
+        ]
+      }
   ],
   "scatteredHouses": { "count": 120, "minShoreDistance": 30, "maxShoreDistance": 450 },
   "harbour": {
@@ -68,6 +94,7 @@
     "grid": "Render/chart bake only: heights sampled every cell metres over the bounds. Physics evaluates the analytic function directly.",
     "landmarks": "Sandbox landmarks for bearings, not real aids to navigation. height is the structure above the ground at its foot; colours are VISUAL ESTIMATE.",
     "harbour": "VISUAL ESTIMATE / sandbox design: Westcove Harbour on the west shore. Rectangles, applied in order so later ones win where blends overlap (world x east, z south, metres) are blended into the elevation: `reclaimed` land is flattened to `height` m above sea level (quay, breakwater mole, a terrace behind them), `dredged` water is deepened to at least `depth` m, `paved` rectangles get a crisp quay slab, and `edge` is the blend width in metres outside each rectangle. Boats spawn at `departure` heading `headingDeg`, in the basin the mole shelters. Pontoons, buildings and the PIER light are VISUAL ESTIMATE dressing for the quay.",
+    "roads": "VISUAL ESTIMATE / sandbox design: The two roads of Westcove are contour lines of the baked terrain (Harbour Road at 8 m, Hill Road at 20 m above sea level, 260 to 1340 m south), smoothed and thinned to a point every 25 m or so, so they follow the hillside the way a real road would. A town with `layout: roads` has its houses placed in clusters along the roads of that town, facing downhill toward the water; the other towns scatter houses at random. Roads are drawn as flat gravel ribbons laid on the terrain.",
     "towns": "VISUAL ESTIMATE: house counts and radii so the shore does not look bare. Houses are only placed on gentle, dry ground.",
     "grounding": "TUNING GUESS: when the seabed is shallower than the daggerboard tip, penetration (m, capped at maxPenetration) pushes the boat toward deeper water (pushStiffness N/m along the seabed gradient) and damps its motion (damping N s/m^2 times penetration times velocity, yawDamping N m s/rad per metre of penetration). Sized so a Laser at full drive stops within a few metres of touching on a 1:40 slope, and slides back off when the sheet is eased or the boat is turned away. gradientStep is the finite-difference step, m."
   }

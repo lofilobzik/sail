@@ -273,6 +273,19 @@ fraction of a second and holds its position. Same idea for the sheet.
   (about 1.3 x 0.7 km, 75 m hill with a stone tower) lies in the north-west of the bay, Little Holm
   (about 380 x 280 m) toward the mouth in the east. Two shoals (Holm Spit, Little Holm Ledge) rise to
   0.3-0.5 m. Westcove Harbour (below) is the departure; every buoy is in 10-21 m of water.
+- **Houses and roads** (`render/land/houses.ts`, `houseModels.ts`, `roads.ts`): Westcove has
+  `layout: "roads"` in `data/bay.json`, so its houses stand in clusters along its two roads, Harbour Road
+  (8 m contour) and Hill Road (20 m contour), set back 5-9 m, every front facing downhill toward the water.
+  The roads are contour lines of the baked terrain, smoothed and stored as data, drawn as gravel ribbons
+  0.1 m above the terrain mesh. Clusters come from seeded noise along each road side (about 55 % built,
+  the water side more than the uphill side). The other towns and the scattered shore houses still place
+  at random. Each house is built from a spec (cottage, two-storey or cabin; gable, hip, saltbox or lean-to
+  roof; plinth, door, windows on all four faces, optional chimney and porch) into one vertex-coloured
+  geometry; the bay's houses merge into one mesh per 800 m square. Palette: weathered Pacific Northwest
+  (cedar and silver greys, faded sage, slate blue, rust, ochre) with a few saturated accents (barn red,
+  mustard, teal, cobalt) on 8 % of walls and most doors. The quay, mole and terrace, plus 12 m around
+  them, stay clear for the hand-built harbour front. Cost measured at 2880x1566: about 16.0 ms against
+  14.75 ms before (+1.25 ms), 492k vs 474k triangles in the default view.
 - **Westcove Harbour** (`data/bay.json` `harbour`): the starting town on the west shore, where every
   boat spawns (offline and on the server) at `harbour.departure` (-1740, 760), bow east, in a basin a
   breakwater mole shelters. The same elevation function carves it: `dredged` rectangles deepen the

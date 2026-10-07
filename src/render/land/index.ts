@@ -11,6 +11,7 @@ import type { Vec2 } from '../../sim/frames';
 import type { SkyView } from '../sky';
 import { Footprints, waterDistance } from './ground';
 import { createHarbour } from './harbour';
+import { ROADS, createRoadMesh, sampleRoad } from './roads';
 import { createHouseMeshes, placeHouses } from './houses';
 import { createLandmarks } from './landmarks';
 import { fogTowardSky } from './skyFog';
@@ -34,13 +35,15 @@ export function createLand(sky: SkyView): LandView {
   const ground = fogTowardSky(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }), sky);
   // Open-ended cones and trunks: double-sided, so a hillside tree seen from below is not hollow.
   const foliage = fogTowardSky(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true, side: THREE.DoubleSide }), sky);
-  const buildings = fogTowardSky(new THREE.MeshStandardMaterial({ roughness: 0.85, flatShading: true }), sky);
+  const buildings = fogTowardSky(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, flatShading: true }), sky);
   const structures = fogTowardSky(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), sky);
 
   const shore = waterDistance(grid);
   const houses = placeHouses(grid, shore);
   const plots = new Footprints(16);
   for (const h of houses) plots.add(h.x, h.z, 0.5 * Math.hypot(h.length, h.width));
+  // Trees keep off the roads: a disc every few metres along each.
+  for (const road of ROADS) for (const p of sampleRoad(road, 5, grid)) plots.add(p.x, p.z, road.width / 2 + 2);
   const trees = placeTrees(grid, shore, plots);
 
   const harbour = createHarbour(structures);
@@ -52,6 +55,7 @@ export function createLand(sky: SkyView): LandView {
     ...createHouseMeshes(houses, buildings),
     ...createLandmarks(grid, structures),
     harbour.structures,
+    ...[createRoadMesh(grid, ground)].filter((m) => m !== null),
     ...harbour.signs,
   );
   group.traverse((o) => { o.renderOrder = LAND_RENDER_ORDER; });
