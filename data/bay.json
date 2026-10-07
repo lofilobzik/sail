@@ -96,6 +96,17 @@
       { "name": "Quay waterfront east", "x0": -1935, "z0": 724, "x1": -1858, "z1": 733, "facingDeg": 0 },
       { "name": "Terrace", "x0": -2016, "z0": 706, "x1": -2006, "z1": 894, "facingDeg": 90 }
     ],
+    "quayPropScale": 2,
+    "quayProps": [
+      { "name": "Office stores", "x": -1958, "z": 769, "yawDeg": 8, "crates": 5, "barrels": 2, "crabPots": 2, "floats": 4, "ropeCoils": 1 },
+      { "name": "North quay sorting", "x": -1915, "z": 752, "yawDeg": -12, "crates": 4, "barrels": 2, "crabPots": 3, "floats": 5, "ropeCoils": 1 },
+      { "name": "North quay gear", "x": -1888, "z": 770, "yawDeg": 15, "crates": 3, "barrels": 3, "crabPots": 2, "floats": 4, "ropeCoils": 1 },
+      { "name": "Shed side stores", "x": -1958, "z": 832, "yawDeg": -6, "crates": 4, "barrels": 2, "crabPots": 2, "floats": 3, "ropeCoils": 1 },
+      { "name": "Shed west gear", "x": -1976, "z": 852, "yawDeg": 10, "crates": 5, "barrels": 2, "crabPots": 3, "floats": 5, "ropeCoils": 1 },
+      { "name": "South quay sorting", "x": -1904, "z": 838, "yawDeg": -18, "crates": 4, "barrels": 3, "crabPots": 2, "floats": 4, "ropeCoils": 1 },
+      { "name": "South quay floats", "x": -1875, "z": 850, "yawDeg": 12, "crates": 3, "barrels": 2, "crabPots": 2, "floats": 3, "ropeCoils": 1 },
+      { "name": "Shed loading stores", "x": -1924, "z": 867, "yawDeg": -8, "crates": 4, "barrels": 2, "crabPots": 3, "floats": 4, "ropeCoils": 1 }
+    ],
     "buildings": [
       { "name": "Harbour Office", "sign": "HARBOUR", "x": -1958, "z": 748, "length": 14, "width": 9, "wall": 5, "wallColor": "#d9d4c4", "roofColor": "#4c535a", "signColor": "#1f4e6b", "roof": "hip", "chimney": true, "doorColor": "#1f4e6b" },
       { "name": "Sail Loft", "sign": "SAIL LOFT", "x": -1958, "z": 800, "length": 26, "width": 13, "wall": 6.5, "wallColor": "#a13a2e", "roofColor": "#3b4046", "signColor": "#f2ead3", "roof": "gable", "door": "barn", "doorColor": "#3b2f2a" },
@@ -104,6 +115,8 @@
   },
   "grounding": { "pushStiffness": 3000, "damping": 2000, "yawDamping": 400, "maxPenetration": 2, "gradientStep": 2 },
   "sources": {
+    "quayProps": "VISUAL ESTIMATE: explicit render-only working clusters on the central quay and beside the sheds; all positions, yaw angles, counts, local offsets, dimensions, low-poly segment counts and weathered timber, metal, pale float, subdued orange and rope colours are artistic estimates, not surveyed harbour equipment. quayPropScale doubles equipment and spacing for readability across the broad quay; clusters occupy roughly 14 by 12 m each with stacked battened crates, hooped barrels, open-frame crab pots, fishing floats and spiral rope coils. Deterministic index variation is baked once into merged geometry. The street at x -1946..-1938, barn-door approaches, the Sail Loft plaza at z 781..819, boardwalk at x -1855..-1841 and pontoon gangway access remain clear. No gameplay, collisions, terrain, simulation, protocol or departure changes.",
+    "floatingDocks": "VISUAL ESTIMATE: four timber fingers use the existing pontoon rectangles; railed gangways hinge just inside the quay at about 2.54 m and descend east over an 8 m run to decks with 0.46 m mean freeboard. Segmented floats, rub rails, guide-pile collars and cleats move with each deck; piles stay fixed. Seven dedicated 3.8 m open dinghy hulls are instanced beside selected fingers with two slack mooring lines each. All dimensions, placements, tessellation and muted colours are artistic estimates. TUNING GUESS: sheltered wave response attenuates dock/boat heave to 0.28/0.55 of shared water sampling, bounded at 0.16/0.24 m; tilt is attenuated and bounded at 0.025/0.06 rad. Gangways stay attached as decks move; disabled or zero-amplitude waves give flat-water poses. Render-only: no collisions, mooring gameplay, terrain, simulation, protocol or departure changes.",
     "layout": "VISUAL ESTIMATE / sandbox design: a horseshoe bay about 3.9 km east-west and 4.4 km north-south, open to the south through a 2.6 km mouth between two headlands. World x east, z south, metres from the known departure (0, 0). The mainland is a polygon of land (signed distance, perturbed by seeded fractal noise of coastNoise amplitude and wavelength so the shore gets coves and points); islands are rotated ellipses with the same perturbation. The departure, all buoys and the shoals lie well clear of land.",
     "relief": "VISUAL ESTIMATE: low hills. A beach rises to beach.height over beach.width from the waterline, then hills approach hillHeight with an exponential rise length, modulated by reliefNoise (fraction of the hill height).",
     "seabed": "VISUAL ESTIMATE / TUNING GUESS: depth falls away from each shore with a seeded nearshore slope between 1:60 and 1:20 and saturates at maxDepth, so the bay centre is about 20-25 m deep. Shoals are Gaussian bumps rising to topDepth below mean sea level, deep enough to float the hull but shallow enough to ground the daggerboard.",

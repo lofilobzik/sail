@@ -182,7 +182,7 @@ export class SceneView {
 
     // Fixed buoy and land transforms compose in JS doubles before GPU matrix upload/culling.
     this.buoys.position.set(-this.origin.x, 0, -this.origin.z);
-    this.land.update(this.origin);
+    this.land.update(this.origin, this.waves, pose.t);
     this.remoteBoats.update(remotes, this.origin, this.waves, pose.t, pose.dt);
     this.wake.update(pose, this.origin, this.waves, this.surface.y, b.pitch.rotation.x);
     this.water.update(this.origin, pose.t);

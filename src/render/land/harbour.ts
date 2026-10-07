@@ -1,16 +1,18 @@
 /**
  * Westcove Harbour's built parts (data/bay.json `harbour`): crisp paved slabs over the quay and the
  * breakwater mole (the 20 m terrain grid alone would round their edges), a boardwalk, street and plaza
- * on the quay, fender piles and ladders down its face, bollards and lamp posts along the water edge, floating finger pontoons with a ramp down from the quay, and the shop and sheds
- * with painted signs on the faces toward the water. Everything is merged vertex-coloured geometry
- * except the signs, which are one small textured quad each. Sizes and colours are VISUAL ESTIMATE.
+ * on the quay, fender piles and ladders down its face, bollards and lamp posts along the water edge,
+ * working clusters of fishing gear, and the shop and sheds with painted signs facing the water.
+ * Floating docks and moored dinghies live in floatingDocks.ts. Sizes and colours are VISUAL ESTIMATE.
  */
 import * as THREE from 'three';
 import { BAY, type TerrainGrid } from '../../sim/terrain';
 import { groundHeight, seededRandom } from './ground';
+import { createFloatingHarbour, type FloatingHarbour } from './floatingDocks';
 import { houseGeometry, type HouseSpec, type RoofShape } from './houseModels';
 import { makeSpec } from './houses';
 import { merge, paint } from './parts';
+import { createQuayProps } from './quayProps';
 
 const SLAB_LIFT = 0.05; // m: the slab top stands this far above the terrain plane so the two never z-fight
 const SLAB_FOOTING = 8; // m: walls run down below the lowest seabed beside the quay
@@ -22,10 +24,6 @@ const BOLLARD_SPACING = 14; // m along the water edge
 const BOLLARD = 0x2b2f33;
 const LAMP_SPACING = 42;
 const LAMP_HEIGHT = 5.2;
-const PONTOON_FREEBOARD = 0.4; // m above the water: the pontoons do not move with the waves
-const PONTOON_DECK = 0x8b7355;
-const PONTOON_FLOAT = 0x4d5a63;
-const PILE = 0x3d3a34;
 // Quay dressing. Anything laid on the slab stands at least OVERLAY_RISE proud of it, so it never
 // z-fights with the paving from across the bay.
 const OVERLAY_RISE = 0.1; // m
@@ -55,18 +53,24 @@ const box = (w: number, h: number, d: number, colour: THREE.ColorRepresentation,
 interface Rect { x0: number; z0: number; x1: number; z1: number }
 const centre = (r: Rect) => ({ x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2 });
 
-/** The paved quay/mole slab with a coping stone ring around its top edge. */
-function slab(r: Rect, height: number): THREE.BufferGeometry[] {
+/** The paved quay/mole slab, with openings in the east coping for the gangways. */
+function slab(r: Rect, height: number, eastOpenings: readonly { z0: number; z1: number }[] = []): THREE.BufferGeometry[] {
   const top = height + SLAB_LIFT, { x, z } = centre(r);
   const w = r.x1 - r.x0, d = r.z1 - r.z0;
   const copingY = top + COPING_RISE / 2;
-  return [
+  const parts = [
     box(w, top + SLAB_FOOTING, d, PAVING, x, (top - SLAB_FOOTING) / 2, z),
     box(w, COPING_RISE, COPING_WIDTH, COPING, x, copingY, r.z0 + COPING_WIDTH / 2),
     box(w, COPING_RISE, COPING_WIDTH, COPING, x, copingY, r.z1 - COPING_WIDTH / 2),
     box(COPING_WIDTH, COPING_RISE, d, COPING, r.x0 + COPING_WIDTH / 2, copingY, z),
-    box(COPING_WIDTH, COPING_RISE, d, COPING, r.x1 - COPING_WIDTH / 2, copingY, z),
   ];
+  let start = r.z0;
+  for (const opening of eastOpenings) {
+    if (opening.z0 > start) parts.push(box(COPING_WIDTH, COPING_RISE, opening.z0 - start, COPING, r.x1 - COPING_WIDTH / 2, copingY, (start + opening.z0) / 2));
+    start = opening.z1;
+  }
+  if (start < r.z1) parts.push(box(COPING_WIDTH, COPING_RISE, r.z1 - start, COPING, r.x1 - COPING_WIDTH / 2, copingY, (start + r.z1) / 2));
+  return parts;
 }
 
 function bollard(x: number, y: number, z: number): THREE.BufferGeometry {
@@ -94,21 +98,6 @@ function waterEdge(from: [number, number], to: [number, number], inward: [number
   return parts;
 }
 
-/** A floating finger pontoon from its inboard end at x0 out to x1, with piles at the outer corners and a ramp to the quay. */
-function pontoon(r: Rect, quayTop: number): THREE.BufferGeometry[] {
-  const { x, z } = centre(r), w = r.x1 - r.x0, d = r.z1 - r.z0;
-  const parts = [
-    box(w, 0.22, d, PONTOON_DECK, x, PONTOON_FREEBOARD - 0.11, z),
-    box(w, 0.42, d * 0.7, PONTOON_FLOAT, x, PONTOON_FREEBOARD - 0.43, z),
-    paint(new THREE.CylinderGeometry(0.16, 0.16, 3.2, 6), PILE, at(r.x1, 0.9, r.z0 - 0.3)),
-    paint(new THREE.CylinderGeometry(0.16, 0.16, 3.2, 6), PILE, at(r.x1, 0.9, r.z1 + 0.3)),
-  ];
-  // A gangway from the quay edge (x0) down to the deck, sloping over 8 m.
-  const run = 8, drop = quayTop - PONTOON_FREEBOARD, slope = Math.atan2(drop, run);
-  const ramp = new THREE.BoxGeometry(Math.hypot(run, drop), 0.12, d * 0.8);
-  parts.push(paint(ramp, PONTOON_DECK, at(r.x0 - run / 2 - 0.1, quayTop - drop / 2, z).multiply(new THREE.Matrix4().makeRotationZ(slope))));
-  return parts;
-}
 
 /** A flat deck or paving patch, OVERLAY_RISE proud of the slab top. */
 function overlay(x0: number, z0: number, x1: number, z1: number, colour: number, slabTop: number): THREE.BufferGeometry {
@@ -228,21 +217,24 @@ export interface HarbourMeshes {
   buildings: THREE.Mesh;
   /** Sign boards: own textured materials, handed over so the caller can fog them toward the sky. */
   signs: THREE.Mesh[];
+  /** Waterborne docks and dinghies, updated on the shared waves within the rebased land group. */
+  afloat: FloatingHarbour;
 }
 
 export function createHarbour(structures: THREE.Material, buildingMaterial: THREE.Material, grid: TerrainGrid): HarbourMeshes {
   const h = BAY.harbour;
   const parts: THREE.BufferGeometry[] = [];
   const paved = h.reclaimed.filter((r) => 'paved' in r && r.paved) as (Rect & { height: number })[];
-  for (const r of paved) parts.push(...slab(r, r.height));
   const quay = paved[0]!, mole = paved[1]!;
+  const gangwayOpenings = h.pontoons.map((p) => ({ z0: p.z0, z1: p.z1 })).sort((a, b) => a.z0 - b.z0);
+  for (const r of paved) parts.push(...slab(r, r.height, r === quay ? gangwayOpenings : []));
   const quayTop = quay.height + SLAB_LIFT + COPING_RISE * 0.5;
   // Quay's seaward (east) face, then the mole's north face looking into the basin.
   parts.push(...waterEdge([quay.x1 - COPING_WIDTH, quay.z0 + 6], [quay.x1 - COPING_WIDTH, mole.z0 - 4], [-1, 0], quayTop));
   parts.push(...waterEdge([mole.x0 + 10, mole.z0 + COPING_WIDTH], [mole.x1 - 14, mole.z0 + COPING_WIDTH], [0, 1], quayTop));
-  for (const p of h.pontoons) parts.push(...pontoon(p, quayTop));
   const buildings = h.buildings as Building[];
   parts.push(...quayDressing(quay, mole, quay.height + SLAB_LIFT, buildings));
+  parts.push(createQuayProps(quay.height + SLAB_LIFT));
   const mesh = new THREE.Mesh(merge(parts), structures);
   mesh.name = 'harbour';
 
@@ -259,5 +251,8 @@ export function createHarbour(structures: THREE.Material, buildingMaterial: THRE
     new THREE.Matrix4().compose(position.set(p.x, groundAt(p.x, p.z), p.z), q.setFromAxisAngle(up, p.yaw), one),
   ))), buildingMaterial);
   houses.name = 'harbour-buildings';
-  return { structures: mesh, buildings: houses, signs: buildings.map((b) => sign(b, slabTop)) };
+  return {
+    structures: mesh, buildings: houses, signs: buildings.map((b) => sign(b, slabTop)),
+    afloat: createFloatingHarbour(structures),
+  };
 }

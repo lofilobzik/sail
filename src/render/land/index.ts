@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { terrainGrid } from '../../sim/terrain';
 import type { Vec2 } from '../../sim/frames';
+import type { WaveConfig } from '../../sim/waves';
 import type { SkyView } from '../sky';
 import { Footprints, waterDistance } from './ground';
 import { fadeDetailBySize } from './detailFade';
@@ -23,8 +24,8 @@ const LAND_RENDER_ORDER = -1; // opaque land before the water (renderOrder 0)
 
 export interface LandView {
   group: THREE.Group;
-  /** Rebase for the floating origin; logical world doubles compose on the CPU before upload. */
-  update(origin: Readonly<Vec2>): void;
+  /** Rebase for the floating origin and update waterborne harbour details on the shared waves. */
+  update(origin: Readonly<Vec2>, waves: WaveConfig, t: number): void;
 }
 
 export function createLand(sky: SkyView): LandView {
@@ -59,6 +60,7 @@ export function createLand(sky: SkyView): LandView {
     ...createLandmarks(grid, structures),
     harbour.structures,
     harbour.buildings,
+    harbour.afloat.group,
     ...[createRoadMesh(grid, ground)].filter((m) => m !== null),
     ...harbour.signs,
   );
@@ -66,8 +68,9 @@ export function createLand(sky: SkyView): LandView {
 
   return {
     group,
-    update(origin) {
+    update(origin, waves, t) {
       group.position.set(-origin.x, 0, -origin.z);
+      harbour.afloat.update(waves, t);
     },
   };
 }

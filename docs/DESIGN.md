@@ -333,6 +333,23 @@ fraction of a second and holds its position. Same idea for the sheet.
   barn doors; `harbour.cottageRows` lines separate cottages up with 2-4 m gaps along the quay's north
   waterfront (split around the street) and along the terrace overlooking the harbour.
   Pontoons, buildings and moored boats are visual only: no collisions, and no shop UI yet.
+- **Quay work gear and floating docks (A4)** (`render/land/quayProps.ts`, `floatingDocks.ts`):
+  eight data-driven working clusters break up the central paving and sit beside the sheds: battened
+  crates, hooped barrels, open-frame crab pots, pale fishing floats and coiled rope. `quayPropScale`
+  doubles the gear and spacing so it reads across the broad quay; streets, door approaches, the Sail
+  Loft plaza, boardwalk and gangways stay open. Gear merges into the existing structures draw.
+  Four timber fingers have segmented floats, rub rails, cleats and moving collars around fixed guide
+  piles; railed gangways descend from openings in the quay coping and remain attached as the decks
+  heave and tilt gently on the shared waves. Seven little open dinghies with benches share one
+  instanced hull mesh, without full boat models, sails or crew, and stay at two-point visual moorings.
+  Disabled or zero-amplitude waves flatten the docks and hulls. Dimensions, colours and enlarged
+  gear are VISUAL ESTIMATE; sheltered wave response is TUNING GUESS (`data/bay.json` sources).
+  Entirely render-only: no terrain, physics, spawn, protocol or backend behavior changes.
+  The harbour overview adds about 44k submitted triangles and 11 draw calls (576,614 / 150 total).
+  At 1800x1125, paired show/hide split-pass rendering samples averaged 7.4 / 7.8 ms (about +0.3 ms,
+  within sample noise); dock and dinghy wave updates averaged 0.036 ms separately. Browser smoke
+  checked close-up gear, docks and hulls, connected gangways, fixed berths/piles, flat water and
+  0/7/16 kn wave settings; gameplay mooring and casting off are still the next milestone.
 - **One elevation function** (`sim/terrain.ts`, pure and seeded): a mainland polygon and island
   ellipses as signed distances, their coasts perturbed by fractal noise; beaches, then low hills
   modulated by noise ashore; a seeded 1:60-1:20 nearshore slope saturating at 28 m offshore.
