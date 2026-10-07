@@ -10,7 +10,6 @@ import { createBuoys } from './environment';
 import { SkyView } from './sky';
 import { GustMap } from './gustMap';
 import { WakeView } from './wake';
-import { PlanarReflection } from './reflection';
 import { createWater, type WaterView } from './water';
 import { createLand, type LandView } from './land';
 import { Binoculars } from './binoculars';
@@ -19,7 +18,6 @@ import { NavigationView } from './navigation';
 import { RemoteBoatsView } from './remoteBoats';
 import type { RemotePose } from '../net/remote';
 
-const REFLECTION_EVERY = 2; // TUNING GUESS: frames between refreshes of the water's mirror (cost control)
 const GRID_CELL = 5; // TUNING GUESS: grid cell size, m (grid snaps to multiples of this)
 const GRID_CELLS = 80; // TUNING GUESS: grid cells per side
 const FOV_DEG = 85; // User-selected vertical cockpit field of view, degrees
@@ -74,10 +72,6 @@ export class SceneView {
   private readonly buoys = createBuoys();
   private readonly surface = createWaveSample();
   private readonly land: LandView;
-  private readonly reflection = new PlanarReflection();
-  private frameCount = 0;
-  /** What the latest mirror pass drew; the renderer's own counters only keep the last pass of a frame. */
-  readonly mirrorStats = { triangles: 0, calls: 0 };
 
   constructor(
     model: BoatModel, private readonly waves: WaveConfig, env: EnvironmentConfig,
@@ -101,7 +95,6 @@ export class SceneView {
     this.wake = new WakeView(model, this.boat.layout, env);
     this.water = createWater(waves, this.sky, this.gusts, sun, hemisphere, this.wake);
     this.scene.add(this.water.mesh);
-    this.water.useReflection(this.reflection.target.texture, this.reflection.textureMatrix);
 
     this.grid = new THREE.GridHelper(GRID_CELL * GRID_CELLS, GRID_CELLS, 0x6f9fbf, 0x4a7a9a);
     this.grid.position.y = 0.01;
@@ -191,14 +184,6 @@ export class SceneView {
     this.sky.update(pose.t, meanWind(this.wind));
     this.sky.follow(cam);
     this.navigation.update(this.mode === 'cockpit');
-    // The mirror is refreshed every other frame: its matrix maps world positions, so a frame-old image
-    // stays consistent with itself and only lags by the few centimetres the boat moved.
-    if (this.water.mesh.visible && this.frameCount++ % REFLECTION_EVERY === 0) {
-      this.reflection.render(this.renderer, this.scene, cam, [this.water.mesh, this.grid, this.sky.mesh]);
-      const info = this.renderer.info.render;
-      this.mirrorStats.triangles = info.triangles;
-      this.mirrorStats.calls = info.calls;
-    }
     this.renderer.render(this.scene, cam);
   }
 }
