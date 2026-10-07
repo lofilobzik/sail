@@ -4,7 +4,7 @@
  * beach and the towns, and never on the beach, bare rock, steep ground, water, roads, house plots or
  * the harbour works. Conifers are narrow, dark, fir-like and dominate the hills and the belt; broadleaves
  * fill the lowlands. Drawn as InstancedMeshes per 500 m square (so off-screen forest is skipped), each
- * a LOD with a full model near and a simple one far. Seeded from BAY.seed.
+ * a LOD with the full model near and a trunkless crown far. Seeded from BAY.seed.
  */
 import * as THREE from 'three';
 import { BAY, LANDMARKS, fbm, type TerrainGrid } from '../../sim/terrain';
@@ -38,8 +38,8 @@ const BROADLEAF_HEIGHT = [6, 13]; // m
 const CONIFER_WIDTH = [0.5, 0.68]; // crown width as a fraction of height: fir-narrow
 const CONIFER_SHARE = 0.45; // lowland share of conifers; woods, height and the belt raise it
 const CHUNK = 500; // m: trees are grouped per square of this size
-const FAR_DISTANCE = 800; // m from a chunk's centre: simple models beyond
-const LOD_HYSTERESIS = 0.1;
+const FAR_DISTANCE = 1000; // m from a chunk's centre: the trunkless far models beyond
+const LOD_HYSTERESIS = 0.15; // fraction of the distance, so a square at the boundary never flickers
 
 /** Colours (sRGB), VISUAL ESTIMATE. */
 const TRUNK = 0x5a4634;
@@ -66,11 +66,19 @@ function broadleafGeometry(): THREE.BufferGeometry {
   ]);
 }
 
-/** Far models: one cone, or one octahedron, with no trunk. */
-const farConiferGeometry = (): THREE.BufferGeometry =>
-  merge([paint(new THREE.ConeGeometry(0.2, 1, 5, 1, true), CONIFER_CROWN, new THREE.Matrix4().makeTranslation(0, 0.5, 0))]);
+/**
+ * Far models: the conifer keeps its two tiers (5-sided, no trunk, which is invisible at that range) so
+ * the swap changes little on screen, even through binoculars; the broadleaf is a plain octahedron.
+ */
+function farConiferGeometry(): THREE.BufferGeometry {
+  const at = (y: number) => new THREE.Matrix4().makeTranslation(0, y, 0);
+  return merge([
+    paint(new THREE.ConeGeometry(0.22, 0.55, 5, 1, true), CONIFER_CROWN, at(0.42)),
+    paint(new THREE.ConeGeometry(0.16, 0.45, 5, 1, true), CONIFER_CROWN, at(0.775)),
+  ]);
+}
 const farBroadleafGeometry = (): THREE.BufferGeometry =>
-  merge([paint(new THREE.OctahedronGeometry(0.4, 0), BROADLEAF_CROWN, new THREE.Matrix4().makeTranslation(0, 0.55, 0))]);
+  merge([paint(new THREE.OctahedronGeometry(0.4, 0), BROADLEAF_CROWN, new THREE.Matrix4().makeTranslation(0, 0.6, 0))]);
 
 export interface Tree { x: number; z: number; y: number; height: number; width: number; yaw: number; conifer: boolean; shade: number }
 
@@ -121,7 +129,7 @@ export function placeTrees(grid: TerrainGrid, shore: Float32Array, houses: Footp
 }
 
 /**
- * Trees as LOD objects per CHUNK square and kind: a full model near, a simple one far. Instance
+ * Trees as LOD objects per CHUNK square and kind: the full model near, a trunkless crown far. Instance
  * matrices are relative to the chunk's centre, where the LOD object sits, so the camera distance
  * used to pick the level is the chunk's.
  */

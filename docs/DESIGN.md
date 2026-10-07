@@ -281,9 +281,10 @@ fraction of a second and holds its position. Same idea for the sheet.
   fill the lowlands. The belt is a dense wall of tall (13 to 24 m, taller uphill), narrow, darker conifers that
   begins 22 m (ragged by 14 m) uphill of Hill Road, clearing the uphill houses, climbs the hill, thins
   out between 380 and 520 m up and fades at both ends of the road; it also darkens the ground. Trees are
-  grouped per 500 m square into LOD objects (full model within 800 m of a square's centre, a single cone or
-  octahedron beyond), so off-screen forest is skipped. Measured about +0.4 ms over the houses; 620k triangles
-  and 285 draw calls looking east, 310k and 104 looking at the town.
+  grouped per 500 m square into LOD objects (full model within 1000 m of a square's centre, a trunkless
+  two-tier cone or an octahedron beyond; the far conifer keeps the near one's silhouette so the swap is hard to
+  see, even through binoculars), so off-screen forest is skipped. Measured about +0.9 ms over the houses; 810k triangles
+  and 290 draw calls looking east, 365k and 106 looking at the town.
 - **Houses and roads** (`render/land/houses.ts`, `houseModels.ts`, `roads.ts`): Westcove has
   `layout: "roads"` in `data/bay.json`, so its houses stand in clusters along its two roads, Harbour Road
   (8 m contour) and Hill Road (20 m contour), set back 5-9 m, every front facing downhill toward the water.
