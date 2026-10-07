@@ -20,6 +20,7 @@ describe('parseDevOptions', () => {
       water: true,
       look: null,
       start: null,
+      fly: null,
       perf: false,
     });
   });
@@ -46,5 +47,12 @@ describe('parseDevOptions', () => {
     expect(parse('start=-1900').start).toBeNull();
     expect(parse('start=1,2,3,4').start).toBeNull();
     expect(parse('start=1,x').start).toBeNull();
+  });
+
+  it('reads fly as x,z,height with an optional bearing and pitch', () => {
+    expect(parse('fly=-1800,700,40').fly).toEqual({ x: -1800, z: 700, height: 40, bearingDeg: 0, pitchDeg: 0 });
+    expect(parse('fly=-1800,700,40,90,-15').fly).toEqual({ x: -1800, z: 700, height: 40, bearingDeg: 90, pitchDeg: -15 });
+    expect(parse('fly=1,2').fly).toBeNull();
+    expect(parse('fly=1,2,x').fly).toBeNull();
   });
 });

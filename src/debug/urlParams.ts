@@ -25,6 +25,8 @@ export interface DevOptions {
   look: { yawDeg: number; pitchDeg: number } | null;
   /** ?start=<x>,<z>[,<headingDeg>]: offline start position in the bay (default: the harbour departure). */
   start: { x: number; z: number; headingDeg: number | null } | null;
+  /** ?fly=<x>,<z>,<height>[,<bearingDeg>[,<pitchDeg>]]: start in the free-fly camera at this spot (compass bearing). */
+  fly: { x: number; z: number; height: number; bearingDeg: number; pitchDeg: number } | null;
   /** ?perf=1 runs the frame-cost benchmark. */
   perf: boolean;
 }
@@ -36,6 +38,7 @@ export function parseDevOptions(params: URLSearchParams): DevOptions {
   };
   const look = params.get('look')?.split(',').map(Number);
   const start = params.get('start')?.split(',').map(Number);
+  const fly = params.get('fly')?.split(',').map(Number);
   return {
     gusts: params.get('gusts') !== '0',
     waves: params.get('waves') !== '0',
@@ -52,6 +55,8 @@ export function parseDevOptions(params: URLSearchParams): DevOptions {
     look: look && look.length === 2 && look.every(Number.isFinite) ? { yawDeg: look[0]!, pitchDeg: look[1]! } : null,
     start: start && start.length >= 2 && start.length <= 3 && start.every(Number.isFinite)
       ? { x: start[0]!, z: start[1]!, headingDeg: start[2] ?? null } : null,
+    fly: fly && fly.length >= 3 && fly.length <= 5 && fly.every(Number.isFinite)
+      ? { x: fly[0]!, z: fly[1]!, height: fly[2]!, bearingDeg: fly[3] ?? 0, pitchDeg: fly[4] ?? 0 } : null,
     perf: params.get('perf') === '1',
   };
 }

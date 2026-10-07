@@ -12,11 +12,12 @@ import { Vector2 } from 'three';
 import { interpolatePose } from './render/pose';
 import { SceneView, type RenderPose } from './render/scene';
 import { ForceVectors } from './render/vectors';
-import { DEG, FixedStep, WAVE_PARAMETERS, browserConfig, buildBoat, clamp, evaluate, initialState, setWaveParameters, step, type BoatState, type Diagnostics } from './sim';
+import { DEG, FixedStep, NEUTRAL_CONTROLS, WAVE_PARAMETERS, browserConfig, buildBoat, clamp, evaluate, initialState, setWaveParameters, step, type BoatState, type Diagnostics } from './sim';
 import { joinServer, serverChoice } from './net/link';
 import type { RemotePose } from './net/remote';
 import { SailSound } from './audio/sound';
 import { LookGuide } from './ui/lookGuide';
+import { FlyCamera } from './input/flyCamera';
 import { Menu } from './ui/menu';
 import { Preferences } from './ui/prefs';
 import { SKY } from './render/skyModel';
@@ -169,9 +170,41 @@ window.addEventListener('keydown', (e) => {
   prefs.set({ muted: !prefs.value.muted });
 });
 
+// G: free-fly debug camera (WASD, E up, Q down, Shift fast). The boat gets neutral controls and
+// sails on by itself; the mouse look turns the camera in world space. G or V returns to the cockpit.
+const fly = new FlyCamera();
+let cockpitLook = { yaw: 0, pitch: 0 };
+function setFly(on: boolean, at?: { x: number; y: number; z: number; yaw: number; pitch: number }): void {
+  if (on === (view.mode === 'fly')) return;
+  navigationInput.cancel();
+  if (on) {
+    cockpitLook = { yaw: look.yaw, pitch: look.pitch };
+    if (at) {
+      [fly.x, fly.y, fly.z, look.yaw, look.pitch] = [at.x, at.y, at.z, at.yaw, at.pitch];
+    } else {
+      // Start where the head is, looking where it looks.
+      [fly.x, fly.y, fly.z] = [curr.x, 2.2, curr.z];
+      look.yaw = look.yaw - curr.heading;
+    }
+    view.mode = 'fly';
+  } else {
+    look.yaw = cockpitLook.yaw;
+    look.pitch = cockpitLook.pitch;
+    view.mode = 'cockpit';
+  }
+}
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyG' || e.repeat || isTypingTarget(e.target)) return;
+  setFly(view.mode !== 'fly');
+});
+
 // V: switch between the first-person view and an outside view for checking the model.
 window.addEventListener('keydown', (e) => {
   if (e.code !== 'KeyV' || e.repeat || isTypingTarget(e.target)) return;
+  if (view.mode === 'fly') {
+    setFly(false);
+    return;
+  }
   navigationInput.cancel();
   view.mode = view.mode === 'cockpit' ? 'outside' : 'cockpit';
 });
@@ -182,6 +215,9 @@ if (!opts.water) view.setWaterVisible(false);
 if (opts.look) {
   look.yaw = opts.look.yawDeg * DEG;
   look.pitch = opts.look.pitchDeg * DEG;
+}
+if (opts.fly) {
+  setFly(true, { x: opts.fly.x, y: opts.fly.height, z: opts.fly.z, yaw: -opts.fly.bearingDeg * DEG, pitch: opts.fly.pitchDeg * DEG });
 }
 
 let last = performance.now();
@@ -210,7 +246,8 @@ function frame(now: number): void {
   }
   const steps = fixed.advance(frameSeconds);
   for (let i = 0; i < steps; i++) {
-    const controls = input.update(cfg.dt);
+    // Flying the camera borrows WASD: the boat sails on with neutral controls.
+    const controls = view.mode === 'fly' ? (input.reset(), { ...NEUTRAL_CONTROLS }) : input.update(cfg.dt);
     const result = step(curr, controls, boat, cfg);
     prev = curr;
     curr = result.state;
@@ -222,6 +259,10 @@ function frame(now: number): void {
 
   const c = diagnostics.controls;
   lastPose = interpolatePose(prev, curr, fixed.alpha, diagnostics, boat, frameSeconds, look);
+  if (view.mode === 'fly') {
+    fly.update(frameSeconds, look.yaw, look.pitch);
+    [view.fly.x, view.fly.y, view.fly.z] = [fly.x, fly.y, fly.z];
+  }
   view.navigation.sighting = navigationInput.reading === 'bearing';
   memory.update(navigation, view.mode === 'cockpit');
   view.navigation.chart.debugPosition = showNavigationTruth ? { x: curr.x, z: curr.z } : null;

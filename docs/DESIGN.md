@@ -180,6 +180,7 @@ Rules:
 | R | Reckon, with the chart in view: plot bearings taken since the last plot (a fix), otherwise the dead-reckoning leg |
 | H | Toggle test instruments (hidden by default) |
 | M | Mute / unmute |
+| G | Debug free-fly camera: WASD fly along the view, E up, Q down, Shift fast, mouse look turns it in world space. The boat sails on with neutral controls. G or V returns to the cockpit. `?fly=x,z,height[,bearing[,pitch]]` opens already flying |
 | Esc | Menu: controls, volume, sail design, respawn, reset hints. The sim keeps running |
 
 Inputs are **continuous with rate limits**: no snapping. A tiller key ramps the tiller over a

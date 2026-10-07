@@ -34,7 +34,7 @@ const OUTSIDE_DISTANCE = 9; // visual estimate: outside camera distance from the
 const OUTSIDE_TARGET_HEIGHT = 1.8; // visual estimate, m
 const NO_REMOTES: ReadonlyMap<number, RemotePose> = new Map();
 
-export type CameraMode = 'cockpit' | 'outside';
+export type CameraMode = 'cockpit' | 'outside' | 'fly';
 
 /** Interpolated pose for one rendered frame. */
 export interface RenderPose extends BoatPose {
@@ -67,6 +67,8 @@ export class SceneView {
   /** Logical position of render-local zero, continuously following the interpolated boat. */
   readonly origin: Vec2 = { x: 0, z: 0 };
   mode: CameraMode = 'cockpit';
+  /** Debug free-fly camera position, logical world metres (y up); used in 'fly' mode, where the look yaw is absolute. */
+  readonly fly = { x: 0, y: 3, z: 0 };
   private readonly water: WaterView;
   private readonly grid: THREE.GridHelper;
   private readonly buoys = createBuoys();
@@ -167,6 +169,12 @@ export class SceneView {
     if (this.mode === 'cockpit') {
       this.camera.rotation.set(pose.lookPitch, pose.lookYaw, 0);
       cam = this.camera;
+    } else if (this.mode === 'fly') {
+      const c = this.outsideCamera;
+      c.position.set(this.fly.x - this.origin.x, this.fly.y, this.fly.z - this.origin.z);
+      c.rotation.order = 'YXZ';
+      c.rotation.set(pose.lookPitch, pose.lookYaw, 0);
+      cam = c;
     } else {
       // Orbit: behind the boat at look yaw 0; mouse look turns and tilts the orbit.
       const az = pose.heading + Math.PI - pose.lookYaw;
