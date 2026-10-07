@@ -11,7 +11,8 @@ const shore = waterDistance(grid);
 const hillRoad = sampleRoad(ROADS.find((r) => r.name === 'Hill Road')!, 10, grid);
 
 describe('the forest belt behind Westcove', () => {
-  const mid = hillRoad[Math.floor(hillRoad.length / 2)]!;
+  // A quarter of the way along Hill Road: north of the terraced middle of town, where Upper Lane runs.
+  const mid = hillRoad[Math.floor(hillRoad.length / 4)]!;
   const uphill = (p: typeof mid, metres: number) => beltAmount(p.x - p.nx * metres, p.z - p.nz * metres);
 
   it('starts clear of the road and the houses beside it, then fills the hillside above', () => {
@@ -20,6 +21,15 @@ describe('the forest belt behind Westcove', () => {
     expect(uphill(mid, 90)).toBeGreaterThan(0.9);
     expect(uphill(mid, 250)).toBeGreaterThan(0.9);
     expect(uphill(mid, 700)).toBe(0);
+  });
+
+  it('begins above Upper Lane through the middle of town, leaving its terrace to the houses', () => {
+    const lane = sampleRoad(ROADS.find((r) => r.name === 'Upper Lane')!, 10, grid);
+    const centre = lane[Math.floor(lane.length / 2)]!;
+    const along = (metres: number) => beltAmount(centre.x - centre.nx * metres, centre.z - centre.nz * metres);
+    expect(along(-40)).toBe(0); // between Hill Road and Upper Lane
+    expect(along(0)).toBe(0);
+    expect(along(120)).toBeGreaterThan(0.9);
   });
 
   it('is absent on the water side of the road, at the harbour and across the bay, and fades toward the ends', () => {
@@ -44,10 +54,10 @@ describe('trees across the land', () => {
     expect(conifers / trees.length).toBeGreaterThan(0.6);
   });
 
-  it('never stands on the beach, the harbour works, a road or a house plot', () => {
+  it('never stands on the beach, the harbour works (not the town terraces), a road or a house plot', () => {
     for (const t of trees) {
       expect(groundHeight(grid, t.x, t.z)).toBeGreaterThanOrEqual(3.5);
-      for (const r of BAY.harbour.reclaimed) {
+      for (const r of BAY.harbour.reclaimed.filter((q) => !('houses' in q && q.houses))) {
         expect(t.x > r.x0 - 25 && t.x < r.x1 + 25 && t.z > r.z0 - 25 && t.z < r.z1 + 25).toBe(false);
       }
     }

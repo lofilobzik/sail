@@ -9,6 +9,9 @@ import { fbm, terrainGrid } from '../../sim/terrain';
 import { ROADS, sampleRoad, type RoadSample } from './roads';
 
 const ROAD = 'Hill Road';
+// A shorter road above Hill Road through the middle of town; where it runs, the forest begins above
+// it instead, so the upper terrace stays a street of houses (only alongside it, not past its ends).
+const UPPER_ROAD = 'Upper Lane';
 const EDGE_NEAR = 22; // m uphill of the road centre where the forest may begin (ragged by EDGE_RAGGED)
 const EDGE_RAGGED = 14; // m of noise on the lower edge
 const EDGE_WAVELENGTH = 55; // m
@@ -18,6 +21,7 @@ const FADE_TO = 520; // ... and is gone
 const END_FADE = 120; // m: the belt fades toward each end of the road
 const SEED = 1987;
 
+let upper: RoadSample[] = [];
 let samples: RoadSample[] | null = null;
 let length = 0;
 let bounds = { x0: 0, x1: 0, z0: 0, z1: 0 };
@@ -26,6 +30,8 @@ function load(): RoadSample[] {
   if (samples) return samples;
   const road = ROADS.find((r) => r.name === ROAD);
   samples = road ? sampleRoad(road, 10, terrainGrid()) : [];
+  const upperRoad = ROADS.find((r) => r.name === UPPER_ROAD);
+  upper = upperRoad ? sampleRoad(upperRoad, 10, terrainGrid()) : [];
   length = samples.length ? samples[samples.length - 1]!.s : 0;
   const xs = samples.map((p) => p.x), zs = samples.map((p) => p.z);
   // Anything farther from the road than the fade distance is outside the belt.
@@ -47,17 +53,29 @@ export function beltBounds(): Readonly<typeof bounds> {
   return bounds;
 }
 
-/** 0 outside the forest belt to 1 deep inside it. Cheap enough for every terrain vertex. */
-export function beltAmount(x: number, z: number): number {
-  const pts = load();
-  if (pts.length === 0 || x < bounds.x0 || x > bounds.x1 || z < bounds.z0 || z > bounds.z1) return 0;
+function nearest(pts: readonly RoadSample[], x: number, z: number): RoadSample {
   let best = pts[0]!, bestD = Infinity;
   for (const p of pts) {
     const d = (p.x - x) ** 2 + (p.z - z) ** 2;
     if (d < bestD) { bestD = d; best = p; }
   }
+  return best;
+}
+
+/** 0 outside the forest belt to 1 deep inside it. Cheap enough for every terrain vertex. */
+export function beltAmount(x: number, z: number): number {
+  const pts = load();
+  if (pts.length === 0 || x < bounds.x0 || x > bounds.x1 || z < bounds.z0 || z > bounds.z1) return 0;
+  const best = nearest(pts, x, z);
   // The road's normal points downhill; the forest is on the other side of it.
-  const up = -((x - best.x) * best.nx + (z - best.z) * best.nz);
+  let up = -((x - best.x) * best.nx + (z - best.z) * best.nz);
+  // Alongside Upper Lane, measure from it instead: the forest starts above the town's top street.
+  if (upper.length > 1) {
+    const u = nearest(upper, x, z);
+    const ends = u === upper[0] || u === upper[upper.length - 1];
+    const beyondEnd = ends && Math.abs((x - u.x) * u.tx + (z - u.z) * u.tz) > 1;
+    if (!beyondEnd) up = Math.min(up, -((x - u.x) * u.nx + (z - u.z) * u.nz));
+  }
   if (up < EDGE_NEAR - EDGE_RAGGED || up > FADE_TO) return 0;
   const edge = EDGE_NEAR + EDGE_RAGGED * fbm(x / EDGE_WAVELENGTH, z / EDGE_WAVELENGTH, 2, SEED);
   const ends = smoothstep(0, END_FADE, best.s) * smoothstep(0, END_FADE, length - best.s);

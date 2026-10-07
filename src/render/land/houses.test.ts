@@ -104,7 +104,7 @@ describe('Westcove roads and houses', () => {
     expect(ROADS.length).toBeGreaterThanOrEqual(2);
     for (const road of ROADS) {
       const samples = sampleRoad(road, 10, grid);
-      expect(samples.length).toBeGreaterThan(50);
+      expect(samples.length).toBeGreaterThan(10);
       for (const p of samples) expect(groundHeight(grid, p.x, p.z)).toBeGreaterThan(3);
       // The normal points downhill: east, toward the water, on this west shore.
       const east = samples.filter((p) => p.nx > 0).length;
@@ -129,9 +129,18 @@ describe('Westcove roads and houses', () => {
     expect(facing / near.length).toBeGreaterThan(0.8);
   });
 
-  it('keeps houses off the quay, the mole and the terrace, and apart from each other', () => {
+  it('builds up the stepped terraces behind the harbour', () => {
+    const terraces = BAY.harbour.reclaimed.filter((t) => 'houses' in t && t.houses);
+    expect(terraces.length).toBeGreaterThanOrEqual(3);
+    const onTerraces = houses.filter((h) => terraces.some((t) => h.x > t.x0 && h.x < t.x1 && h.z > t.z0 && h.z < t.z1));
+    expect(onTerraces.length).toBeGreaterThan(15);
+    // Each terrace is flat at its height where the houses stand.
+    for (const t of terraces) expect(groundHeight(grid, (t.x0 + t.x1) / 2, (t.z0 + t.z1) / 2)).toBeCloseTo(t.height, 0);
+  });
+
+  it('keeps houses off the quay, the mole and the cottage terrace, and apart from each other', () => {
     for (const h of houses) {
-      for (const r of BAY.harbour.reclaimed) {
+      for (const r of BAY.harbour.reclaimed.filter((t) => !('houses' in t && t.houses))) {
         const inside = h.x > r.x0 - 12 && h.x < r.x1 + 12 && h.z > r.z0 - 12 && h.z < r.z1 + 12;
         expect(inside).toBe(false);
       }

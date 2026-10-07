@@ -5,7 +5,7 @@
  */
 import * as THREE from 'three';
 import { BAY, type TerrainGrid } from '../../sim/terrain';
-import { groundGradient, groundHeight } from './ground';
+import { groundHeight } from './ground';
 
 export interface Road {
   name: string;
@@ -23,6 +23,7 @@ export const ROADS: readonly Road[] = BAY.roads.map((r) => ({
 /** One point along a road: position, distance along it, unit tangent and the unit normal pointing downhill. */
 export interface RoadSample { x: number; z: number; s: number; tx: number; tz: number; nx: number; nz: number }
 
+const DOWNHILL_PROBE = 40; // m either side of a road where the ground is compared to find downhill
 const LIFT = 0.1; // m above the terrain mesh, so the gravel never z-fights it
 const RIBBON_STEP = 3; // m between cross-sections
 const GRAVEL = 0x8c8676;
@@ -46,10 +47,12 @@ export function sampleRoad(road: Road, step: number, grid: TerrainGrid): RoadSam
     s += length;
   }
   // One side of the road is downhill: choose the normal that points that way over the whole road.
+  // Compare the ground a little way off either side rather than the slope underfoot, which is zero
+  // along a road laid on a flat terrace.
   let downhill = 0;
   for (const p of out) {
-    const [gx, gz] = groundGradient(grid, p.x, p.z);
-    downhill += -(gx * p.nx + gz * p.nz);
+    downhill += groundHeight(grid, p.x - p.nx * DOWNHILL_PROBE, p.z - p.nz * DOWNHILL_PROBE)
+      - groundHeight(grid, p.x + p.nx * DOWNHILL_PROBE, p.z + p.nz * DOWNHILL_PROBE);
   }
   if (downhill < 0) for (const p of out) { p.nx = -p.nx; p.nz = -p.nz; }
   return out;

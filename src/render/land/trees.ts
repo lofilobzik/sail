@@ -87,8 +87,10 @@ const smoothstep = (a: number, b: number, v: number): number => {
   return t * t * (3 - 2 * t);
 };
 
+/** Near the hand-built harbour works; the town's terraces (`houses: true`) are ordinary ground. */
 function nearHarbour(x: number, z: number): boolean {
-  return BAY.harbour.reclaimed.some((r) => x > r.x0 - HARBOUR_CLEARANCE && x < r.x1 + HARBOUR_CLEARANCE && z > r.z0 - HARBOUR_CLEARANCE && z < r.z1 + HARBOUR_CLEARANCE);
+  return BAY.harbour.reclaimed.some((r) => !('houses' in r && r.houses)
+    && x > r.x0 - HARBOUR_CLEARANCE && x < r.x1 + HARBOUR_CLEARANCE && z > r.z0 - HARBOUR_CLEARANCE && z < r.z1 + HARBOUR_CLEARANCE);
 }
 
 export function placeTrees(grid: TerrainGrid, shore: Float32Array, houses: Footprints): Tree[] {

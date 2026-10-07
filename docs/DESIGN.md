@@ -296,6 +296,14 @@ fraction of a second and holds its position. Same idea for the sheet.
   two-tier cone or an octahedron beyond; the far conifer keeps the near one's silhouette so the swap is hard to
   see, even through binoculars), so off-screen forest is skipped. Measured about +0.9 ms over the houses; 810k triangles
   and 290 draw calls looking east, 365k and 106 looking at the town.
+- **The terraced town centre**: behind the harbour the hill steps up in four flat terraces at about the
+  natural ground height of each (9, 20, 31 and 42 m; `harbour.reclaimed`, so the sim's terrain and grounding
+  see them too), with short banks between that stay green. The old single terrace left a 25 m cut too steep
+  for houses or trees, a grey scar in the middle of town. The lowest terrace carries the waterfront cottage
+  row; the other three are `houses: true` and built up fully along Harbour Road, Hill Road and a short Upper
+  Lane, with the forest belt starting above Upper Lane there. CHAPEL, a white wooden church (the `spire`
+  builder, 22 m), stands on the church terrace and is a bearing landmark. Roads decide their downhill side
+  by comparing the ground 40 m either side, which also works on a flat terrace.
 - **Houses and roads** (`render/land/houses.ts`, `houseModels.ts`, `roads.ts`): Westcove has
   `layout: "roads"` in `data/bay.json`, so its houses stand in clusters along its two roads, Harbour Road
   (8 m contour) and Hill Road (20 m contour), set back 5-9 m, every front facing downhill toward the water.

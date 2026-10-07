@@ -83,9 +83,18 @@ export function makeSpec(random: () => number, sink: number): HouseSpec {
   };
 }
 
-/** True inside any harbour rectangle (quay, mole, terrace), grown by HARBOUR_CLEARANCE. */
+/**
+ * True inside a hand-built harbour rectangle (quay, mole, the cottage terrace), grown by `clearance`.
+ * Terraces marked `houses: true` are part of the town and take houses like any other ground.
+ */
 function inHarbour(x: number, z: number, clearance: number): boolean {
-  return BAY.harbour.reclaimed.some((r) => x > r.x0 - clearance && x < r.x1 + clearance && z > r.z0 - clearance && z < r.z1 + clearance);
+  return BAY.harbour.reclaimed.some((r) => !('houses' in r && r.houses)
+    && x > r.x0 - clearance && x < r.x1 + clearance && z > r.z0 - clearance && z < r.z1 + clearance);
+}
+
+/** True on one of the town's terraces behind the harbour (`houses: true`). */
+function onTownTerrace(x: number, z: number): boolean {
+  return BAY.harbour.reclaimed.some((r) => 'houses' in r && r.houses && x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1);
 }
 
 /**
@@ -132,12 +141,14 @@ export function placeHouses(grid: TerrainGrid, shore: Float32Array): House[] {
           const length = range(random, [7, 11]);
           const centre = s + length / 2;
           if (centre >= total) break;
-          const cluster = fbm(centre / CLUSTER_WAVELENGTH + roadIndex * 3.1, side * 5.7 + roadIndex, 2, BAY.seed + 77);
-          const built = cluster > CLUSTER_THRESHOLD && (side === 1 || random() < UPHILL_SIDE_CHANCE);
           const p = samples[Math.min(samples.length - 1, Math.round(centre / 2))]!;
           // The model's width is across the road line: half of it, the setback and half the road.
           const offset = side * (road.width / 2 + range(random, SETBACK) + 3.5);
-          const placed = built && tryPlace(p.x + p.nx * offset, p.z + p.nz * offset, Math.atan2(p.nx, p.nz), ROAD_MAX_SLOPE);
+          const x = p.x + p.nx * offset, z = p.z + p.nz * offset;
+          // Out along the hillside the houses come in clusters; on the town's terraces the street is built up.
+          const cluster = fbm(centre / CLUSTER_WAVELENGTH + roadIndex * 3.1, side * 5.7 + roadIndex, 2, BAY.seed + 77);
+          const built = onTownTerrace(x, z) || (cluster > CLUSTER_THRESHOLD && (side === 1 || random() < UPHILL_SIDE_CHANCE));
+          const placed = built && tryPlace(x, z, Math.atan2(p.nx, p.nz), ROAD_MAX_SLOPE);
           s += placed ? length + range(random, GAP) : 6;
         }
       }
