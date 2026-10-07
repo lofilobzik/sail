@@ -468,4 +468,4 @@ capsize, planing and stronger wind, third-person camera, cruising / management l
   Tune by feel for now; measured response would be needed for calibration.
 - Bay: grounding feel (push/damping are TUNING GUESS), chart framing (buoys plus landmarks in use,
   others pointed at from the edge) and landmark visibility (the spire is small from mid-bay) await
-  player feedback. The scene renders into a target with a 32-bit float depth buffer and 4x MSAA, then is copied to the canvas (`render/scene.ts` `frame`): the canvas's own depth buffer is fixed-point, where reversed depth gains nothing, and window panes and far houses z-fought.
+  player feedback. The HUD (H) and the console say whether reversed depth is actually in effect (it needs EXT_clip_control; three falls back silently), and `?near=<m>` moves the near plane to test far depth precision. The scene renders into a target with a 32-bit float depth buffer and 4x MSAA, then is copied to the canvas (`render/scene.ts` `frame`): the canvas's own depth buffer is fixed-point, where reversed depth gains nothing, and window panes and far houses z-fought.

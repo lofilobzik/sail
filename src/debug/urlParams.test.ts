@@ -21,6 +21,7 @@ describe('parseDevOptions', () => {
       look: null,
       start: null,
       fly: null,
+      near: null,
       perf: false,
     });
   });
@@ -54,5 +55,12 @@ describe('parseDevOptions', () => {
     expect(parse('fly=-1800,700,40,90,-15').fly).toEqual({ x: -1800, z: 700, height: 40, bearingDeg: 90, pitchDeg: -15 });
     expect(parse('fly=1,2').fly).toBeNull();
     expect(parse('fly=1,2,x').fly).toBeNull();
+  });
+
+  it('reads near as a positive number of metres', () => {
+    expect(parse('near=1').near).toBe(1);
+    expect(parse('near=0').near).toBeNull();
+    expect(parse('near=-2').near).toBeNull();
+    expect(parse('near=x').near).toBeNull();
   });
 });

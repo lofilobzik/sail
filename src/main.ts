@@ -212,6 +212,7 @@ window.addEventListener('keydown', (e) => {
 // Checking aids: ?view=outside&look=<yawDeg>,<pitchDeg> sets the initial view without pointer lock.
 if (opts.outsideView) view.mode = 'outside';
 if (!opts.water) view.setWaterVisible(false);
+if (opts.near !== null) view.setNear(opts.near);
 if (opts.look) {
   look.yaw = opts.look.yawDeg * DEG;
   look.pitch = opts.look.pitchDeg * DEG;
@@ -289,7 +290,7 @@ function frame(now: number): void {
   overlay.update(diagnostics, curr);
   if (server && overlay.visible) overlay.setNetwork(server.describe());
   const info = view.renderer.info.render;
-  hud.update(diagnostics, curr, { frameMs, cpuMs, triangles: info.triangles, calls: info.calls }, now);
+  hud.update(diagnostics, curr, { frameMs, cpuMs, triangles: info.triangles, calls: info.calls, reversedDepth: view.reversedDepth }, now);
   cpuMs += (performance.now() - t0 - cpuMs) * FRAME_SMOOTHING;
 
   requestAnimationFrame(frame);

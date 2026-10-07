@@ -68,6 +68,8 @@ export class SceneView {
   /** Logical position of render-local zero, continuously following the interpolated boat. */
   readonly origin: Vec2 = { x: 0, z: 0 };
   mode: CameraMode = 'cockpit';
+  /** True when the reversed depth mapping is in effect (the browser has EXT_clip_control). */
+  readonly reversedDepth: boolean;
   /** Debug free-fly camera position, logical world metres (y up); used in 'fly' mode, where the look yaw is absolute. */
   readonly fly = { x: 0, y: 3, z: 0 };
   private readonly water: WaterView;
@@ -114,6 +116,10 @@ export class SceneView {
     this.renderer = new THREE.WebGLRenderer({ antialias: false, depth: false, reversedDepthBuffer: true });
     // Count the scene's triangles, not just the last pass (the copy to the canvas).
     this.renderer.info.autoReset = false;
+    // three falls back to the standard depth mapping, with only a console warning, when the browser
+    // lacks EXT_clip_control; say plainly which one is in use.
+    this.reversedDepth = this.renderer.state.buffers.depth.getReversed();
+    console.info(`depth buffer: 32-bit float, ${this.reversedDepth ? 'reversed' : 'STANDARD (no EXT_clip_control): far depth is imprecise'}`);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     document.body.appendChild(this.renderer.domElement);
     this.scene.fog = new THREE.Fog(0xffffff, FOG_NEAR, FOG_FAR); // colour set by the sky
@@ -171,6 +177,19 @@ export class SceneView {
       cam.aspect = w / h;
       cam.updateProjectionMatrix();
     }
+  }
+
+  /**
+   * Checking aid (?near=): move both cameras' near plane, m. A deeper near plane buys depth precision
+   * far away, so if far z-fighting stops at ?near=1 the depth buffer is the culprit; cockpit parts
+   * closer than this (hands, compass, chart) are clipped meanwhile.
+   */
+  setNear(near: number): void {
+    for (const cam of [this.camera, this.outsideCamera]) {
+      cam.near = near;
+      cam.updateProjectionMatrix();
+    }
+    console.info(`camera near plane: ${near} m`);
   }
 
   /** Checking aid: hide water and grid to see the underwater parts. */

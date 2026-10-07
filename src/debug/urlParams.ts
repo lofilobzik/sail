@@ -27,6 +27,8 @@ export interface DevOptions {
   start: { x: number; z: number; headingDeg: number | null } | null;
   /** ?fly=<x>,<z>,<height>[,<bearingDeg>[,<pitchDeg>]]: start in the free-fly camera at this spot (compass bearing). */
   fly: { x: number; z: number; height: number; bearingDeg: number; pitchDeg: number } | null;
+  /** ?near=<m>: both cameras' near plane, to test far depth precision. */
+  near: number | null;
   /** ?perf=1 runs the frame-cost benchmark. */
   perf: boolean;
 }
@@ -57,6 +59,7 @@ export function parseDevOptions(params: URLSearchParams): DevOptions {
       ? { x: start[0]!, z: start[1]!, headingDeg: start[2] ?? null } : null,
     fly: fly && fly.length >= 3 && fly.length <= 5 && fly.every(Number.isFinite)
       ? { x: fly[0]!, z: fly[1]!, height: fly[2]!, bearingDeg: fly[3] ?? 0, pitchDeg: fly[4] ?? 0 } : null,
+    near: number('near') !== null && number('near')! > 0 ? number('near') : null,
     perf: params.get('perf') === '1',
   };
 }
