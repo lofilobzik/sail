@@ -22,6 +22,7 @@ import { Menu } from './ui/menu';
 import { Preferences } from './ui/prefs';
 import { SKY } from './render/skyModel';
 import { BAY } from './sim/terrain';
+import { BINDINGS } from './input/bindings';
 
 const START_SPEED = 1; // TUNING GUESS: initial boat speed, m/s
 const FRAME_SMOOTHING = 0.05; // exponential smoothing of the frame-time readout
@@ -166,7 +167,7 @@ prefs.subscribe((p) => {
 });
 // M: mute or unmute.
 window.addEventListener('keydown', (e) => {
-  if (e.code !== 'KeyM' || e.repeat || isTypingTarget(e.target)) return;
+  if (e.code !== BINDINGS.mute.keys.toggle || e.repeat || isTypingTarget(e.target)) return;
   prefs.set({ muted: !prefs.value.muted });
 });
 
@@ -194,13 +195,13 @@ function setFly(on: boolean, at?: { x: number; y: number; z: number; yaw: number
   }
 }
 window.addEventListener('keydown', (e) => {
-  if (e.code !== 'KeyG' || e.repeat || isTypingTarget(e.target)) return;
+  if (e.code !== BINDINGS.freeFly.keys.toggle || e.repeat || isTypingTarget(e.target)) return;
   setFly(view.mode !== 'fly');
 });
 
 // V: switch between the first-person view and an outside view for checking the model.
 window.addEventListener('keydown', (e) => {
-  if (e.code !== 'KeyV' || e.repeat || isTypingTarget(e.target)) return;
+  if (e.code !== BINDINGS.outside.keys.toggle || e.repeat || isTypingTarget(e.target)) return;
   if (view.mode === 'fly') {
     setFly(false);
     return;

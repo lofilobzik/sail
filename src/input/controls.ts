@@ -7,6 +7,7 @@
  *   Shift (hold) hike out, release to sit in
  */
 import { clamp, type Controls } from '../sim';
+import { BINDINGS } from './bindings';
 import { rateLimit } from './rateLimit';
 
 const TILLER_RATE = 2.0; // TUNING GUESS: tiller travel per second while A/D held
@@ -69,13 +70,13 @@ export class ControlInput {
 
   update(dt: number): Controls {
     const k = this.down;
-    const left = k.has('KeyA');
-    const right = k.has('KeyD');
+    const left = k.has(BINDINGS.tiller.keys.port);
+    const right = k.has(BINDINGS.tiller.keys.starboard);
     if (left !== right) this.tiller = rateLimit(this.tiller, right ? 1 : -1, TILLER_RATE, dt);
-    else if (k.has('KeyC')) this.tiller = rateLimit(this.tiller, 0, TILLER_RATE, dt);
+    else if (k.has(BINDINGS.centreTiller.keys.press)) this.tiller = rateLimit(this.tiller, 0, TILLER_RATE, dt);
 
-    const sheetIn = k.has('KeyS');
-    const ease = k.has('KeyW');
+    const sheetIn = k.has(BINDINGS.sheet.keys.in);
+    const ease = k.has(BINDINGS.sheet.keys.ease);
     if (sheetIn !== ease) {
       const before = this.sheetTarget;
       this.sheetTarget = rateLimit(this.sheetTarget, ease ? 1 : 0, SHEET_RATE, dt);
@@ -83,7 +84,7 @@ export class ControlInput {
     }
     this.sheet = rateLimit(this.sheet, this.sheetTarget, SHEET_RATE, dt);
 
-    const hiking = k.has('ShiftLeft') || k.has('ShiftRight');
+    const hiking = k.has(BINDINGS.hike.keys.left) || k.has(BINDINGS.hike.keys.right);
     this.hike = rateLimit(this.hike, hiking ? 1 : 0, HIKE_RATE, dt);
 
     return { tiller: this.tiller, sheet: this.sheet, hike: this.hike };

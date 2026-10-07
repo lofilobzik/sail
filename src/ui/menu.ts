@@ -3,34 +3,11 @@
  * shared, running sea). Esc releases the pointer lock, which opens the menu; Resume or a click on the
  * dimmed backdrop locks the pointer again and closes it.
  */
+import { BINDINGS, keyLabels } from '../input/bindings';
 import { isTypingTarget } from '../input/controls';
 import { requestLook } from '../input/mouseLook';
 
-/** Keys and what they do; the same list as README.md and DESIGN.md Controls. */
-const CONTROLS: readonly (readonly [keys: string, action: string])[] = [
-  ['Mouse', 'Look'],
-  ['A  D', 'Tiller (the bow turns the other way)'],
-  ['C', 'Centre tiller'],
-  ['W  S', 'Ease / sheet in'],
-  ['Wheel', 'Fine trim'],
-  ['Shift', 'Hike out'],
-  ['F', 'Bearing, or wake speed'],
-  ['B', 'Binoculars'],
-  ['R', 'Plot on the chart'],
-  ['M', 'Mute'],
-  ['Esc', 'Menu'],
-];
-
-/**
- * Tools for checking the model, kept apart from the sailing controls: the instruments read out the
- * wind and trim that the Windex and telltales are there to teach, and the outside view shows the
- * whole boat. TEMP: the group leaves the menu once these are no longer needed.
- */
-const DEVELOPER: readonly (readonly [keys: string, action: string])[] = [
-  ['H', 'Instruments'],
-  ['V', 'Outside view'],
-  ['~  F3', 'Debug panel'],
-];
+// Sailing controls and developer tools come from the same bindings used by their input handlers.
 
 export interface MenuOptions {
   /** The canvas that holds the pointer lock. */
@@ -101,7 +78,7 @@ export class Menu {
     const tld = document.createElement('span');
     tld.textContent = '.ing';
     title.append('dinghysail', tld);
-    panel.append(title, heading('Controls'), keyList(CONTROLS));
+    panel.append(title, heading('Controls'), keyList(false));
 
     panel.appendChild(heading('Options'));
     this.volumeSlider = document.createElement('input');
@@ -141,7 +118,7 @@ export class Menu {
     );
     panel.appendChild(buttons);
 
-    const developer = keyList(DEVELOPER);
+    const developer = keyList(true);
     developer.classList.add('dm-dev');
     panel.append(heading('Developer'), developer);
 
@@ -158,7 +135,7 @@ export class Menu {
     // Esc with the pointer free (before the first click, or after a failed resume) toggles the menu.
     // Some browsers also deliver the Esc that released the lock: that one must not close the menu again.
     window.addEventListener('keydown', (e) => {
-      if (e.code !== 'Escape' || e.repeat || isTypingTarget(e.target)) return;
+      if (e.code !== BINDINGS.menu.keys.toggle || e.repeat || isTypingTarget(e.target)) return;
       if (performance.now() - this.unlockedAt < ESC_UNLOCK_MS) return;
       if (document.pointerLockElement !== opts.canvas) this.setOpen(!this.open);
     });
@@ -197,16 +174,26 @@ function heading(text: string): HTMLElement {
   return h;
 }
 
-function keyList(list: readonly (readonly [keys: string, action: string])[]): HTMLElement {
+function keyList(developer: boolean): HTMLElement {
   const grid = document.createElement('div');
   grid.className = 'dm-keys';
-  for (const [key, action] of list) {
+  for (const binding of Object.values(BINDINGS)) {
+    if (binding.developer !== developer) continue;
     const k = document.createElement('div');
     k.className = 'dm-key';
-    k.textContent = key;
+    k.textContent = keyLabels(binding.keys);
     const a = document.createElement('div');
     a.className = 'dm-action';
-    a.textContent = action;
+    a.textContent = binding.action;
+    if ('movement' in binding) {
+      const m = binding.movement;
+      a.title = [
+        `${keyLabels({ forward: m.forward, back: m.back })}: forward / back`,
+        `${keyLabels({ left: m.left, right: m.right })}: left / right`,
+        `${keyLabels({ up: m.up, down: m.down })}: up / down`,
+        `${keyLabels({ left: m.fastLeft, right: m.fastRight })}: fast`,
+      ].join('; ');
+    }
     grid.append(k, a);
   }
   return grid;

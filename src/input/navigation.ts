@@ -5,6 +5,7 @@
  */
 import type { Navigation, ReadingKind } from '../nav/navigation';
 import type { NavigationView } from '../render/navigation';
+import { BINDINGS } from './bindings';
 import { isTypingTarget } from './controls';
 
 export class NavigationInput {
@@ -15,11 +16,11 @@ export class NavigationInput {
   constructor(private readonly cockpit: () => boolean) {
     window.addEventListener('keydown', (e) => {
       if (isTypingTarget(e.target)) return;
-      if (e.code === 'KeyR' && !e.repeat) this.reckonKey = true;
-      else if (e.code === 'KeyF') this.readHeld = true;
+      if (e.code === BINDINGS.reckon.keys.press && !e.repeat) this.reckonKey = true;
+      else if (e.code === BINDINGS.reading.keys.hold) this.readHeld = true;
     });
     window.addEventListener('keyup', (e) => {
-      if (e.code === 'KeyF') this.readHeld = false;
+      if (e.code === BINDINGS.reading.keys.hold) this.readHeld = false;
     });
     window.addEventListener('blur', () => this.cancel());
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.cancel(); });

@@ -1,4 +1,5 @@
 /** Hold B: raise the binoculars. The zoom itself eases in render/binoculars.ts. */
+import { BINDINGS } from './bindings';
 import { isTypingTarget } from './controls';
 
 export class BinocularInput {
@@ -6,10 +7,10 @@ export class BinocularInput {
 
   constructor(private readonly cockpit: () => boolean) {
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'KeyB' && !isTypingTarget(e.target)) this.keyHeld = true;
+      if (e.code === BINDINGS.binoculars.keys.hold && !isTypingTarget(e.target)) this.keyHeld = true;
     });
     window.addEventListener('keyup', (e) => {
-      if (e.code === 'KeyB') this.keyHeld = false;
+      if (e.code === BINDINGS.binoculars.keys.hold) this.keyHeld = false;
     });
     window.addEventListener('blur', () => this.cancel());
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.cancel(); });

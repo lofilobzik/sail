@@ -2,6 +2,7 @@
  * Debug free-fly camera (G): WASD fly along the view direction, E up, Q down, Shift fast. The mouse
  * look is the normal pointer-locked one. Position is logical world metres (x east, z south, y up).
  */
+import { BINDINGS } from './bindings';
 import { isTypingTarget } from './controls';
 
 const SPEED = 30; // m/s, TUNING GUESS: crossing the bay in a minute or two
@@ -24,10 +25,11 @@ export class FlyCamera {
   /** Moves for `dt` seconds along the view given by `yaw` (+ = left, rad) and `pitch` (+ = up, rad). */
   update(dt: number, yaw: number, pitch: number): void {
     const key = (code: string): number => (this.held.has(code) ? 1 : 0);
-    const forward = key('KeyW') - key('KeyS');
-    const right = key('KeyD') - key('KeyA');
-    const up = key('KeyE') - key('KeyQ');
-    const step = SPEED * (this.held.has('ShiftLeft') || this.held.has('ShiftRight') ? FAST : 1) * dt;
+    const keys = BINDINGS.freeFly.movement;
+    const forward = key(keys.forward) - key(keys.back);
+    const right = key(keys.right) - key(keys.left);
+    const up = key(keys.up) - key(keys.down);
+    const step = SPEED * (this.held.has(keys.fastLeft) || this.held.has(keys.fastRight) ? FAST : 1) * dt;
     const cosPitch = Math.cos(pitch);
     // Render-local axes: the view looks down -z at yaw 0 and a positive yaw turns it toward -x.
     this.x += step * (forward * -Math.sin(yaw) * cosPitch + right * Math.cos(yaw));

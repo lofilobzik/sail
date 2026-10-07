@@ -7,6 +7,7 @@
  */
 import { DEG, KNOT, WAVE_PARAMETERS, setWaveParameters, setWaveWind, setWaveLayers, waveAmplitude, worldToBearing, wrap2Pi, type BoatState, type Diagnostics, type SimConfig } from '../sim';
 import type { ArrowVisibility } from '../render/vectors';
+import { BINDINGS } from '../input/bindings';
 
 const GROUPS = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'Waves', 'Boat'] as const;
 type GroupId = (typeof GROUPS)[number];
@@ -70,7 +71,7 @@ export class DebugOverlay {
     }
 
     window.addEventListener('keydown', (e) => {
-      if (e.code !== 'Backquote' && e.code !== 'F3') return;
+      if (e.code !== BINDINGS.debug.keys.toggle && e.code !== BINDINGS.debug.keys.alternate) return;
       e.preventDefault();
       this.visible = !this.visible;
       r.style.display = this.visible ? '' : 'none';

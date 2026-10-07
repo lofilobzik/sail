@@ -394,8 +394,11 @@ The debug overlay is a developer tool, not a player aid, and is toggled off by d
   streaks or arrows in the world. A guide completes once its ring has been on screen for two seconds,
   is remembered in localStorage, and can be reset from the Esc menu. A guide ignored for 30 s steps
   back for a minute rather than nagging. Chevrons stay above the lap chart.
-- **Esc menu** (`src/ui/menu.ts`) lists the sailing controls, with the instruments, outside view and
-  debug panel set apart under Developer; the boat keeps sailing behind it.
+- **Esc menu** (`src/ui/menu.ts`) generates its controls from `src/input/bindings.ts`, the same
+  key definitions used by the input handlers. Each binding marks whether it is a developer tool:
+  instruments, outside view, debug panel and G free-fly stay under Developer. Existing labels and
+  ordering are unchanged; G is the only added row, with its movement keys in the hover description.
+  Either Shift key shares one label. The boat keeps sailing behind the menu.
 
 ## Navigation
 

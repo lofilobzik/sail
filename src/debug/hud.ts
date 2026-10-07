@@ -6,6 +6,7 @@
  */
 import { DEG, KNOT, wrap2Pi, worldToBody, type BoatModel, type BoatState, type Diagnostics } from '../sim';
 import { isTypingTarget } from '../input/controls';
+import { BINDINGS } from '../input/bindings';
 
 const UPDATE_INTERVAL_MS = 100; // readouts refresh at 10 Hz so digits stay readable
 
@@ -65,7 +66,7 @@ export class TestHud {
     this.perf.style.display = 'none';
 
     window.addEventListener('keydown', (e) => {
-      if (e.code !== 'KeyH' || isTypingTarget(e.target)) return;
+      if (e.code !== BINDINGS.instruments.keys.toggle || isTypingTarget(e.target)) return;
       this.visible = !this.visible;
       this.root.style.display = this.visible ? 'grid' : 'none';
       this.perf.style.display = this.visible ? 'block' : 'none';
