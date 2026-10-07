@@ -27,9 +27,14 @@ const FRAME_SMOOTHING = 0.05; // exponential smoothing of the frame-time readout
 const BENCH_FRAMES = 200; // ?perf=1: frames rendered back to back, each synchronised with a 1-pixel readback
 const BENCH_DELAY_MS = 2000;
 
-/** Offline start: afloat in Westcove Harbour, bow where data/bay.json `harbour.departure` points it (a beam reach for the default wind from 0°). */
+/**
+ * Offline start: afloat in Westcove Harbour, bow where data/bay.json `harbour.departure` points it (a
+ * beam reach for the default wind from 0°); `?start=x,z[,heading]` puts it anywhere else to look around.
+ */
 function harbourStart(): BoatState {
-  const { x, z, headingDeg } = BAY.harbour.departure;
+  const { x, z, headingDeg } = opts.start
+    ? { ...opts.start, headingDeg: opts.start.headingDeg ?? BAY.harbour.departure.headingDeg }
+    : BAY.harbour.departure;
   return { ...initialState(headingDeg * DEG, START_SPEED), x, z };
 }
 

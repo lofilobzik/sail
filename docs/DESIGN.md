@@ -196,6 +196,16 @@ fraction of a second and holds its position. Same idea for the sheet.
   unresolved displacement; per-pixel normals and footprint/specular filtering prevent distant shimmer.
   Physics responds to slope and foil orbital flow; visual heave follows surface height, without a
   vertical buoyancy-force simulation.
+- **Surf, whitecaps and glow (visual only, `render/water.ts`):** all per-pixel arithmetic on values the
+  shader already has, with no extra texture reads, and branched off where they do not apply (measured
+  within noise of the old shader: about 13.5 vs 13.0 ms at 2880x1454 on an M-series GPU). Pixels over
+  shallows (seabed depth under 2.2 m) get a swash line of foam that breathes up and down the shore plus
+  trailing lines; whitecaps break off the highest crests once the wave amplitude scale passes 1.25
+  (about 8 kn) and thicken to 2.0; light scatters through crests toward a viewer looking at the sun.
+  The sea's surface slope is damped to 40 % toward the horizon, because at grazing angles a degree of
+  ripple tilt otherwise streaks the reflected sky with white scratches (`GRAZING_*`). Ripples now fade
+  at 14 to 7 samples per wavelength instead of 8 to 4. Constants are VISUAL ESTIMATE / TUNING GUESS.
+  `?start=x,z[,heading]` places the boat anywhere offline to look at a shore or shoal.
 - **Wake and bow wave (visual only):** the water shader adds a Kelvin wake (transverse and divergent
   waves, 19.47 degree cusp), a bow wave hugging the waterline, and turbulent foam behind the transom
   and on the bow crest. Only new bow emissions follow the foremost hull/sea contact using heave,

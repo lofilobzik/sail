@@ -19,6 +19,7 @@ describe('parseDevOptions', () => {
       outsideView: false,
       water: true,
       look: null,
+      start: null,
       perf: false,
     });
   });
@@ -37,5 +38,13 @@ describe('parseDevOptions', () => {
     expect(parse('look=30,-10').look).toEqual({ yawDeg: 30, pitchDeg: -10 });
     expect(parse('look=30').look).toBeNull();
     expect(parse('look=30,x').look).toBeNull();
+  });
+
+  it('reads start as x,z with an optional heading', () => {
+    expect(parse('start=-1900,700')?.start).toEqual({ x: -1900, z: 700, headingDeg: null });
+    expect(parse('start=-1900,700,270').start).toEqual({ x: -1900, z: 700, headingDeg: 270 });
+    expect(parse('start=-1900').start).toBeNull();
+    expect(parse('start=1,2,3,4').start).toBeNull();
+    expect(parse('start=1,x').start).toBeNull();
   });
 });

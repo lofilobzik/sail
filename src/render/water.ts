@@ -26,6 +26,29 @@ const SHALLOW_DEPTH_RANGE = 32; // m: the baked depth is clamped to +/- this (ha
 // bed vanishes at grazing angles; seen from a dinghy that hides every shoal, so this VISUAL
 // ESTIMATE keeps shoals and beaches readable from a sitting eye height.
 const SHALLOW_GLANCE = 0.5;
+// At grazing angles the sky's brightness changes so fast with elevation that a degree of ripple
+// tilt streaks the reflection with white scratches. Real water averages that tilt over the
+// surface a pixel covers, so the sea's slope is damped toward flat as the view gets shallower
+// (VISUAL ESTIMATE): full slope above GRAZING_FULL (sine of elevation), GRAZING_FLOOR of it at the horizon.
+const GRAZING_FLOOR = 0.4;
+const GRAZING_FULL = 0.3;
+// Surf and whitecaps, all VISUAL ESTIMATE. Shore foam rides on the seabed depth the shader already
+// fetches (no extra texture reads): a swash line that breathes in and out along every beach, wall
+// and shoal, with thinner lines of foam trailing it out to SHORE_LINES_DEPTH.
+const SHORE_SWASH_DEPTH = 0.4; // m: mean depth of the swash line
+const SHORE_SWASH_RANGE = 0.3; // m: how far the line runs up and down the beach
+const SHORE_SWASH_RATE = 0.8; // rad/s
+const SHORE_LINES_DEPTH = 2.2; // m: trailing lines of foam fade out by this depth
+const SHORE_FOAM_OPACITY = 0.9;
+// Whitecaps break off the highest crests once the sea is up: amplitude scale 1 is the 7 kn
+// reference (data/waves.json), so they start near 8 kn and are widespread by 12 kn.
+const CAPS_FROM = 1.25;
+const CAPS_FULL = 2.0;
+const CAPS_OPACITY = 0.7;
+const CAPS_COVERAGE = 0.85; // fraction of the highest crests that break at full sea
+// Light scattered through thin crests toward a viewer looking at the sun.
+const SCATTER_COLOUR = 0x2a9a86;
+const SCATTER_GAIN = 0.45;
 
 /**
  * Seabed elevation baked once from terrainGrid() into a single-channel half-float texture in
@@ -135,6 +158,10 @@ export function createWater(
         waterColour: { value: new THREE.Color(WATER_COLOR) },
         shallowSand: { value: new THREE.Color(SHALLOW_SAND) },
         shallowTurquoise: { value: new THREE.Color(SHALLOW_TURQUOISE) },
+        waterTime: { value: 0 },
+        // Highest crest above the mean surface, m: the sum of the component amplitudes at this scale.
+        waveHeight: { value: 0 },
+        scatterColour: { value: new THREE.Color(SCATTER_COLOUR) },
         sunDirection: { value: sun.position.clone().sub(sun.target.position).normalize() },
         sunColour: { value: sun.color.clone().multiplyScalar(sun.intensity) },
         hemisphereSky: { value: hemisphere.color.clone().multiplyScalar(hemisphere.intensity) },
@@ -181,6 +208,9 @@ export function createWater(
       uniform vec3 waterColour;
       uniform vec3 shallowSand;
       uniform vec3 shallowTurquoise;
+      uniform vec3 scatterColour;
+      uniform float waterTime;
+      uniform float waveHeight;
       uniform sampler2D shallowsTexture;
       uniform vec4 shallowsBounds; // world corner x, z; 1 / world width, 1 / world depth
       uniform vec2 renderOrigin;
@@ -211,7 +241,9 @@ export function createWater(
         float hullMask = wakeHullMask(wakePos);
         vec3 kelvin = wakeLayers.x * kelvinWake(wakeSN, wakeProps, pixel) * hullMask;
         vec2 tangent = wakeSN.zw / max(length(wakeSN.zw), 1e-6);
-        vec2 slope = -normal.xz / normal.y
+        vec3 view = normalize(cameraPosition - waterPosition);
+        float grazing = mix(${GRAZING_FLOOR.toFixed(2)}, 1.0, smoothstep(0.0, ${GRAZING_FULL.toFixed(2)}, view.y));
+        vec2 slope = grazing * (-normal.xz / normal.y)
           + kelvin.y * tangent + kelvin.z * vec2(-tangent.y, tangent.x);
         vec4 bowSample = wakeBowSample(wakePos);
         float bow = bowSample.r * wakeBowFilter(bowSample, pixel);
@@ -229,7 +261,6 @@ export function createWater(
         slope += wakeLayers.y * bowGradient;
         normal = normalize(vec3(-slope.x, 1.0, -slope.y));
 
-        vec3 view = normalize(cameraPosition - waterPosition);
         vec3 reflection = reflect(-view, normal);
         // Schlick Fresnel: water/air normal-incidence reflectance from their indices.
         float fresnel = ${WATER_F0.toExponential(16)} + (1.0 - ${WATER_F0.toExponential(16)})
@@ -248,6 +279,12 @@ export function createWater(
         float shallow = baked * (1.0 - smoothstep(0.0, ${SHALLOW_DEPTH.toFixed(2)}, depth));
         vec3 body = mix(waterColour, bed, shallow);
         vec3 diffuse = body * (ambient + sunColour * max(dot(normal, sunDirection), 0.0));
+        // Crest height, -1 trough to +1 crest, from the same wave sum the surface uses.
+        float crestHeight = clamp(surfacePosition.y / max(waveHeight, 1e-3), -1.0, 1.0);
+        // Light scattered through the thin crest, strongest looking toward the sun.
+        float towardSun = max(dot(-view, sunDirection), 0.0);
+        diffuse += scatterColour * sunColour * ${SCATTER_GAIN.toFixed(2)}
+          * smoothstep(-0.3, 1.0, crestHeight) * (0.2 + 0.8 * towardSun * towardSun) * (1.0 - shallow);
         // TUNING GUESS: broaden the specular lobe by the pixel's normal variance;
         // preserve the cosine-power lobe's integrated energy instead of flashing
         // a narrow highlight on/off as it crosses a pixel.
@@ -266,7 +303,35 @@ export function createWater(
         // Whitewater: diffuse, unpolished, so it replaces the reflective water colour.
         float foam = wakeLayers.z * wakeFoamAmount(wakePos, wakeSN, wakeProps, bow, bowSample.g, bowSample.b, pixel);
         vec3 foamColour = ${FOAM_ALBEDO.toFixed(3)} * (ambient + sunColour * max(dot(normal, sunDirection), 0.0));
-        colour = mix(colour, foamColour, foam * ${WAKE.foamOpacity.toFixed(3)});
+        float foamOpacity = foam * ${WAKE.foamOpacity.toFixed(3)};
+        // Whitecaps: the highest crests break once the sea is up, in patches that share the wake's
+        // foam grain. Skipped (a uniform branch) at the reference wind and below.
+        if (waveScale > ${CAPS_FROM.toFixed(2)}) {
+          float capCover = ${CAPS_COVERAGE.toFixed(2)} * smoothstep(${CAPS_FROM.toFixed(2)}, ${CAPS_FULL.toFixed(2)}, waveScale)
+            * smoothstep(0.5, 0.9, crestHeight);
+          if (capCover > 0.0) {
+            float grain = wakeNoise(wakePos, pixel);
+            // A second sample at another scale and offset breaks up the first one's regular lattice.
+            float ragged = wakeNoise(wakePos * 1.9 + vec2(41.0, 17.0), pixel * 1.9);
+            float capGrain = clamp(0.5 + 1.4 * (0.5 * (grain + ragged) - 0.5), 0.0, 1.0);
+            foamOpacity = max(foamOpacity, ${CAPS_OPACITY.toFixed(2)}
+              * smoothstep(1.0 - capCover, 1.0 - capCover + 0.25, capGrain) * capCover);
+          }
+        }
+        // Surf: a swash line that breathes up and down the beach with lines of foam trailing it.
+        // Only the few pixels over shallows pay for it.
+        float shoreDepth = max(depth, 0.0);
+        if (baked > 0.5 && shoreDepth < ${SHORE_LINES_DEPTH.toFixed(2)}) {
+          float grain = wakeNoise(wakePos, pixel);
+          float shorePhase = waterTime * ${SHORE_SWASH_RATE.toFixed(2)} + 6.0 * grain;
+          float swash = ${SHORE_SWASH_DEPTH.toFixed(2)} + ${SHORE_SWASH_RANGE.toFixed(2)} * sin(shorePhase);
+          float edge = 1.0 - smoothstep(0.0, 0.3, shoreDepth - swash);
+          float lines = smoothstep(0.75, 1.0, 0.5 + 0.5 * sin(shoreDepth * 5.5 - waterTime * 1.1 + 4.0 * grain))
+            * (1.0 - smoothstep(${SHORE_SWASH_DEPTH.toFixed(2)}, ${SHORE_LINES_DEPTH.toFixed(2)}, shoreDepth));
+          float surf = max(edge, 0.55 * lines) * smoothstep(0.3, 0.6, grain);
+          foamOpacity = max(foamOpacity, ${SHORE_FOAM_OPACITY.toFixed(2)} * surf);
+        }
+        colour = mix(colour, foamColour, foamOpacity);
         // Fog toward the clear sky in this direction, in linear light like the dome, so the
         // water meets the horizon without a seam.
         float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
@@ -306,7 +371,10 @@ export function createWater(
         const w = components[i]!;
         motions[i]!.set(wavePhaseAt(w, origin.x, origin.z, t), w.choppiness);
       }
-      material.uniforms.waveScale!.value = waveAmplitude(cfg);
+      const scale = waveAmplitude(cfg);
+      material.uniforms.waveScale!.value = scale;
+      material.uniforms.waterTime!.value = t;
+      material.uniforms.waveHeight!.value = scale * components.reduce((sum, w) => sum + w.amplitude, 0);
     },
   };
 }
