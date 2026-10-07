@@ -6,6 +6,7 @@
  */
 import * as THREE from 'three';
 import { BAY, fbm, rectWeight, type TerrainGrid } from '../../sim/terrain';
+import { beltAmount } from './forest';
 import { sampleGradient, splitsMainDiagonal } from './ground';
 
 const TILE_CELLS = 64; // VISUAL ESTIMATE: 1.28 km tiles; few draw calls, off-screen tiles culled
@@ -72,7 +73,8 @@ const P = {
  * ground there darkens, so woods still read on far hills where single trees are sub-pixel.
  */
 export function woodAmount(x: number, z: number): number {
-  return smoothstep(WOOD_FROM, WOOD_FULL, fbm(x / WOOD_WAVELENGTH, z / WOOD_WAVELENGTH, 3, BAY.seed + 301));
+  // Patchy woods everywhere, plus the dense forest belt up the hill behind Westcove (forest.ts).
+  return Math.max(smoothstep(WOOD_FROM, WOOD_FULL, fbm(x / WOOD_WAVELENGTH, z / WOOD_WAVELENGTH, 3, BAY.seed + 301)), beltAmount(x, z));
 }
 
 /** Fraction of rock at a point, 0..1; trees and houses also use it to stay off bare ground. */

@@ -1,29 +1,45 @@
 /**
- * Tree clumps: low-poly conifers and broadleaves as two InstancedMeshes (crown and trunk merged,
- * vertex-coloured, with per-instance tint). Clumps grow with the woodland mask shared with the
- * terrain colouring, on grass only: never on the beach, rock, steep ground or water, and never
- * inside a house plot.
+ * Trees across all the land: a jittered lattice over the whole mainland and the islands, denser in
+ * woods and in the forest belt behind Westcove (forest.ts), with meadow clearings, thinner near the
+ * beach and the towns, and never on the beach, bare rock, steep ground, water, roads, house plots or
+ * the harbour works. Conifers are narrow, dark, fir-like and dominate the hills and the belt; broadleaves
+ * fill the lowlands. Drawn as InstancedMeshes per 500 m square (so off-screen forest is skipped), each
+ * a LOD with a full model near and a simple one far. Seeded from BAY.seed.
  */
 import * as THREE from 'three';
-import { BAY, LANDMARKS, type TerrainGrid } from '../../sim/terrain';
+import { BAY, LANDMARKS, fbm, type TerrainGrid } from '../../sim/terrain';
+import { beltAmount } from './forest';
 import { type Footprints, groundGradient, groundHeight, nearestSample, seededRandom } from './ground';
 import { merge, paint } from './parts';
 import { rockAmount, woodAmount } from './terrainMesh';
 
 /** Placement, all VISUAL ESTIMATE. */
-const CLUMP_SPACING = 100; // m: jittered lattice of candidate clump centres
-const CLUMP_RADIUS = 16; // m
-const TREES_PER_CLUMP = [3, 8];
-const LONE_TREE_CHANCE = 0.08; // clumps outside the woods (hedgerow trees, orchards)
-const MAX_SHORE_DISTANCE = 1600; // m: farther inland the haze hides single trees
+const TREE_SPACING = 15; // m: jittered lattice of candidate spots
+const MAX_SHORE_DISTANCE = 2200; // m: farther inland the haze hides single trees (the ground still darkens)
+const BASE_DENSITY = 0.5; // chance of a tree per spot on open ground; woods and the belt go up to 1
+const MEADOW_WAVELENGTH = 260; // m: size of clearings
+const MEADOW_FROM = 0.3; // clearing noise (fbm in [-1, 1]) where meadows begin ...
+const MEADOW_FULL = 0.55; // ... and where they are fully open
+const MEADOW_OPENNESS = 0.9; // how bare a meadow is
+const SHORE_THIN_FROM = 20; // m from the water: no trees closer than this ...
+const SHORE_THIN_TO = 90; // ... full density from here
+const TOWN_DENSITY = 0.4; // inside a town's radius: gardens and a few trees
+const HARBOUR_CLEARANCE = 25; // m around the quay, the mole and the terrace
 const MIN_ELEVATION = 3.5; // m: clear of the beach sand
 const MAX_SLOPE = 0.38; // rise/run
+const BELT_MAX_SLOPE = 0.5; // the belt climbs steeper ground
 const MAX_ROCK = 0.3;
 const TRUNK_CLEARANCE = 1.5; // m: tree footprint kept clear of house discs
 const LANDMARK_CLEARANCE = 25; // m
-const CONIFER_HEIGHT = [7, 16]; // m
+const CONIFER_HEIGHT = [8, 20]; // m
+const BELT_HEIGHT = [13, 24]; // m
+const TALLER_PER_100M = 4; // m of extra conifer height per 100 m of elevation above 20 m
 const BROADLEAF_HEIGHT = [6, 13]; // m
-const CONIFER_ABOVE = 80; // m: conifers become common above this elevation
+const CONIFER_WIDTH = [0.5, 0.68]; // crown width as a fraction of height: fir-narrow
+const CONIFER_SHARE = 0.45; // lowland share of conifers; woods, height and the belt raise it
+const CHUNK = 500; // m: trees are grouped per square of this size
+const FAR_DISTANCE = 800; // m from a chunk's centre: simple models beyond
+const LOD_HYSTERESIS = 0.1;
 
 /** Colours (sRGB), VISUAL ESTIMATE. */
 const TRUNK = 0x5a4634;
@@ -50,56 +66,102 @@ function broadleafGeometry(): THREE.BufferGeometry {
   ]);
 }
 
-interface Tree { x: number; z: number; y: number; height: number; width: number; yaw: number; conifer: boolean }
+/** Far models: one cone, or one octahedron, with no trunk. */
+const farConiferGeometry = (): THREE.BufferGeometry =>
+  merge([paint(new THREE.ConeGeometry(0.2, 1, 5, 1, true), CONIFER_CROWN, new THREE.Matrix4().makeTranslation(0, 0.5, 0))]);
+const farBroadleafGeometry = (): THREE.BufferGeometry =>
+  merge([paint(new THREE.OctahedronGeometry(0.4, 0), BROADLEAF_CROWN, new THREE.Matrix4().makeTranslation(0, 0.55, 0))]);
+
+export interface Tree { x: number; z: number; y: number; height: number; width: number; yaw: number; conifer: boolean; shade: number }
+
+const smoothstep = (a: number, b: number, v: number): number => {
+  const t = Math.min(Math.max((v - a) / (b - a), 0), 1);
+  return t * t * (3 - 2 * t);
+};
+
+function nearHarbour(x: number, z: number): boolean {
+  return BAY.harbour.reclaimed.some((r) => x > r.x0 - HARBOUR_CLEARANCE && x < r.x1 + HARBOUR_CLEARANCE && z > r.z0 - HARBOUR_CLEARANCE && z < r.z1 + HARBOUR_CLEARANCE);
+}
 
 export function placeTrees(grid: TerrainGrid, shore: Float32Array, houses: Footprints): Tree[] {
   const random = seededRandom(BAY.seed * 15485863 + 5);
   const trees: Tree[] = [];
   const range = ([lo, hi]: number[]): number => lo! + (hi! - lo!) * random();
   const spanX = (grid.columns - 1) * grid.cell, spanZ = (grid.rows - 1) * grid.cell;
-  for (let cz = 0; cz < spanZ; cz += CLUMP_SPACING) {
-    for (let cx = 0; cx < spanX; cx += CLUMP_SPACING) {
-      const x0 = grid.minX + cx + random() * CLUMP_SPACING, z0 = grid.minZ + cz + random() * CLUMP_SPACING;
-      const lone = random() < LONE_TREE_CHANCE;
-      if (random() >= woodAmount(x0, z0) && !lone) continue;
-      const d = nearestSample(grid, shore, x0, z0);
+  for (let cz = 0; cz < spanZ; cz += TREE_SPACING) {
+    for (let cx = 0; cx < spanX; cx += TREE_SPACING) {
+      const x = grid.minX + cx + random() * TREE_SPACING, z = grid.minZ + cz + random() * TREE_SPACING;
+      const d = nearestSample(grid, shore, x, z);
       if (d === 0 || d > MAX_SHORE_DISTANCE) continue;
-      const count = lone ? 1 + Math.floor(random() * 2) : Math.round(range(TREES_PER_CLUMP));
-      for (let k = 0; k < count; k++) {
-        const r = CLUMP_RADIUS * Math.sqrt(random()), a = random() * 2 * Math.PI;
-        const x = x0 + r * Math.cos(a), z = z0 + r * Math.sin(a);
-        const y = groundHeight(grid, x, z);
-        if (y < MIN_ELEVATION) continue;
-        const [gx, gz] = groundGradient(grid, x, z);
-        const slope = Math.hypot(gx, gz);
-        if (slope > MAX_SLOPE || rockAmount(x, z, y, slope) > MAX_ROCK) continue;
-        if (houses.overlaps(x, z, TRUNK_CLEARANCE)) continue;
-        if (LANDMARKS.some((l) => Math.hypot(x - l.x, z - l.z) < LANDMARK_CLEARANCE)) continue;
-        const conifer = random() < 0.25 + 0.5 * Math.min(Math.max((y - CONIFER_ABOVE) / CONIFER_ABOVE, 0), 1);
-        const height = range(conifer ? CONIFER_HEIGHT : BROADLEAF_HEIGHT);
-        trees.push({ x, z, y, height, width: height * (conifer ? range([0.85, 1.1]) : range([0.8, 1.15])), yaw: random() * 2 * Math.PI, conifer });
-      }
+      const chance = random(); // one draw per spot keeps the layout stable when the rules change
+      const belt = beltAmount(x, z);
+      const wood = woodAmount(x, z);
+      const meadow = smoothstep(MEADOW_FROM, MEADOW_FULL, fbm(x / MEADOW_WAVELENGTH, z / MEADOW_WAVELENGTH, 2, BAY.seed + 411));
+      let density = (BASE_DENSITY + (1 - BASE_DENSITY) * wood) * (1 - MEADOW_OPENNESS * meadow) * smoothstep(SHORE_THIN_FROM, SHORE_THIN_TO, d);
+      if (BAY.towns.some((t) => (x - t.x) ** 2 + (z - t.z) ** 2 < t.radius * t.radius)) density *= TOWN_DENSITY;
+      density = Math.max(density, belt);
+      if (chance >= density) continue;
+      const y = groundHeight(grid, x, z);
+      if (y < MIN_ELEVATION || nearHarbour(x, z)) continue;
+      const [gx, gz] = groundGradient(grid, x, z);
+      const slope = Math.hypot(gx, gz);
+      if (slope > (belt > 0.3 ? BELT_MAX_SLOPE : MAX_SLOPE) || rockAmount(x, z, y, slope) > MAX_ROCK) continue;
+      if (houses.overlaps(x, z, TRUNK_CLEARANCE)) continue;
+      if (LANDMARKS.some((l) => Math.hypot(x - l.x, z - l.z) < LANDMARK_CLEARANCE)) continue;
+      const conifer = random() < Math.min(1, CONIFER_SHARE + 0.3 * wood + 0.25 * Math.min(Math.max((y - 10) / 90, 0), 1) + 0.4 * belt);
+      const taller = (Math.max(y - 20, 0) / 100) * TALLER_PER_100M;
+      const height = conifer ? range(belt > 0.3 ? BELT_HEIGHT : CONIFER_HEIGHT) + taller : range(BROADLEAF_HEIGHT);
+      const width = height * (conifer ? range(CONIFER_WIDTH) : range([0.8, 1.15]));
+      // The belt is the darkest wood; broadleaves are a little lighter than the firs.
+      const shade = conifer ? range(belt > 0.3 ? [0.7, 0.9] : [0.85, 1]) : range([0.95, 1.1]);
+      trees.push({ x, z, y, height, width, yaw: random() * 2 * Math.PI, conifer, shade });
     }
   }
   return trees;
 }
 
-/** Conifer and broadleaf InstancedMeshes; matrices in logical world coordinates. */
-export function createTreeMeshes(trees: readonly Tree[], material: THREE.Material): THREE.InstancedMesh[] {
+/**
+ * Trees as LOD objects per CHUNK square and kind: a full model near, a simple one far. Instance
+ * matrices are relative to the chunk's centre, where the LOD object sits, so the camera distance
+ * used to pick the level is the chunk's.
+ */
+export function createTreeMeshes(trees: readonly Tree[], material: THREE.Material): THREE.LOD[] {
   const random = seededRandom(BAY.seed * 32452843 + 7);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
-  const position = new THREE.Vector3(), scale = new THREE.Vector3(), tint = new THREE.Color();
-  return [true, false].map((conifer) => {
-    const kind = trees.filter((t) => t.conifer === conifer);
-    const mesh = new THREE.InstancedMesh(conifer ? coniferGeometry() : broadleafGeometry(), material, kind.length);
-    kind.forEach((t, i) => {
-      // Sink the trunk a little so it never floats on the triangulated slope.
-      m.compose(position.set(t.x, t.y - 0.4, t.z), q.setFromAxisAngle(up, t.yaw), scale.set(t.width, t.height, t.width));
-      mesh.setMatrixAt(i, m);
-      tint.setRGB(1 + (random() * 2 - 1) * TINT, 1 + (random() * 2 - 1) * TINT, 1 + (random() * 2 - 1) * TINT * 0.6);
-      mesh.setColorAt(i, tint);
-    });
-    mesh.computeBoundingSphere();
-    return mesh;
-  });
+  const position = new THREE.Vector3(), scale = new THREE.Vector3();
+  const groups = new Map<string, Tree[]>();
+  for (const t of trees) {
+    const key = `${Math.floor(t.x / CHUNK)},${Math.floor(t.z / CHUNK)},${t.conifer ? 1 : 0}`;
+    const list = groups.get(key);
+    if (list) list.push(t);
+    else groups.set(key, [t]);
+  }
+  const shared = {
+    near: [broadleafGeometry(), coniferGeometry()],
+    far: [farBroadleafGeometry(), farConiferGeometry()],
+  };
+  const lods: THREE.LOD[] = [];
+  for (const [key, group] of groups) {
+    const [ix, iz, kind] = key.split(',').map(Number) as [number, number, number];
+    const centreX = (ix + 0.5) * CHUNK, centreZ = (iz + 0.5) * CHUNK;
+    const lod = new THREE.LOD();
+    lod.position.set(centreX, 0, centreZ);
+    // One tint per tree, shared by both levels so a tree keeps its shade when the model swaps.
+    const tints = group.map((t) => new THREE.Color(
+      1 + (random() * 2 - 1) * TINT, 1 + (random() * 2 - 1) * TINT, 1 + (random() * 2 - 1) * TINT * 0.6,
+    ).multiplyScalar(t.shade));
+    for (const [level, geometry] of [[0, shared.near[kind]!], [FAR_DISTANCE, shared.far[kind]!]] as const) {
+      const mesh = new THREE.InstancedMesh(geometry, material, group.length);
+      group.forEach((t, i) => {
+        // Sink the trunk a little so it never floats on the triangulated slope.
+        m.compose(position.set(t.x - centreX, t.y - 0.4, t.z - centreZ), q.setFromAxisAngle(up, t.yaw), scale.set(t.width, t.height, t.width));
+        mesh.setMatrixAt(i, m);
+        mesh.setColorAt(i, tints[i]!);
+      });
+      mesh.computeBoundingSphere();
+      lod.addLevel(mesh, level, level > 0 ? LOD_HYSTERESIS : 0);
+    }
+    lods.push(lod);
+  }
+  return lods;
 }

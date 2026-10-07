@@ -273,6 +273,17 @@ fraction of a second and holds its position. Same idea for the sheet.
   (about 1.3 x 0.7 km, 75 m hill with a stone tower) lies in the north-west of the bay, Little Holm
   (about 380 x 280 m) toward the mouth in the east. Two shoals (Holm Spit, Little Holm Ledge) rise to
   0.3-0.5 m. Westcove Harbour (below) is the departure; every buoy is in 10-21 m of water.
+- **Trees and the forest belt** (`render/land/trees.ts`, `forest.ts`): trees cover all the land, from a
+  jittered 15 m lattice over the mainland and islands within 2.2 km of the water (about 83k trees, 81 %
+  conifers). Density is about half on open ground, up to full in woods and the belt, with meadow clearings,
+  none within 20 m of the water, thinner inside towns, and never on the beach, bare rock, steep ground,
+  roads, house plots or within 25 m of the harbour works. Conifers are narrow, fir-like and dark; broadleaves
+  fill the lowlands. The belt is a dense wall of tall (13 to 24 m, taller uphill), narrow, darker conifers that
+  begins 22 m (ragged by 14 m) uphill of Hill Road, clearing the uphill houses, climbs the hill, thins
+  out between 380 and 520 m up and fades at both ends of the road; it also darkens the ground. Trees are
+  grouped per 500 m square into LOD objects (full model within 800 m of a square's centre, a single cone or
+  octahedron beyond), so off-screen forest is skipped. Measured about +0.4 ms over the houses; 620k triangles
+  and 285 draw calls looking east, 310k and 104 looking at the town.
 - **Houses and roads** (`render/land/houses.ts`, `houseModels.ts`, `roads.ts`): Westcove has
   `layout: "roads"` in `data/bay.json`, so its houses stand in clusters along its two roads, Harbour Road
   (8 m contour) and Hill Road (20 m contour), set back 5-9 m, every front facing downhill toward the water.
