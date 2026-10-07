@@ -31,7 +31,7 @@ const FOG_FAR = 9000; // m
 // render keep the far shore free of z-fighting at this range.
 const CAMERA_FAR = 30000; // m
 // Split depth (see render): the far pass's near plane, m, and how far the near pass reaches past it.
-const NEAR_SPLIT = 2; // TUNING GUESS: everything the sailor holds or touches is closer
+const NEAR_SPLIT = 8; // TUNING GUESS: covers the whole 6.16 m mast and sail from the cockpit
 const SPLIT_OVERLAP = 1.02;
 const MAX_PIXEL_RATIO = 2; // quality cap for high-DPI laptop screens
 const OUTSIDE_FOV_DEG = FOV_DEG * 0.8; // the orbit camera sees a little narrower than the cockpit
@@ -233,7 +233,7 @@ export class SceneView {
     // fixed-point depth buffer. So the scene is
     // drawn beyond NEAR_SPLIT first, with the near plane pushed out there, which is precise enough that
     // far houses, trees and window panes stop z-fighting; then the depth is cleared and everything
-    // within NEAR_SPLIT (hands, compass, chart, the near hull and water) is drawn again on top with the
+    // within NEAR_SPLIT (hands, compass, chart, the whole rig, hull and water) is drawn again on top with the
     // usual near plane. The sky dome is skipped there: it sits on the far plane and would cover the
     // first pass. A little overlap hides the seam.
     // Each pass has its own camera object: three re-uploads a projection only when the camera changes.

@@ -284,6 +284,15 @@ fraction of a second and holds its position. Same idea for the sheet.
   shading guesses each pixel's normal from screen-space derivatives of the position, which shimmers on
   faces only a few pixels across: bright far houses and broadleaf trees blinked through binoculars while
   the dark firs, on dark ground, hid it. Baked normals look the same and cost less.
+- **Whole-rig close-depth coverage** (`render/scene.ts`, `water.ts`): the existing depth split moves
+  from 2 m to 8 m, so the entire mast and transparent sail fit in the close pass from the cockpit
+  rather than crossing the pass boundary. Its near plane stays at 5 cm, with the same 2 % overlap,
+  separate camera objects and colour/background handling. The close-water patch grows from 8 m
+  to 40 m across, retaining 0.2 m cells in the central 8 m and growing outer cells using the existing
+  water-grid builder (18,432 triangles, not an 80,000-triangle uniformly fine patch). These render-only
+  choices are TUNING GUESS (`data/waves.json` sources); both sims and wave parameters are unchanged.
+  Browser smoke checked the live sail's vertices inside the close pass and nearby cockpit water.
+  Paired split-pass rendering at 1800x1125 measured about +0.15 ms with the same scene and pose.
 - **Trees and the forest belt** (`render/land/trees.ts`, `forest.ts`): trees cover all the land, from a
   jittered 15 m lattice over the mainland and islands within 2.2 km of the water (about 83k trees, 81 %
   conifers). Density is about half on open ground, up to full in woods and the belt, with meadow clearings,
@@ -504,8 +513,8 @@ capsize, planing and stronger wind, third-person camera, cruising / management l
   Tune by feel for now; measured response would be needed for calibration.
 - Bay: grounding feel (push/damping are TUNING GUESS), chart framing (buoys plus landmarks in use,
   others pointed at from the edge) and landmark visibility (the spire is small from mid-bay) await
-  player feedback. Depth is split in two passes (`render/scene.ts`): everything beyond 2 m is drawn with the near
-  plane at 2 m, then depth is cleared and everything within 2 m (hands, compass, chart, near hull and a small
+  player feedback. Depth is split in two passes (`render/scene.ts`): everything beyond 8 m is drawn with the near
+  plane at 8 m, then depth is cleared and everything within 8 m (hands, compass, chart, whole rig, hull and a
   water patch under the camera) is drawn again with the near plane at 5 cm, without the sky dome or the colour
   background (three clears colour whenever the background is a colour). One depth range from 5 cm to 30 km
   cannot be precise far away in a fixed-point depth buffer (reversed depth needs a float one and
