@@ -272,11 +272,20 @@ fraction of a second and holds its position. Same idea for the sheet.
   `data/sail-designs.json` is a stack of layers (fill, gradient, polygon, stripes, rays, star, circle,
   tiled pattern) in sail space (x across from the luff, y from the foot up), drawn once onto a canvas by
   `render/sailDesign.ts` and cached by `render/sailPaint.ts`. The cloth grid carries UVs in true cloth
-  metres, so a circle stays round as the cloth moves. A design may set its own opacity and glow; a seeded
-  panel-seam and speckle finish goes over all of them. Pick one with the debug panel's "sail design"
+  metres, so a circle stays round as the cloth moves. A design may set its own opacity and glow;
+  the shared construction finish below goes over all of them. Pick one with the debug panel's "sail design"
   dropdown or `?sail=<id>`; edit or add designs in the JSON (a typo throws an error naming the design and
   layer). Printed cloth is mirrored on its reverse side, as real printed sailcloth is, so text such as
   `:3` reads backwards when seen from the other side. The default is the plain white class sail.
+- **Sail construction** (render-only, `data/sail-construction.json`): radial head/clew panel seams,
+  three bound batten pockets, layered corner patches and a mast sleeve follow the actual rest-grid
+  UV boundary, including the sloping foot and curved leech, on every procedural design.
+  A lower viewing window is translucent film in that same texture, not an opaque decal.
+  A matte clew eye and webbing tie-down connect the cloth to the boom; they follow the sampled cloth
+  clew using reused buffers. The finish adds no texture fetches or draws; the attachment adds two
+  tiny meshes. Design changes cache per-boat textures, all released when the sail material is disposed.
+  Layout, dimensions and contrast are VISUAL ESTIMATE / TUNING GUESS from the user's ILCA diagram
+  and sailing photo. Sail geometry, cloth physics and TS/Go sailing forces remain unchanged.
 - **Sailor:** v1 shows hands, tiller extension and sheet. Full body and hiking pose come later.
 
 ## The bay

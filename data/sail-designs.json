@@ -2,9 +2,6 @@
   "default": "white",
   "textureWidth": 768,
   "finish": {
-    "seams": 5,
-    "seamAlpha": 0.1,
-    "seamSlope": -0.035,
     "grain": 9000,
     "grainAlpha": 0.045,
     "seed": 1987
@@ -159,9 +156,9 @@
     }
   ],
   "sources": {
-    "coordinates": "Design space, VISUAL: x runs 0 to 1 from the luff to a full foot length of cloth, y runs 0 to 1 from the foot to the head, so the sail is a triangle with its luff on the left edge (the leech runs from about (1, 0) through (0.85, 0.25), (0.63, 0.5) and (0.35, 0.75) to the head). Anything beyond the leech is simply not on the sail. Sizes that must stay round (circle radius, star radius, pattern cell) are fractions of the sail width, not of its height, so a circle is a circle on the cloth.",
+    "coordinates": "Design space, VISUAL ESTIMATE: x runs 0 to 1 aft of the luff over the maximum rest-planform width; y runs 0 to 1 along the luff over its physical length. The actual cloth grid supplies the sloping foot, leech and narrow head boundary; anything beyond that boundary is not on the sail. Sizes that must stay round (circle radius, star radius, pattern cell) are fractions of the sail width, not of its height, so a circle is a circle on the cloth.",
     "layers": "fill {color} | gradient {stops [[0=head .. 1=foot, color]], wave {amplitude (of height), cycles}} | polygon {points, color, alpha} | stripes {color, bands [[y0, y1]], slope, wave} | rays {cx, cy, count, duty 0..1, rotation deg, color} | star {cx, cy, r, points, inner 0..1, rotation, color} | circle {cx, cy, r, color, alpha} | pattern {shape text|circle|diamond|square, text, colors (cycled by (column + row) mod n), cell, size (fraction of the cell), brick, rotation, region [x0, y0, x1, y1]}. The first layer must cover the whole sail (fill or gradient). A design may set an opacity value (0..1); without it the sail keeps its default translucency (0.72), which lets the leeward telltales show through. Printed designs use 0.85 so their colours are not washed by the sky behind the cloth. A design may also set a glow value (0..1): the design is added as emission at that strength, standing in for light scattered through the cloth, so the shaded side of the sail keeps its colour; without it the sail only reflects the scene light.",
-    "finish": "TUNING GUESS, applied over every design: cross-cut panel seams, drawn as a faint dark line with a lighter line beside it, and sparse seeded speckle standing in for weave. Not measured Laser sailcloth.",
+    "finish": "TUNING GUESS, applied over every design: sparse seeded speckle standing in for weave. Radial panels, pockets, sleeve and corner patches are configured in sail-construction.json and placed against the actual physical sail UV boundary. Not measured ILCA sailcloth.",
     "palette": "VISUAL ESTIMATE: muted, slightly desaturated flat colours in the style of printed dinghy sails; every design is original to this project."
   }
 }

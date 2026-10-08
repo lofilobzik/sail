@@ -14,6 +14,7 @@ import { telltalePoints, type V3 } from './cloth/telltale';
 import type { BoatLayout } from './boatLayout';
 import { SAIL_DESIGNS, SailPaint } from './sailPaint';
 import type { DesignInfo } from './sailDesign';
+import { createSailAttachment } from './sailAttachment';
 
 const SAIL_COLOR = 0xfbfbf6; // visual estimate: white Dacron
 const SAIL_OPACITY = 0.72; // visual estimate: translucent enough to see the leeward telltales through the cloth
@@ -96,7 +97,7 @@ export function createSail(layout: BoatLayout): SailView {
     uv[n * 2 + 1] = up[n]! / rig.luff;
   }
   geom.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-  const paint = new SailPaint(sailWidth / rig.luff);
+  const paint = new SailPaint(sailWidth / rig.luff, uv, cols, rows);
   let design: string = SAIL_DESIGNS.default;
   const idx: number[] = [];
   for (let k = 0; k < rows - 1; k++) {
@@ -110,6 +111,8 @@ export function createSail(layout: BoatLayout): SailView {
   const material = new THREE.MeshStandardMaterial({
     color: SAIL_COLOR, side: THREE.DoubleSide, transparent: true, roughness: 0.9, emissive: 0xffffff,
   });
+  // Remote-boat material disposal releases the entire per-boat design cache as well.
+  material.addEventListener('dispose', () => paint.dispose());
   // Map, glow and opacity come from the selected design (data/sail-designs.json).
   const applyDesign = (id: string): void => {
     const texture = paint.texture(id);
@@ -124,6 +127,12 @@ export function createSail(layout: BoatLayout): SailView {
   const mesh = new THREE.Mesh(geom, material);
   mesh.frustumCulled = false; // bounds change every frame
   group.add(mesh);
+
+  const attachment = createSailAttachment(visual.boom.diameter / 2);
+  const clew: [number, number, number] = [0, 0, 0];
+  cloth.sample(1, 0, clew);
+  attachment.update(clew);
+  group.add(attachment.object);
 
   // Telltales: one ribbon mesh for all of them (single draw call).
   const tt = visual.telltales;
@@ -185,6 +194,8 @@ export function createSail(layout: BoatLayout): SailView {
       cloth.update({ dt: input.dt, leeward, fill: 1 - input.luffAmount, luff: input.luffAmount, windDir, windScale });
       position.needsUpdate = true;
       geom.computeVertexNormals();
+      cloth.sample(1, 0, clew);
+      attachment.update(clew);
 
       tells.forEach((t, n) => {
         // Surface tangent toward the leech at the attachment point.

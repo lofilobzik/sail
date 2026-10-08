@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import designFile from '../../data/sail-designs.json';
 import { drawSailDesign, parseDesignFile, type DesignInfo } from './sailDesign';
+import { layoutSailConstruction, type SailConstruction } from './sailConstruction';
 
 /** Parsed and validated at startup, so a typo in the JSON fails loudly and names the design. */
 export const SAIL_DESIGNS = parseDesignFile(designFile);
@@ -18,10 +19,12 @@ export class SailPaint {
   private readonly cache = new Map<string, THREE.CanvasTexture>();
   private readonly width = SAIL_DESIGNS.textureWidth;
   private readonly height: number;
+  private readonly construction: SailConstruction;
 
   /** `aspect` is the cloth's physical width / height, so the canvas has the sail's proportions. */
-  constructor(aspect: number) {
+  constructor(aspect: number, uv: Float32Array, cols: number, rows: number) {
     this.height = Math.round(this.width / aspect);
+    this.construction = layoutSailConstruction(uv, cols, rows, aspect);
   }
 
   texture(id: string): THREE.CanvasTexture {
@@ -34,11 +37,17 @@ export class SailPaint {
     canvas.height = this.height;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('2D canvas is not available, so sail designs cannot be drawn');
-    drawSailDesign(ctx, design, SAIL_DESIGNS.finish, this.width, this.height);
+    drawSailDesign(ctx, design, SAIL_DESIGNS.finish, this.construction, this.width, this.height);
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = ANISOTROPY;
     this.cache.set(id, texture);
     return texture;
+  }
+
+  /** Material disposal also releases designs selected earlier, not just the currently bound map. */
+  dispose(): void {
+    for (const texture of this.cache.values()) texture.dispose();
+    this.cache.clear();
   }
 }

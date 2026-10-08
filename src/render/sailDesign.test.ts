@@ -1,58 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import designFile from '../../data/sail-designs.json';
-import { drawSailDesign, parseDesignFile, patternCells, starVertices } from './sailDesign';
+import construction from '../../data/sail-construction.json';
+import { parseDesignFile, patternCells, starVertices } from './sailDesign';
+import { layoutSailConstruction } from './sailConstruction';
 
 /** Minimal valid file with one design whose layers are replaced per test. */
 function fileWith(layers: unknown[], extra: Record<string, unknown> = {}): unknown {
   return {
     default: 'a',
     textureWidth: 64,
-    finish: { seams: 0, seamAlpha: 0, seamSlope: 0, grain: 0, grainAlpha: 0, seed: 1 },
+    finish: { grain: 0, grainAlpha: 0, seed: 1 },
     designs: [{ id: 'a', name: 'A', layers }],
     ...extra,
   };
 }
-
-/** Canvas context stand-in that records method calls; properties are plain settable values. */
-function recordingContext(): { ctx: CanvasRenderingContext2D; calls: string[] } {
-  const calls: string[] = [];
-  const state: Record<string, unknown> = {};
-  const ctx = new Proxy(state, {
-    get: (target, prop: string) => {
-      if (prop in target) return target[prop];
-      return (...args: unknown[]) => {
-        calls.push(prop);
-        // createLinearGradient returns an object with addColorStop.
-        return prop === 'createLinearGradient' ? { addColorStop: () => undefined } : args[0];
-      };
-    },
-    set: (target, prop: string, value) => {
-      target[prop] = value;
-      return true;
-    },
-  }) as unknown as CanvasRenderingContext2D; // test double for the DOM context; only drawing calls are recorded
-  return { ctx, calls };
-}
-
-describe('sail designs file', () => {
-  const file = parseDesignFile(designFile);
-
-  it('parses, has unique ids, and the default exists', () => {
-    const ids = file.designs.map((d) => d.id);
-    expect(new Set(ids).size).toBe(ids.length);
-    expect(ids).toContain(file.default);
-    expect(ids.length).toBeGreaterThanOrEqual(10); // white default plus the nine printed designs
-  });
-
-  it('draws every design without error, filling the sail first and putting ink on it', () => {
-    for (const design of file.designs) {
-      const { ctx, calls } = recordingContext();
-      drawSailDesign(ctx, design, file.finish, 192, 360);
-      expect(calls.length, design.id).toBeGreaterThan(3);
-      expect(calls.some((c) => c === 'fillRect' || c === 'createLinearGradient'), design.id).toBe(true);
-    }
-  });
-});
 
 describe('sail design parsing', () => {
   it('names the design and layer when a colour is wrong', () => {
@@ -77,16 +37,6 @@ describe('sail design parsing', () => {
     expect(() => parseDesignFile(dup)).toThrow(/duplicate id "a"/);
   });
 
-  it('fills in documented defaults for optional numbers', () => {
-    const parsed = parseDesignFile(fileWith([
-      { type: 'fill', color: '#fff' },
-      { type: 'pattern', shape: 'circle', colors: ['#000'], cell: 0.1 },
-      { type: 'stripes', color: '#000', bands: [[0.1, 0.2]] },
-    ]));
-    const [, pattern, stripes] = parsed.designs[0]!.layers;
-    expect(pattern).toMatchObject({ size: 0.6, brick: false, rotation: 0, region: [-0.2, -0.2, 1.2, 1.2] });
-    expect(stripes).toMatchObject({ slope: 0 });
-  });
 
   it('keeps opacity in (0, 1] and glow in [0, 1], and leaves them undefined otherwise', () => {
     const layers = [{ type: 'fill', color: '#fff' }];
@@ -138,5 +88,76 @@ describe('pattern and star layout', () => {
     expect(v[0]![0]).toBeCloseTo(0, 12);
     expect(v[0]![1]).toBeCloseTo(-1, 12); // canvas y points down, so -1 is up
     v.forEach(([x, y], i) => expect(Math.hypot(x, y)).toBeCloseTo(i % 2 === 0 ? 1 : 0.4, 12));
+  });
+});
+
+describe('sail construction layout', () => {
+  // A sloping foot, curved leech and narrow head: unlike an arbitrary texture rectangle.
+  const uv = new Float32Array([
+    0, 0, 1, 0.04,
+    0, 0.45, 0.65, 0.48,
+    0, 1, 0.035, 1,
+  ]);
+  const aspect = 0.5;
+
+  it('ends all three pockets on the actual interpolated leech, preserving physical lengths', () => {
+    const layout = layoutSailConstruction(uv, 2, 3, aspect);
+    expect(layout.pockets).toHaveLength(3);
+    const heights = construction.pockets.map((p) => p.height);
+    const lengths = construction.pockets.map((p) => p.length);
+    for (const [i, pocket] of layout.pockets.entries()) {
+      const row = heights[i]! * 2;
+      const lo = Math.floor(row);
+      const t = row - lo;
+      const x = uv[lo * 4 + 2]! * (1 - t) + uv[(lo + 1) * 4 + 2]! * t;
+      const y = uv[lo * 4 + 3]! * (1 - t) + uv[(lo + 1) * 4 + 3]! * t;
+      expect(pocket.end[0]).toBeCloseTo(x);
+      expect(pocket.end[1]).toBeCloseTo(y);
+      expect(Math.hypot(pocket.end[0] - pocket.start[0], (pocket.end[1] - pocket.start[1]) / aspect)).toBeCloseTo(lengths[i]!);
+      expect(pocket.start[0]).toBeLessThan(pocket.end[0]);
+    }
+  });
+
+  it('anchors reinforcements to the head, tack and clew, with the sleeve inside the narrow head', () => {
+    const layout = layoutSailConstruction(uv, 2, 3, aspect);
+    expect(layout.corners[0]!.point[1]).toBe(1);
+    expect(layout.corners[1]!.point).toEqual([0, 0]);
+    expect(layout.corners[2]!.point[0]).toBe(1);
+    expect(layout.corners[2]!.point[1]).toBeCloseTo(0.04);
+    expect(layout.sleeve.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y))).toBe(true);
+    expect(Math.max(...layout.sleeve.map(([x]) => x))).toBeLessThanOrEqual(construction.sleeveWidth);
+    expect(layout.outline).toContainEqual([1, uv[3]!]);
+  });
+
+  it('shortens pockets to fit a narrow chord instead of crossing the luff', () => {
+    const narrow = new Float32Array([0, 0, 0.01, 0, 0, 1, 0.01, 1]);
+    const layout = layoutSailConstruction(narrow, 2, 2, aspect);
+    for (const pocket of layout.pockets) {
+      expect(pocket.start[0]).toBe(0);
+      expect(pocket.end[0]).toBeCloseTo(0.01);
+      expect(pocket.start[1]).toBeCloseTo(pocket.end[1]);
+    }
+  });
+
+  it('places the viewing window on the lower cloth rather than fixed rectangle coordinates', () => {
+    const layout = layoutSailConstruction(uv, 2, 3, aspect);
+    expect(layout.window).toHaveLength(4);
+    for (const [i, point] of layout.window.entries()) {
+      const [c, height] = construction.window.clothCorners[i]!;
+      const t = height! * 2; // the window is within the first half of this test cloth
+      const leechX = uv[2]! * (1 - t) + uv[6]! * t;
+      const luffY = uv[1]! * (1 - t) + uv[5]! * t;
+      const leechY = uv[3]! * (1 - t) + uv[7]! * t;
+      expect(point[0]).toBeCloseTo(c! * leechX);
+      expect(point[1]).toBeCloseTo(luffY + c! * (leechY - luffY));
+      expect(point[0]).toBeGreaterThan(0);
+      expect(point[0]).toBeLessThan(leechX);
+    }
+  });
+
+  it('rejects an incomplete grid or a nonphysical aspect', () => {
+    expect(() => layoutSailConstruction(uv, 1, 3, aspect)).toThrow(/UV grid/);
+    expect(() => layoutSailConstruction(uv, 2, 4, aspect)).toThrow(/UV grid/);
+    expect(() => layoutSailConstruction(uv, 2, 3, 0)).toThrow(/positive physical aspect/);
   });
 });

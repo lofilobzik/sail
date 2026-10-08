@@ -2,10 +2,11 @@
  * Procedural sail designs (data/sail-designs.json), drawn onto a 2D canvas context.
  * No Three.js and no DOM: the context is passed in, so parsing and layout are testable under Node.
  *
- * Design space: x 0..1 from the luff across one full foot length, y 0..1 from the foot to the head.
+ * Design space: x 0..1 aft of the luff over the widest chord, y 0..1 up the physical luff length.
  * The canvas has the physical aspect of that rectangle, so circles, stars and pattern cells stay
  * true on the cloth; their sizes are fractions of the sail width.
  */
+import { drawSailConstruction, type SailConstruction } from './sailConstruction';
 
 export type Point = [number, number];
 export interface Wave {
@@ -41,9 +42,6 @@ export interface SailDesign {
 export type DesignInfo = Omit<SailDesign, 'layers'>;
 
 export interface Finish {
-  seams: number;
-  seamAlpha: number;
-  seamSlope: number;
   grain: number;
   grainAlpha: number;
   seed: number;
@@ -181,9 +179,6 @@ export function parseDesignFile(raw: unknown): DesignFile {
   const root = obj(raw, 'root');
   const finishRaw = obj(root.finish, 'finish');
   const finish: Finish = {
-    seams: Math.round(num(finishRaw, 'seams', 'finish')),
-    seamAlpha: num(finishRaw, 'seamAlpha', 'finish'),
-    seamSlope: num(finishRaw, 'seamSlope', 'finish'),
     grain: Math.round(num(finishRaw, 'grain', 'finish')),
     grainAlpha: num(finishRaw, 'grainAlpha', 'finish'),
     seed: Math.round(num(finishRaw, 'seed', 'finish')),
@@ -276,7 +271,9 @@ function mulberry32(seed: number): () => number {
 }
 
 /** Draw one design (and the cloth finish) into a w x h canvas; design y = 1 is the top row. */
-export function drawSailDesign(ctx: CanvasRenderingContext2D, design: SailDesign, finish: Finish, w: number, h: number): void {
+export function drawSailDesign(
+  ctx: CanvasRenderingContext2D, design: SailDesign, finish: Finish, construction: SailConstruction, w: number, h: number,
+): void {
   const px = (x: number): number => x * w;
   const py = (y: number): number => (1 - y) * h;
   const aspect = w / h;
@@ -400,24 +397,12 @@ export function drawSailDesign(ctx: CanvasRenderingContext2D, design: SailDesign
   }
 
   drawFinish(ctx, finish, w, h);
+  drawSailConstruction(ctx, construction, w, h);
 }
 
-/** Cross-cut panel seams and sparse speckle over every design. */
+/** Sparse seeded speckle retains the cloth weave on every procedural design. */
 function drawFinish(ctx: CanvasRenderingContext2D, f: Finish, w: number, h: number): void {
   ctx.save();
-  ctx.lineWidth = Math.max(1, w / 400);
-  for (let k = 1; k <= f.seams; k++) {
-    const y = k / (f.seams + 1);
-    const line = (dy: number, style: string): void => {
-      ctx.strokeStyle = style;
-      ctx.beginPath();
-      ctx.moveTo(0, (1 - y) * h + dy);
-      ctx.lineTo(w, (1 - y - f.seamSlope) * h + dy);
-      ctx.stroke();
-    };
-    line(0, `rgba(0,0,0,${f.seamAlpha})`);
-    line(ctx.lineWidth * 1.5, `rgba(255,255,255,${f.seamAlpha * 0.8})`);
-  }
   const rng = mulberry32(f.seed);
   for (const style of [`rgba(0,0,0,${f.grainAlpha})`, `rgba(255,255,255,${f.grainAlpha})`]) {
     ctx.fillStyle = style;
