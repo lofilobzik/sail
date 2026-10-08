@@ -139,22 +139,6 @@ describe('sail construction layout', () => {
     }
   });
 
-  it('places the viewing window on the lower cloth rather than fixed rectangle coordinates', () => {
-    const layout = layoutSailConstruction(uv, 2, 3, aspect);
-    expect(layout.window).toHaveLength(4);
-    for (const [i, point] of layout.window.entries()) {
-      const [c, height] = construction.window.clothCorners[i]!;
-      const t = height! * 2; // the window is within the first half of this test cloth
-      const leechX = uv[2]! * (1 - t) + uv[6]! * t;
-      const luffY = uv[1]! * (1 - t) + uv[5]! * t;
-      const leechY = uv[3]! * (1 - t) + uv[7]! * t;
-      expect(point[0]).toBeCloseTo(c! * leechX);
-      expect(point[1]).toBeCloseTo(luffY + c! * (leechY - luffY));
-      expect(point[0]).toBeGreaterThan(0);
-      expect(point[0]).toBeLessThan(leechX);
-    }
-  });
-
   it('rejects an incomplete grid or a nonphysical aspect', () => {
     expect(() => layoutSailConstruction(uv, 1, 3, aspect)).toThrow(/UV grid/);
     expect(() => layoutSailConstruction(uv, 2, 4, aspect)).toThrow(/UV grid/);

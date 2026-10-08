@@ -18,11 +18,6 @@
   "patchAlpha": 0.2,
   "sleeveWidth": 0.038,
   "sleeveAlpha": 0.15,
-  "window": {
-    "clothCorners": [[0.34, 0.09], [0.66, 0.09], [0.61, 0.22], [0.34, 0.22]],
-    "opacity": 0.3,
-    "bindingWidth": 0.006
-  },
   "attachment": {
     "eyeRadius": 0.017,
     "eyeTubeRadius": 0.0035,
@@ -35,9 +30,9 @@
   },
   "sources": {
     "diagram": "VISUAL ESTIMATE: user-provided annotated ILCA diagram (pasted-image-20261007-172052.png, 2026-10-07). Head and clew radial panel fans, three leech-ending batten pockets, corner reinforcement, mast/luff sleeve and clew eye with boom tie-down are arrangement references, not calibrated surveys; no logos reproduced.",
-    "photo": "VISUAL ESTIMATE: user-provided sailing photo (pasted-image-20261007-172302.png, 2026-10-07) informs subdued white cloth, soft seam contrast, small matte attachment hardware and a small lower-cloth viewing window. The window is actual low-alpha film in the same sail texture, not an opaque grey decal. The existing physical sail planform is unchanged.",
+    "photo": "VISUAL ESTIMATE: user-provided sailing photo (pasted-image-20261007-172302.png, 2026-10-07) informs subdued white cloth, soft seam contrast and small matte attachment hardware. The viewing window is omitted at the user's request; ordinary printed cloth continues across the lower sail. The existing physical sail planform is unchanged.",
     "units": "VISUAL ESTIMATE: panel/pocket height is a cloth grid fraction from foot to head; chords are luff-to-leech fractions. Pocket length/width, patch radii and sleeve width are fractions of maximum physical sail width. Attachment dimensions are metres. Construction UVs come from the actual rest-planform boundary, including its sloping foot and leech.",
-    "modelling": "VISUAL ESTIMATE: patch layer radius ratios 1/0.72/0.45, paired seam-light offset/alpha, pocket-core width 0.64 and closure radius 0.28, neutral film colour and binding contrast, matte eye/webbing finishes (roughness 0.86/0.98, eye metalness 0.12), five-by-ten-segment eye and twelve-span tie-down. These are low-poly appearance choices, not measured hardware or sail construction specifications.",
+    "modelling": "VISUAL ESTIMATE: patch layer radius ratios 1/0.72/0.45, paired seam-light offset/alpha, pocket-core width 0.64 and closure radius 0.28, matte eye/webbing finishes (roughness 0.86/0.98, eye metalness 0.12), five-by-ten-segment eye and twelve-span tie-down. These are low-poly appearance choices, not measured hardware or sail construction specifications.",
     "contrast": "TUNING GUESS: alphas and seam width keep details legible but understated on both white and custom procedural designs. Construction and weave are baked into the existing per-design canvas texture, with no fetched images or extra finish draw calls. The separate clew eye and tie-down add two small mesh draws per visible pass."
   }
 }

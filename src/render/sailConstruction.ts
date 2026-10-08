@@ -12,7 +12,6 @@ export interface SailConstruction {
   seams: [Point, Point][];
   pockets: { start: Point; end: Point }[];
   corners: { point: Point; radius: number }[];
-  window: Point[];
 }
 
 /** Actual cloth boundary UVs, not a rectangular or triangular approximation. Built once per boat. */
@@ -60,7 +59,6 @@ export function layoutSailConstruction(uv: Float32Array, cols: number, rows: num
   });
   return {
     outline, sleeve, seams, pockets,
-    window: construction.window.clothCorners.map(([c, h]) => at(c!, h!)),
     corners: [
       { point: head, radius: construction.patchRadii.head },
       { point: tack, radius: construction.patchRadii.tack },
@@ -126,20 +124,5 @@ export function drawSailConstruction(ctx: CanvasRenderingContext2D, layout: Sail
     ctx.fillStyle = `rgba(78,86,83,${construction.pocketAlpha})`;
     ctx.fill();
   }
-  // Clear only this clipped opening, then replace its printed cloth with genuinely translucent film.
-  ctx.save();
-  polygon(layout.window);
-  ctx.clip();
-  ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = `rgba(201,211,212,${construction.window.opacity})`;
-  ctx.fillRect(0, 0, w, h);
-  ctx.restore();
-  polygon(layout.window);
-  ctx.lineWidth = construction.window.bindingWidth * w;
-  ctx.strokeStyle = 'rgba(236,237,222,0.8)';
-  ctx.stroke();
-  ctx.lineWidth = Math.max(1, construction.panels.seamWidth * w);
-  ctx.strokeStyle = `rgba(72,79,77,${construction.panels.seamAlpha})`;
-  ctx.stroke();
   ctx.restore();
 }

@@ -322,7 +322,9 @@ fraction of a second and holds its position. Same idea for the sheet.
 - **Sail construction** (render-only, `data/sail-construction.json`): radial head/clew panel seams,
   three bound batten pockets, layered corner patches and a mast sleeve follow the actual rest-grid
   UV boundary, including the sloping foot and curved leech, on every procedural design.
-  A lower viewing window is translucent film in that same texture, not an opaque decal.
+  The lower sail uses uninterrupted printed cloth; the viewing window and its binding/settings
+  were removed at the user's request. All ten design textures were smoke-checked for intact alpha
+  across the former window, and the outside boat view was visually checked.
   A matte clew eye and webbing tie-down connect the cloth to the boom; they follow the sampled cloth
   clew using reused buffers. The finish adds no texture fetches or draws; the attachment adds two
   tiny meshes. Design changes cache per-boat textures, all released when the sail material is disposed.
