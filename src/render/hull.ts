@@ -5,15 +5,15 @@
 import * as THREE from 'three';
 import { bodyToLocal, mapToBody } from './bodyFrame';
 import type { BoatLayout } from './boatLayout';
+import details from '../../data/hull-details.json';
+import { gelcoatSurface } from './hullSurface';
 
-const HULL_COLOR = 0xf4f4f0; // visual estimate: white gelcoat
-const DECK_COLOR = 0xdcdcd6; // visual estimate: grey-white non-skid
-const COCKPIT_COLOR = 0xcfd0cb; // visual estimate
+const HULL_COLOR = details.colours.gelcoat;
 const BOOT_COLOR = 0x2a5d8a; // visual estimate: waterline stripe below z = BOOT_TOP
 const BOOT_TOP = 0.02; // visual estimate: stripe top above the waterline, m
 
 function hullMaterial(): THREE.Material {
-  return new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, side: THREE.DoubleSide });
+  return new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.65, side: THREE.DoubleSide });
 }
 
 /** Station x positions, denser toward the bow where the shape changes fastest. */
@@ -69,10 +69,11 @@ function hullShell(layout: BoatLayout): THREE.BufferGeometry {
 }
 
 /** Rounded-rectangle cockpit outline in body (x, y). */
-function cockpitOutline(layout: BoatLayout): THREE.Vector2[] {
-  const c = layout.cockpit;
+function cockpitOutline(layout: BoatLayout, offset = 0): THREE.Vector2[] {
+  const original = layout.cockpit;
+  const c = { aft: original.aft - offset, fore: original.fore + offset, halfWidth: original.halfWidth + offset };
   const shape = new THREE.Shape();
-  const r = c.radius;
+  const r = original.radius + offset;
   shape.moveTo(c.aft + r, -c.halfWidth);
   shape.lineTo(c.fore - r, -c.halfWidth);
   shape.quadraticCurveTo(c.fore, -c.halfWidth, c.fore, -c.halfWidth + r);
@@ -82,7 +83,7 @@ function cockpitOutline(layout: BoatLayout): THREE.Vector2[] {
   shape.quadraticCurveTo(c.aft, c.halfWidth, c.aft, c.halfWidth - r);
   shape.lineTo(c.aft, -c.halfWidth + r);
   shape.quadraticCurveTo(c.aft, -c.halfWidth, c.aft + r, -c.halfWidth);
-  return shape.getPoints(3);
+  return shape.getPoints(details.coaming.cornerSegments);
 }
 
 function deck(layout: BoatLayout, hole: THREE.Vector2[]): THREE.BufferGeometry {
@@ -95,54 +96,78 @@ function deck(layout: BoatLayout, hole: THREE.Vector2[]): THREE.BufferGeometry {
   return mapToBody(new THREE.ShapeGeometry(outline), (x, y) => [x, y, layout.sheerAt(x)]);
 }
 
-function cockpitWell(layout: BoatLayout, outline: THREE.Vector2[]): THREE.BufferGeometry {
+/** A continuous rounded lip, smooth well walls and a moulded floor-to-wall fillet. */
+function cockpitWell(layout: BoatLayout): THREE.BufferGeometry {
+  const c = details.coaming;
   const floorZ = layout.cockpit.floorZ;
+  // VISUAL ESTIMATE: profile in outward offset/height pairs. The outer edge meets
+  // the deck hole exactly; the innermost edge meets the separate textured floor.
+  const profile: readonly (readonly [number, number, boolean])[] = [
+    [c.width, 0, true],
+    [c.width * 0.72, c.height * 0.68, true],
+    [c.width * 0.22, c.height, true],
+    [0, c.height * 0.36, true],
+    [0, c.floorRadius, false],
+    [-c.floorRadius * 0.3, c.floorRadius * 0.24, false],
+    [-c.floorRadius, 0, false],
+  ];
   const pos: number[] = [];
+  const indices: number[] = [];
   const p = new THREE.Vector3();
-  const pts = [...outline, outline[0]!];
-  for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i]!;
-    const b = pts[i + 1]!;
-    const quad = [
-      [a.x, a.y, layout.sheerAt(a.x)],
-      [b.x, b.y, layout.sheerAt(b.x)],
-      [a.x, a.y, floorZ],
-      [b.x, b.y, layout.sheerAt(b.x)],
-      [b.x, b.y, floorZ],
-      [a.x, a.y, floorZ],
-    ] as const;
-    for (const [x, y, z] of quad) {
-      bodyToLocal(x, y, z, p);
+  const rings = profile.map(([offset]) => cockpitOutline(layout, offset));
+  // Shape.getPoints includes its closing point; omit it so the seam shares normals.
+  const count = rings[0]!.length - 1;
+  for (let row = 0; row < profile.length; row++) {
+    const [, height, fromSheer] = profile[row]!;
+    for (let i = 0; i < count; i++) {
+      const point = rings[row]![i]!;
+      bodyToLocal(point.x, point.y, (fromSheer ? layout.sheerAt(point.x) : floorZ) + height, p);
       pos.push(p.x, p.y, p.z);
     }
   }
-  const walls = new THREE.BufferGeometry();
-  walls.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  walls.computeVertexNormals();
-  const floor = mapToBody(new THREE.ShapeGeometry(new THREE.Shape(outline)), (x, y) => [x, y, floorZ]);
-  return mergeSimple([walls, floor]);
+  for (let row = 0; row < profile.length - 1; row++) {
+    for (let i = 0; i < count; i++) {
+      const next = (i + 1) % count;
+      const a = row * count + i;
+      const b = row * count + next;
+      const d = (row + 1) * count + i;
+      const e = (row + 1) * count + next;
+      indices.push(a, b, d, b, e, d);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
-/** Concatenates non-indexed position/normal geometries. */
-function mergeSimple(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  const pos: number[] = [];
-  const nrm: number[] = [];
-  for (const part of parts) {
-    const g = part.index ? part.toNonIndexed() : part;
-    pos.push(...(g.getAttribute('position').array as Float32Array));
-    nrm.push(...(g.getAttribute('normal').array as Float32Array));
+function gunwaleEdge(layout: BoatLayout): THREE.BufferGeometry {
+  const xs = stations(layout, layout.model.cfg.visual.hullStations);
+  const c = details.coaming;
+  const points: THREE.Vector3[] = [];
+  for (const x of xs) points.push(bodyToLocal(x, Math.max(0, layout.halfBeamAt(x) - c.gunwaleInset), layout.sheerAt(x)));
+  // One bow point, then the port edge back to the transom.
+  for (let i = xs.length - 2; i >= 0; i--) {
+    const x = xs[i]!;
+    points.push(bodyToLocal(x, -Math.max(0, layout.halfBeamAt(x) - c.gunwaleInset), layout.sheerAt(x)));
   }
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  out.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
-  return out;
+  return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points, true), xs.length * 4, c.gunwaleRadius, 6, true);
 }
 
 export function createHull(layout: BoatLayout): THREE.Group {
   const g = new THREE.Group();
   g.add(new THREE.Mesh(hullShell(layout), hullMaterial()));
-  const hole = cockpitOutline(layout);
-  g.add(new THREE.Mesh(deck(layout, hole), new THREE.MeshStandardMaterial({ color: DECK_COLOR, roughness: 0.8, side: THREE.DoubleSide })));
-  g.add(new THREE.Mesh(cockpitWell(layout, hole), new THREE.MeshStandardMaterial({ color: COCKPIT_COLOR, roughness: 0.8, side: THREE.DoubleSide })));
+  const deckGeometry = deck(layout, cockpitOutline(layout, details.coaming.width));
+  g.add(new THREE.Mesh(deckGeometry, gelcoatSurface(layout, deckGeometry, false)));
+  g.add(new THREE.Mesh(cockpitWell(layout), new THREE.MeshStandardMaterial({
+    color: details.colours.gelcoat, roughness: details.surface.smoothRoughness, side: THREE.DoubleSide,
+  })));
+  const floorOutline = cockpitOutline(layout, -details.coaming.floorRadius);
+  const floor = mapToBody(new THREE.ShapeGeometry(new THREE.Shape(floorOutline)), (x, y) => [x, y, layout.cockpit.floorZ]);
+  g.add(new THREE.Mesh(floor, gelcoatSurface(layout, floor, true)));
+  g.add(new THREE.Mesh(gunwaleEdge(layout), new THREE.MeshStandardMaterial({
+    color: details.colours.gunwale, roughness: 0.82, metalness: 0,
+  })));
   return g;
 }

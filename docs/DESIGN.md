@@ -251,6 +251,20 @@ fraction of a second and holds its position. Same idea for the sheet.
   distant shorelines do not z-fight. Measured on an M1 the bay adds well under 1 ms per frame (within noise).
 - **Boat:** procedural hull lofted from a few cross-sections using class dimensions,
   plus spars and fittings. Low triangle count.
+- **Hull and cockpit finish** (render-only, `data/hull-details.json`): warm-white matte gelcoat,
+  shallow moulded non-slip on the deck/floor with smooth margins, a raised rounded coaming and
+  floor fillet, and a restrained blue gunwale bead. Two long grip rails have seated fasteners;
+  one lifted padded hiking strap has wall/floor anchors. The existing fittings batch also carries
+  a daggerboard slot collar, handle and retaining elastic, an inspection cap and a stern drain bung.
+  The user's cockpit/empty-hull photos inform arrangement, not dimensions: all added proportions
+  and surface settings are VISUAL ESTIMATE / TUNING GUESS. Existing hull sections, cockpit layout,
+  controls and TS/Go physics are unchanged.
+  Relief, roughness and subtle cream/grey tone are packed into two owned mipmapped textures
+  (about 3.3 MiB per boat including mipmaps); tonal shading reuses the roughness-map sample.
+  Remote-boat disposal releases those textures. There is no per-frame hull construction work.
+  The completed boat is about 11.9k triangles. A fixed-pose isolated-boat comparison at 1800x1250
+  in Chrome/SwiftShader measured about 1.5 ms/frame more for the combined sail/hull polish
+  (cockpit and outside views); this software-renderer measurement is not a hardware-GPU prediction.
 - **Working dinghy details:** open low-poly blocks with exposed grooved sheaves and shackles,
   cam cleats, fairleads, deck eyes and a hiking strap replace the placeholder hardware.
   Round six-sided instanced rope spans run through the mainsheet blocks and traveller bridle,
@@ -261,7 +275,7 @@ fraction of a second and holds its position. Same idea for the sheet.
   baked normals and matte finishes, with reused transforms and rope buffers during animation.
   The reference photo informs appearance only: dimensions and routing in `data/rig-details.json`
   are VISUAL ESTIMATE, and the ILCA 7 dimensions, controls and TS/Go sailing physics are unchanged.
-  A boat has about 8.7k triangles. A paired, fixed-pose close-up at 1800x1250 in headless
+  The initial working-rig pass had about 8.7k triangles. A paired, fixed-pose close-up at 1800x1250 in headless
   Chrome/SwiftShader measured about 0.5 ms/frame for showing all new details versus hiding them
   (15 additional draw calls across the two depth passes); this is not a before/after hardware-GPU benchmark.
 - **Sail:** cloth-like visual (small Verlet grid, around 20x12 points, pinned along luff / foot).

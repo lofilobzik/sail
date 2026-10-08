@@ -1,9 +1,10 @@
 /** Render-only working fittings, visually estimated from the user's ILCA reference photograph. */
 import * as THREE from 'three';
 import details from '../../data/rig-details.json';
+import hullDetails from '../../data/hull-details.json';
 import type { BoatLayout } from './boatLayout';
 import { bodyToLocal, mapToBody } from './bodyFrame';
-import { faceted, merge, paint } from './land/parts';
+import { merge, paint } from './land/parts';
 
 const { block: blockDimensions, deck, colours } = details;
 // VISUAL ESTIMATE: tessellation and matte finish, not mechanical/material specifications.
@@ -27,7 +28,7 @@ function triangles(vertices: number[]): THREE.BufferGeometry {
 }
 
 function hardwareMesh(parts: THREE.BufferGeometry[], name: string): THREE.Mesh {
-  const mesh = new THREE.Mesh(faceted(merge(parts)), new THREE.MeshStandardMaterial({
+  const mesh = new THREE.Mesh(merge(parts), new THREE.MeshStandardMaterial({
     vertexColors: true,
     roughness: ROUGHNESS,
     metalness: 0,
@@ -119,17 +120,18 @@ export function createBlock(scale = 1): THREE.Mesh {
   return mesh;
 }
 
-/** Closed, thin webbing ribbon with a gently raised middle, rather than a solid cockpit-sized box. */
-function hikingRibbon(layout: BoatLayout, aft: number, fore: number): THREE.BufferGeometry {
+/** One lifted webbing strap, with smaller padded/seam ribbons following the same taut centreline. */
+function hikingRibbon(layout: BoatLayout, aft: number, fore: number, width: number, thickness: number,
+  lift = 0, start = 0, end = 1, yOffset = 0): THREE.BufferGeometry {
   const vertices: number[] = [];
-  // VISUAL ESTIMATE: eight spans of slack webbing; the ends rest on their floor fasteners.
-  const spans = 8;
+  const strap = hullDetails.strap;
+  const spans = strap.spans;
   const point = (i: number, side: number, face: number): Point => {
-    const s = i / spans;
+    const s = start + i / spans * (end - start);
     const x = aft + (fore - aft) * s;
-    const z = layout.cockpit.floorZ + PAD_HEIGHT + deck.strapThickness / 2
-      + Math.sin(s * Math.PI) * deck.strapRise + face * deck.strapThickness / 2;
-    const local = bodyToLocal(x, side * deck.strapWidth / 2, z);
+    const z = layout.cockpit.floorZ + strap.anchorAboveFloor
+      + Math.sin(s * Math.PI) * strap.middleRise + lift + face * thickness / 2;
+    const local = bodyToLocal(x, yOffset + side * width / 2, z);
     return [local.x, local.y, local.z];
   };
   for (let i = 0; i < spans; i++) {
@@ -216,13 +218,114 @@ export function createDeckFittings(layout: BoatLayout): THREE.Mesh {
   add(new THREE.TorusGeometry(deck.eyeRadius, tube, TUBE_SEGMENTS, SHEAVE_SEGMENTS), colours.metal,
     ratchet.x, ratchet.y, eyeCentre);
 
-  // VISUAL ESTIMATE: inset endpoints keep webbing clear of the rounded walls and forward ratchet/board path.
-  const strapAft = layout.cockpit.aft + layout.cockpit.radius;
+  const strap = hullDetails.strap;
+  const strapAft = layout.cockpit.aft + hullDetails.coaming.width * 0.6;
   const strapFore = layout.cockpit.fore - layout.cockpit.radius - deck.cleatLength;
-  parts.push(paint(hikingRibbon(layout, strapAft, strapFore), colours.strap));
+  parts.push(paint(hikingRibbon(layout, strapAft, strapFore, strap.width, strap.thickness), hullDetails.colours.strap));
+  const paddingLift = (strap.thickness + strap.paddingThickness) / 2;
+  parts.push(paint(hikingRibbon(layout, strapAft, strapFore, strap.paddingWidth, strap.paddingThickness,
+    paddingLift, 0.08, 0.92), hullDetails.colours.strap));
+  for (const side of [-1, 1]) {
+    parts.push(paint(hikingRibbon(layout, strapAft, strapFore, strap.seamWidth, strap.seamWidth,
+      paddingLift + strap.paddingThickness / 2, 0.1, 0.9, side * strap.paddingWidth * 0.43), hullDetails.colours.strapSeam));
+  }
+  // Aft plate is seated against the well end; the forward bracket has two legs
+  // on a screwed floor pad, clear of the existing ratchet block and board path.
+  const anchorZ = floor + strap.anchorAboveFloor;
+  add(new THREE.BoxGeometry(strap.anchorWidth, strap.anchorLength, PAD_HEIGHT), colours.metal,
+    layout.cockpit.aft + PAD_HEIGHT / 2, 0, anchorZ);
+  add(new THREE.BoxGeometry(strap.anchorWidth, PAD_HEIGHT, strap.anchorLength), colours.body,
+    strapFore, 0, floor + PAD_HEIGHT / 2);
+  for (const side of [-1, 1]) {
+    const y = side * strap.anchorWidth * 0.42;
+    add(new THREE.BoxGeometry(PAD_HEIGHT, strap.anchorAboveFloor, PAD_HEIGHT), colours.metal,
+      strapFore, y, floor + strap.anchorAboveFloor / 2);
+    pin(strapFore, y, floor + PAD_HEIGHT + tube / 2);
+    const aftScrew = new THREE.CylinderGeometry(tube * 1.6, tube * 1.6, tube, TUBE_SEGMENTS);
+    add(aftScrew.rotateX(Math.PI / 2), colours.body, layout.cockpit.aft + PAD_HEIGHT + tube / 2, y, anchorZ);
+  }
   for (const x of [strapAft, strapFore]) {
-    add(new THREE.BoxGeometry(deck.strapWidth * 1.3, PAD_HEIGHT, deck.cleatWidth), colours.body, x, 0, floor + PAD_HEIGHT / 2);
-    for (const side of [-1, 1]) pin(x, side * deck.strapWidth * 0.52, floor + PAD_HEIGHT + tube / 2);
+    add(new THREE.BoxGeometry(strap.anchorWidth, PAD_HEIGHT, strap.anchorLength), colours.metal, x, 0, anchorZ - strap.thickness / 2 - PAD_HEIGHT / 2);
+  }
+
+  const rail = hullDetails.gripRail;
+  const railAft = layout.cockpit.aft + rail.endInset;
+  const railFore = Math.min(railAft + rail.length, layout.cockpit.fore - rail.endInset);
+  const railLength = railFore - railAft;
+  for (const side of [-1, 1]) {
+    // The strip's outer edge is buried in the actual wall, not floating on deck.
+    const y = side * (layout.cockpit.halfWidth - rail.width * 0.42);
+    const railGeometry = new THREE.CapsuleGeometry(rail.height / 2, railLength - rail.height, 2, 6);
+    railGeometry.rotateZ(Math.PI / 2);
+    railGeometry.scale(1, rail.width / rail.height, 1);
+    parts.push(paint(mapToBody(railGeometry, (px, py, pz) => [
+      (railAft + railFore) / 2 + px, y + py, layout.sheerAt((railAft + railFore) / 2 + px) - rail.belowSheer + pz,
+    ]), hullDetails.colours.rail));
+    for (const x of [railAft + rail.fastenerInset, (railAft + railFore) / 2, railFore - rail.fastenerInset]) {
+      pin(x, y, layout.sheerAt(x) - rail.belowSheer + rail.height / 2 + tube / 2);
+    }
+  }
+
+  const fittings = hullDetails.fittings;
+  const board = layout.model.cfg.daggerboard;
+  const leading = layout.transomX + board.leadingEdgeXFromTransom;
+  const trailing = leading - board.chord;
+  const boardMiddle = (leading + trailing) / 2;
+  const margin = fittings.collarMargin;
+  const collar = (x: number, y: number, length: number, width: number): void => {
+    parts.push(paint(mapToBody(new THREE.BoxGeometry(length, width, fittings.collarHeight), (px, py, pz) => [
+      x + px, y + py, layout.sheerAt(x + px) + fittings.collarHeight / 2 + pz,
+    ]), hullDetails.colours.collar));
+  };
+  // Four bars form an actual open slot collar around the existing board slab.
+  for (const side of [-1, 1]) {
+    collar(boardMiddle, side * (board.thickness + margin) / 2, board.chord + 2 * margin, margin);
+    collar(side < 0 ? trailing - margin / 2 : leading + margin / 2, 0, margin, board.thickness);
+    pin(boardMiddle, side * (board.thickness + margin) / 2, layout.sheerAt(boardMiddle) + fittings.collarHeight + tube / 2);
+  }
+  const boardTop = layout.sheerAt(leading) + layout.model.cfg.visual.daggerboard.topAboveDeck;
+  const handle = new THREE.TorusGeometry(fittings.handleRadius, fittings.handleTube, TUBE_SEGMENTS, SHEAVE_SEGMENTS, Math.PI);
+  add(handle.rotateY(Math.PI / 2), colours.body, boardMiddle, 0, boardTop - fittings.handleTube);
+  const elasticAnchorX = leading + margin * 5;
+  const elasticAnchorY = deck.controlSpacing;
+  const elasticAnchorZ = layout.sheerAt(elasticAnchorX) + PAD_HEIGHT;
+  pad(elasticAnchorX, elasticAnchorY, margin * 2, margin * 2);
+  pin(elasticAnchorX, elasticAnchorY, elasticAnchorZ + tube / 2);
+  const elasticPoints = [
+    bodyToLocal(boardMiddle, fittings.handleTube, boardTop + fittings.handleRadius),
+    bodyToLocal(leading + margin, elasticAnchorY * 0.55, (boardTop + elasticAnchorZ) / 2),
+    bodyToLocal(elasticAnchorX, elasticAnchorY, elasticAnchorZ + tube),
+  ];
+  parts.push(paint(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(elasticPoints), 12,
+    fittings.retainingRadius, TUBE_SEGMENTS, false), hullDetails.colours.elastic));
+
+  const capX = layout.cockpit.aft - fittings.inspectionAftOfCockpit;
+  const capY = fittings.inspectionSideOffset;
+  const capHeight = fittings.inspectionHeight;
+  const capSurface = (geometry: THREE.BufferGeometry, lift: number, colour: THREE.ColorRepresentation): void => {
+    parts.push(paint(mapToBody(geometry, (px, py, pz) => [
+      capX + pz, capY + px, layout.sheerAt(capX + pz) + lift + py,
+    ]), colour));
+  };
+  capSurface(new THREE.CylinderGeometry(fittings.inspectionRadius, fittings.inspectionRadius, capHeight, 16),
+    capHeight / 2, hullDetails.colours.collar);
+  capSurface(new THREE.CylinderGeometry(fittings.inspectionRadius * 0.88, fittings.inspectionRadius * 0.88, capHeight / 2, 16),
+    capHeight * 1.25, hullDetails.colours.gelcoat);
+  add(new THREE.BoxGeometry(fittings.inspectionRadius * 0.55, capHeight / 2, margin * 0.3), hullDetails.colours.railEdge,
+    capX, capY, layout.sheerAt(capX) + capHeight * 1.6);
+  for (const side of [-1, 1]) pin(capX, capY + side * fittings.inspectionRadius * 0.72,
+    layout.sheerAt(capX) + capHeight * 1.5 + tube / 2);
+
+  const drainX = layout.transomX - PAD_HEIGHT / 2;
+  const drainY = fittings.drainSideOffset;
+  const drainZ = layout.keelAt(layout.transomX) + fittings.drainAboveKeel;
+  add(new THREE.CylinderGeometry(fittings.drainRadius * 1.6, fittings.drainRadius * 1.6, PAD_HEIGHT, ROUND_SEGMENTS).rotateX(Math.PI / 2),
+    hullDetails.colours.collar, drainX, drainY, drainZ);
+  add(new THREE.CylinderGeometry(fittings.drainRadius, fittings.drainRadius, PAD_HEIGHT * 1.5, ROUND_SEGMENTS).rotateX(Math.PI / 2),
+    colours.body, drainX - PAD_HEIGHT, drainY, drainZ);
+  for (const side of [-1, 1]) {
+    add(new THREE.CylinderGeometry(tube * 1.6, tube * 1.6, tube, TUBE_SEGMENTS).rotateX(Math.PI / 2),
+      colours.metal, drainX - PAD_HEIGHT / 2 - tube / 2, drainY + side * fittings.drainRadius * 2, drainZ);
   }
   return hardwareMesh(parts, 'working-deck-fittings');
 }

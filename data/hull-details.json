@@ -1,0 +1,77 @@
+{
+  "colours": {
+    "gelcoat": "#f4f2e8",
+    "deck": "#f3f1e7",
+    "floor": "#efeee3",
+    "gunwale": "#477393",
+    "rail": "#515c60",
+    "railEdge": "#747d7d",
+    "strap": "#303b40",
+    "strapSeam": "#566066",
+    "elastic": "#526d75",
+    "collar": "#d6d9d0"
+  },
+  "surface": {
+    "deckTextureWidth": 1024,
+    "deckTextureHeight": 512,
+    "floorTextureWidth": 512,
+    "floorTextureHeight": 256,
+    "mouldPitch": 0.012,
+    "bumpScale": 0.0015,
+    "nonSlipTone": 0.96,
+    "mouldToneContrast": 0.018,
+    "deckMargin": 0.065,
+    "floorMargin": 0.038,
+    "maskFeather": 0.012,
+    "smoothRoughness": 0.65,
+    "nonSlipRoughness": 0.88,
+    "anisotropy": 4
+  },
+  "coaming": {
+    "width": 0.032,
+    "height": 0.019,
+    "floorRadius": 0.025,
+    "cornerSegments": 6,
+    "gunwaleRadius": 0.007,
+    "gunwaleInset": 0.006
+  },
+  "gripRail": {
+    "endInset": 0.13,
+    "length": 0.99,
+    "width": 0.025,
+    "height": 0.014,
+    "belowSheer": 0.031,
+    "fastenerInset": 0.055
+  },
+  "strap": {
+    "width": 0.084,
+    "paddingWidth": 0.065,
+    "thickness": 0.009,
+    "paddingThickness": 0.006,
+    "anchorAboveFloor": 0.095,
+    "middleRise": 0.026,
+    "anchorWidth": 0.104,
+    "anchorLength": 0.043,
+    "seamWidth": 0.002,
+    "spans": 12
+  },
+  "fittings": {
+    "collarMargin": 0.014,
+    "collarHeight": 0.007,
+    "handleRadius": 0.018,
+    "handleTube": 0.0035,
+    "retainingRadius": 0.0025,
+    "inspectionRadius": 0.065,
+    "inspectionHeight": 0.004,
+    "inspectionAftOfCockpit": 0.13,
+    "inspectionSideOffset": 0.16,
+    "drainRadius": 0.012,
+    "drainAboveKeel": 0.055,
+    "drainSideOffset": 0.16
+  },
+  "sources": {
+    "reference": "User-supplied cockpit and empty-hull photos, 2026-10-07: light cream/white gelcoat, rounded raised cockpit lip, moulded non-slip, two long grey/dark side grip strips, lifted central padded webbing, daggerboard fittings and stern details. Photos describe appearance and arrangement, not calibrated dimensions. No brands or copied sail markings.",
+    "dimensions": "VISUAL ESTIMATE: every dimension and placement offset in this file, including lip cross-section, floor fillet, gunwale bead, rails, screw placement, webbing and padding, anchors, daggerboard collar/handle/elastic, inspection cap and stern bung. All geometry is render-only; the existing hull sections, cockpit layout, daggerboard position, controls and physics remain unchanged.",
+    "surface": "TUNING GUESS: warm-white colours, matte roughness, 12 mm low-contrast mould pitch, 1.5 mm bump strength, texture resolutions, mask feather, anisotropy and tessellation. Non-slip uses a 0.96 linear-light tone with 0.018 mould contrast, leaving smooth margins unmodulated; this is shallow cream/grey mould relief, not dirt or speckled pigment. Red relief, green roughness and blue tone are baked into the same per-boat mipmapped texture. A focused material shader patch reuses the existing roughness texture sample for blue-channel diffuse modulation without another sampler/fetch. Smooth margins are part of the same UV/material surface, not overlapping geometry. These are visual screen-space estimates rather than a material specification."
+  }
+}
