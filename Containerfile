@@ -23,13 +23,16 @@ COPY data ./data
 COPY server ./server
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags='-s -w' -o /out/sailserver ./server/cmd/sailserver
+# The challenge database directory; a fresh named volume mounted on /data copies its ownership.
+RUN mkdir -p /out/data
 
 FROM gcr.io/distroless/static-debian12:nonroot
 LABEL org.opencontainers.image.source="https://github.com/lofilobzik/sail" \
       org.opencontainers.image.description="Dinghy sailing sim: Go game server plus the static site"
 COPY --from=server /out/sailserver /sailserver
 COPY --from=site /src/dist /srv/www
+COPY --from=server --chown=65532:65532 /out/data /data
 USER nonroot
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s CMD ["/sailserver", "-healthcheck"]
-ENTRYPOINT ["/sailserver", "-addr", ":8080", "-static", "/srv/www"]
+ENTRYPOINT ["/sailserver", "-addr", ":8080", "-static", "/srv/www", "-db", "/data/sail.db"]

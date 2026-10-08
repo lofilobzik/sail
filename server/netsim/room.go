@@ -42,6 +42,11 @@ const (
 	// inputQueueSize bounds a boat's received but not yet applied inputs (2 s at 60 Hz); a client
 	// sending faster than real time loses its oldest inputs instead of building up lag without limit.
 	inputQueueSize = 120 // TUNING GUESS
+
+	// saveQueueSize bounds the visits waiting for the writer; a full queue is retried by the sweep.
+	saveQueueSize = 64 // TUNING GUESS
+	// saveRetryDelay is the wait before a failed visit write is tried again.
+	saveRetryDelay = 2 * time.Second // TUNING GUESS
 )
 
 // RoomConfig configures NewRoom. Zero values pick the defaults.
@@ -58,6 +63,8 @@ type RoomConfig struct {
 	Now func() time.Time
 	// Log receives connect/disconnect lines; nil means log.Default().
 	Log *log.Logger
+	// Store keeps challenge progress; nil (the default) switches challenges off. Assign only a real store.
+	Store Store
 }
 
 // Room is the one shared world: one seed and config, one tick, every connected boat stepped
@@ -75,6 +82,12 @@ type Room struct {
 
 	ops  chan func()
 	done chan struct{}
+
+	// Challenge persistence (challenges.go): store and saves are nil without RoomConfig.Store, and
+	// saveDone is then already closed.
+	store    Store
+	saves    chan saveJob
+	saveDone chan struct{}
 
 	// Owned by the Run goroutine.
 	tick     int64
@@ -97,6 +110,10 @@ type roomBoat struct {
 	sail     sailView
 	member   *member
 	leftAt   time.Time
+
+	player  string               // sailor code of the current connection, "" when none
+	visited []bool               // per buoy: reached (stored or detected)
+	unsaved map[int]*unsavedStep // buoy index -> visit detected but not yet confirmed stored
 }
 
 // queuedInput is one input (or a reset, in order with the inputs) waiting to be applied.
@@ -139,6 +156,7 @@ type sailView struct {
 // and replaced; boat belongs to the Run goroutine.
 type member struct {
 	out      chan []byte
+	news     chan []byte   // challenge progress frames; separate from out so a stalled client cannot lose one
 	replaced chan struct{} // closed when a newer connection resumed the boat
 	boat     *roomBoat
 }
@@ -165,6 +183,13 @@ func NewRoom(c RoomConfig) *Room {
 		done:     make(chan struct{}),
 		nextID:   1,
 		byToken:  map[string]*roomBoat{},
+		store:    c.Store,
+		saveDone: make(chan struct{}),
+	}
+	if r.store != nil {
+		r.saves = make(chan saveJob, saveQueueSize)
+	} else {
+		close(r.saveDone)
 	}
 	if r.maxBoats <= 0 {
 		r.maxBoats = DefaultMaxBoats
@@ -188,6 +213,10 @@ func NewRoom(c RoomConfig) *Room {
 // Run steps the room at a fixed dt (ticker plus accumulator, so a late tick is caught up rather
 // than lost), serves connection requests between ticks and sends snapshots, until ctx ends.
 func (r *Room) Run(ctx context.Context) {
+	if r.store != nil {
+		go r.writeLoop()
+		defer close(r.saves) // lets the writer drain queued jobs; runs before close(r.done)
+	}
 	defer close(r.done)
 	dt := r.cfg.Dt
 	fixed := sim.NewFixedStep(dt) // caps catch-up like the browser loop
@@ -212,6 +241,7 @@ func (r *Room) Run(ctx context.Context) {
 				snapshotDue -= math.Floor(snapshotDue) // after a long catch-up, one snapshot is enough
 				r.broadcast()
 				r.forgetExpired()
+				r.retryUnsaved()
 			}
 		}
 	}
@@ -257,6 +287,7 @@ func (r *Room) step() {
 			b.queue.pop()
 			res := sim.Step(b.state, b.controls, r.model, &r.cfg)
 			b.state = res.State
+			r.observe(b)
 			r.see(b, res.Diagnostics)
 		}
 	}
@@ -327,6 +358,9 @@ func (r *Room) forgetExpired() {
 	now := r.now()
 	for token, b := range r.byToken {
 		if b.member == nil && now.Sub(b.leftAt) > r.grace {
+			if len(b.unsaved) > 0 {
+				r.log.Printf("boat %d expired with %d unsaved challenge steps", b.id, len(b.unsaved))
+			}
 			delete(r.byToken, token)
 		}
 	}
@@ -335,7 +369,7 @@ func (r *Room) forgetExpired() {
 // join attaches a connection: to the boat of a live resume token, else to a new boat at a free
 // spawn slot. A token whose boat is still sailing hands the boat over and closes the old
 // connection's replaced channel.
-func (r *Room) join(resume, addr string) joinResult {
+func (r *Room) join(resume, addr string, p *playerInfo) joinResult {
 	b := r.byToken[resume]
 	if b != nil && b.member == nil && r.now().Sub(b.leftAt) > r.grace {
 		delete(r.byToken, resume)
@@ -363,12 +397,21 @@ func (r *Room) join(resume, addr string) joinResult {
 	// Input seq order is per connection; anything queued from an old connection is dropped.
 	b.ackSeq, b.credit = 0, 0
 	b.queue.clear()
-	m := &member{out: make(chan []byte, outboxSize), replaced: make(chan struct{}), boat: b}
+	m := &member{
+		out: make(chan []byte, outboxSize), news: make(chan []byte, len(sim.BuoyData.Buoys)+1),
+		replaced: make(chan struct{}), boat: b,
+	}
+	r.seedProgress(b, p)
+	var challenges []ChallengeStatus
+	if p != nil {
+		challenges = r.statuses(p.progress)
+	}
 	b.member = m
 	r.sailing = append(r.sailing, b)
 	welcome, err := json.Marshal(Welcome{
 		Type: TypeWelcome, ID: b.id, Resume: b.token, Resumed: resumed,
 		Seed: r.seed, Config: r.cfg, Dt: r.cfg.Dt, Tick: r.tick, State: b.state, SnapshotHz: r.hz,
+		Challenges: challenges,
 	})
 	if err != nil {
 		panic(err) // plain structs of numbers and strings

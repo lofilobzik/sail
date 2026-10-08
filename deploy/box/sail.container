@@ -10,6 +10,8 @@ After=network-online.target
 Image=ghcr.io/lofilobzik/sail:latest
 ContainerName=sail
 Network=sail.network
+# Challenge progress (SQLite); the only writable path besides the read-only root.
+Volume=sail-data.volume:/data
 # Reachable from the box itself for debugging (curl 127.0.0.1:8080/healthz); never from the LAN or
 # the internet. Public traffic only arrives through the tunnel.
 PublishPort=127.0.0.1:8080:8080

@@ -133,13 +133,13 @@ function serverSocketUrl(param: string): string {
  * disconnect. If the first join fails (refused, closed or no welcome within CONNECT_TIMEOUT_MS),
  * says so briefly and returns null: the page then sails offline.
  */
-export async function joinServer(url: string): Promise<ServerLink | null> {
+export async function joinServer(url: string, player: string): Promise<ServerLink | null> {
   const banner = document.createElement('div');
   banner.style.cssText =
     'position:fixed;top:8px;left:50%;transform:translateX(-50%);padding:4px 10px;z-index:20;' +
     'background:rgba(0,0,0,0.7);color:#e8e8e8;font:13px/1.35 ui-monospace,monospace;';
   document.body.appendChild(banner);
-  const client = new NetClient(url);
+  const client = new NetClient(url, player);
   const show = (status: NetStatus): void => {
     const text = BANNER_TEXT[status];
     const attempt = status === 'reconnecting' ? `attempt ${client.attempt}, ` : '';

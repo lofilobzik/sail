@@ -1,0 +1,3 @@
+# Challenge progress database of the game server, mounted on /data in sail.container.
+[Volume]
+VolumeName=sail-data

@@ -20,6 +20,11 @@ import { LookGuide } from './ui/lookGuide';
 import { FlyCamera } from './input/flyCamera';
 import { Menu } from './ui/menu';
 import { Preferences } from './ui/prefs';
+import { ChallengeLog } from './ui/challengeLog';
+import { CHALLENGES, lockedSails } from './ui/challengeInfo';
+import { showToast } from './ui/toast';
+import { newSailorCode } from './net/sailorCode';
+import type { ChallengeStatus } from './net/protocol';
 import { SKY } from './render/skyModel';
 import { BAY } from './sim/terrain';
 import { BINDINGS } from './input/bindings';
@@ -47,8 +52,12 @@ const opts = parseDevOptions(params);
 // ?server[=ws://host:port/ws] is given, and ?offline always sails locally. With a server, the Go
 // server owns the seed, the config and the boat (src/net), the page predicts with the TS sim, and
 // the URL physics parameters below are ignored. An unreachable server falls back to offline.
+// Preferences come first: the sailor code they keep (generated on the first visit) joins the server.
+const prefs = new Preferences();
+if (prefs.value.player === null) prefs.set({ player: newSailorCode() });
+const player = prefs.value.player!;
 const serverUrl = serverChoice(params, import.meta.env.PROD);
-const server = serverUrl === null ? null : await joinServer(serverUrl);
+const server = serverUrl === null ? null : await joinServer(serverUrl, player);
 // Choose a sea pattern once. All subsequent sampling remains seeded and world-anchored.
 const cfg = server?.cfg ?? browserConfig(Math.floor(Math.random() * 0x100000000));
 if (!server) {
@@ -124,7 +133,6 @@ overlay.addNumber('cloud coverage (0–1)', view.sky.cloudCoverage, (v, el) => {
 });
 
 // The sail design is a player preference; ?sail=<id> (data/sail-designs.json) overrides it.
-const prefs = new Preferences();
 const sail = view.boat.sail;
 const knownSail = (id: string | null): id is string => sail.designs.some((d) => d.id === id);
 if (opts.sail !== null) {
@@ -149,7 +157,46 @@ const menu = new Menu({
   onMuted: (muted) => prefs.set({ muted }),
   onRespawn: respawn,
   onShowGuidance: () => guide.reset(),
+  sailor: server
+    ? {
+        code: player,
+        onRestore: (code) => {
+          prefs.set({ player: code });
+          location.reload();
+        },
+      }
+    : undefined,
 });
+const sailName = (id: string): string => sail.designs.find((d) => d.id === id)?.name ?? id;
+// J: the challenge log. Progress comes from the server (verified there), now or on any later
+// welcome, so every update goes through applyChallenges.
+const challengeLog = new ChallengeLog({ canOpen: () => !menu.open, sailName });
+let shownChallenges: ChallengeStatus[] | null = null;
+const applyChallenges = (list: ChallengeStatus[]): void => {
+  const prev = shownChallenges;
+  shownChallenges = list;
+  menu.setChallenges(list);
+  menu.setLockedSails(lockedSails(list));
+  challengeLog.setChallenges(list);
+  if (prev) announceChallenges(prev, list);
+};
+/** Toasts every step and completion in `list` that `prev` did not have. */
+function announceChallenges(prev: readonly ChallengeStatus[], list: readonly ChallengeStatus[]): void {
+  for (const c of list) {
+    const before = prev.find((p) => p.id === c.id);
+    const info = CHALLENGES.find((i) => i.id === c.id);
+    for (const step of c.steps) {
+      if (!before?.steps.includes(step)) showToast(`Buoy ${step}: ${c.steps.indexOf(step) + 1} of ${c.total}`);
+    }
+    if (c.completedAt !== undefined && before?.completedAt === undefined && info) {
+      showToast(`${info.title} complete!${info.reward ? ` Unlocked sail: ${sailName(info.reward.id)}` : ''}`, 6000);
+    }
+  }
+}
+if (server) {
+  server.client.onChallenges = applyChallenges;
+  if (server.client.challenges) applyChallenges(server.client.challenges);
+}
 // The menu, the debug panel and the M key all change preferences; the sound, the sail and both
 // panels follow from here.
 let savedSail = prefs.value.sail;

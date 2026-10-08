@@ -3,6 +3,8 @@
  * look guides they have already seen. Storage is best effort: private browsing or a full quota
  * leaves the defaults in place for the session.
  */
+import { normalizeSailorCode } from '../net/sailorCode';
+
 const KEY = 'dinghy.prefs.v1';
 
 export interface Prefs {
@@ -13,9 +15,11 @@ export interface Prefs {
   sail: string | null;
   /** Look guides already completed (src/ui/lookGuide.ts target ids). */
   guidesSeen: string[];
+  /** Sailor code (src/net/sailorCode.ts) that keeps challenge progress on the server; null until generated. */
+  player: string | null;
 }
 
-const DEFAULTS: Prefs = { volume: 0.7, muted: false, sail: null, guidesSeen: [] };
+const DEFAULTS: Prefs = { volume: 0.7, muted: false, sail: null, guidesSeen: [], player: null };
 
 function loadPrefs(): Prefs {
   try {
@@ -27,6 +31,7 @@ function loadPrefs(): Prefs {
       muted: p.muted === true,
       sail: typeof p.sail === 'string' ? p.sail : null,
       guidesSeen: Array.isArray(p.guidesSeen) ? p.guidesSeen.filter((g): g is string => typeof g === 'string') : [],
+      player: typeof p.player === 'string' ? normalizeSailorCode(p.player) : null,
     };
   } catch {
     return { ...DEFAULTS, guidesSeen: [] };

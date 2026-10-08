@@ -61,7 +61,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	resume := r.URL.Query().Get("resume")
 	joined := make(chan joinResult, 1)
-	if !room.do(ctx, func() { joined <- room.join(resume, r.RemoteAddr) }) {
+	player := room.resolve(ctx, r.URL.Query().Get("player")) // a store read: not on the room loop
+	if !room.do(ctx, func() { joined <- room.join(resume, r.RemoteAddr, player) }) {
 		c.Close(websocket.StatusGoingAway, "server shutting down")
 		return
 	}
@@ -160,6 +161,10 @@ func (s *Server) relay(ctx context.Context, c *websocket.Conn, j joinResult) err
 			return errReplaced
 		case err := <-readErr:
 			return err
+		case frame := <-m.news:
+			if err := sendRaw(ctx, c, frame); err != nil {
+				return err
+			}
 		case frame := <-m.out:
 			if err := sendRaw(ctx, c, frame); err != nil {
 				return err

@@ -38,7 +38,7 @@ fi
 quadlets="$HOME/.config/containers/systemd"
 dropins="$HOME/.config/systemd/user/podman-auto-update.timer.d"
 install -d -m 0755 "$quadlets" "$dropins"
-install -m 0644 "$here/sail.network" "$here/sail.container" "$here/cloudflared.container" "$quadlets/"
+install -m 0644 "$here/sail.network" "$here/sail-data.volume" "$here/sail.container" "$here/cloudflared.container" "$quadlets/"
 install -m 0644 "$here/podman-auto-update.timer.d/10-every-5-minutes.conf" "$dropins/"
 
 # Quadlet generates sail.service, cloudflared.service and sail-network.service on reload; their

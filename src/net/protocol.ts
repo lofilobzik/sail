@@ -3,7 +3,7 @@
  * One public room per server: it owns the seed, the config, the room time and every boat; each
  * client predicts its own boat with the TS sim and draws the others from the snapshots.
  * The connect URL may carry `?resume=<token>` (the `resume` of an earlier welcome) to get the same
- * boat back after a drop.
+ * boat back after a drop, and `?player=<sailor code>` (src/net/sailorCode.ts) for challenge progress.
  */
 import type { BoatState, Controls, SimConfig } from '../sim';
 
@@ -23,6 +23,24 @@ export interface WelcomeMessage {
   /** The boat at room time `tick * dt`: the spawn for a new boat. */
   state: BoatState;
   snapshotHz: number;
+  /** The player's stored challenge progress; absent when challenges are unavailable (no ?player, or a server without -db). */
+  challenges?: ChallengeStatus[];
+}
+
+/** One challenge's stored progress, as the server verified it. */
+export interface ChallengeStatus {
+  id: string;
+  /** Steps reached (buoy names for the buoy tour), in the order recorded. */
+  steps: string[];
+  total: number;
+  /** Unix ms; absent until complete. */
+  completedAt?: number;
+}
+
+/** Progress after the server stored a newly reached step. */
+export interface ChallengesMessage {
+  type: 'challenges';
+  challenges: ChallengeStatus[];
 }
 
 /** Another player's boat at the snapshot's tick: pose, applied controls and sail diagnostics. */
@@ -64,7 +82,7 @@ export interface ErrorMessage {
   message: string;
 }
 
-export type ServerMessage = WelcomeMessage | SnapshotMessage | ErrorMessage;
+export type ServerMessage = WelcomeMessage | SnapshotMessage | ChallengesMessage | ErrorMessage;
 
 /** One per client fixed step, `seq` increasing from 1. */
 export interface InputMessage {

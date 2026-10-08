@@ -137,10 +137,12 @@ Rules:
   client sending faster than real time gets lag, not speed. All TUNING GUESS. Through a proxy adding
   80-160 ms of jittered round trip, hard steering gave 0.0 cm corrections and no snaps.
 - **Protocol** (WebSocket `/ws`, JSON text frames; `server/netsim/protocol.go`, `src/net/protocol.ts`):
-  server sends `welcome` (id, resume token, resumed, seed, full config, dt, tick, state, snapshotHz),
+  server sends `welcome` (id, resume token, resumed, seed, full config, dt, tick, state, snapshotHz,
+  and challenge progress when the connect URL has a valid `?player=` and the server has `-db`),
   then `snapshot` (tick, ackSeq, state, applied controls, and `boats`: every other boat's pose,
-  controls, apparent wind and luff) at 20 Hz, and `error` for a rejected message (the connection
-  stays open). Client sends `input` (strictly increasing seq, controls) every local fixed step, and
+  controls, apparent wind and luff) at 20 Hz, `challenges` after a challenge step is stored, and
+  `error` for a rejected message (the connection stays open). Client sends `input` (strictly
+  increasing seq, controls) every local fixed step, and
   `reset`. Origins: same-origin (the deployed site) plus localhost on any port (Vite dev).
 - **Reconnect**: a dropped boat is parked for 60 s under its resume token (`/ws?resume=…`). The client
   retries after 1, 2, 4, 8, then every 10 s, and also when no data arrives for 3 s (a silent socket).
@@ -167,6 +169,18 @@ Rules:
   corrections about 1 cm with no snaps; a leaving tab disappears at once; a server restart
   reconnects within about 1 s as a fresh spawn in the new world.
   Deferred: remote wakes, extrapolation, names, rooms, collisions, rewind/replay reconciliation.
+- **Challenges** (`server/store`, `server/netsim/challenges.go`, `data/challenges.json`): the first
+  is the **Buoy tour**, within 30 m (TUNING GUESS) of each of the 5 buoys, any order, across
+  sessions; it unlocks the "Tide lines" sail. Players are anonymous: the browser generates a
+  20-character base32 **sailor code** (kept in prefs, sent as `/ws?player=…`), shown in the Esc menu
+  so progress can be restored on another browser. The server checks visits against its own boat
+  state, never the client's, and stores them in SQLite (`-db <file>`; without it challenges are
+  off and nothing is locked). Writes run on one writer goroutine in detection order, then the
+  server sends a `challenges` frame; a failed write is retried every 2 s while the boat exists
+  (sailing or parked for its 60 s resume grace). The welcome carries stored progress; the client
+  merges every frame so progress never moves backwards. The sail lock is cosmetic (client side;
+  the debug picker and `?sail=` stay open). In the container the database is `/data/sail.db` on the
+  `sail-data` podman volume.
 
 ## Controls
 
@@ -183,8 +197,9 @@ Rules:
 | R | Reckon, with the chart in view: plot bearings taken since the last plot (a fix), otherwise the dead-reckoning leg |
 | H | Toggle test instruments (hidden by default) |
 | M | Mute / unmute |
+| J | Challenge log: every challenge with its steps, progress and reward, in the menu's panel. Keeps the pointer lock and the sim running; J or Esc closes it |
 | G | Debug free-fly camera: WASD fly along the view, E up, Q down, Shift fast, mouse look turns it in world space. The boat sails on with neutral controls. B (hold) raises the binoculars here too. G or V returns to the cockpit. `?fly=x,z,height[,bearing[,pitch]]` opens already flying |
-| Esc | Menu: controls, volume, sail design, respawn, reset hints. The sim keeps running |
+| Esc | Menu: controls, volume, sail design (reward sails locked until earned), challenges summary and sailor code, respawn, reset hints. The sim keeps running |
 
 Inputs are **continuous with rate limits**: no snapping. A tiller key ramps the tiller over a
 fraction of a second and holds its position. Same idea for the sheet.

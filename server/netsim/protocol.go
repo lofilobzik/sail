@@ -2,10 +2,11 @@
 // every connection sails its own authoritative boat, all stepped together at the sim's fixed
 // timestep, with snapshots of the whole room sent back to every client.
 //
-// Protocol (JSON text frames on /ws; the connect URL may carry ?resume=<token>):
+// Protocol (JSON text frames on /ws; the connect URL may carry ?resume=<token> and ?player=<sailor code>):
 //
-//	server → client  {"type":"welcome","id","resume","resumed","seed","config","dt","tick","state","snapshotHz"}  once, on connect
+//	server → client  {"type":"welcome","id","resume","resumed","seed","config","dt","tick","state","snapshotHz","challenges"?}  once, on connect
 //	server → client  {"type":"snapshot","tick","ackSeq","state","controls","boats":[RemoteBoat]}            at snapshotHz
+//	server → client  {"type":"challenges","challenges":[ChallengeStatus]}                                    after a visit is stored (only with a valid ?player and -db)
 //	server → client  {"type":"error","message"}                                                              rejected message, or "room full" (then close 1013)
 //	client → server  {"type":"input","seq","controls":{"tiller","sheet","hike"}}                             once per client fixed step
 //	client → server  {"type":"reset"}                                                                        boat back to a free spawn slot
@@ -26,11 +27,12 @@ import (
 
 // Message types.
 const (
-	TypeWelcome  = "welcome"
-	TypeSnapshot = "snapshot"
-	TypeError    = "error"
-	TypeInput    = "input"
-	TypeReset    = "reset"
+	TypeWelcome    = "welcome"
+	TypeSnapshot   = "snapshot"
+	TypeError      = "error"
+	TypeChallenges = "challenges"
+	TypeInput      = "input"
+	TypeReset      = "reset"
 )
 
 // Close codes and messages beyond the error frames.
@@ -57,6 +59,8 @@ type Welcome struct {
 	Tick       int64         `json:"tick"`
 	State      sim.BoatState `json:"state"`
 	SnapshotHz float64       `json:"snapshotHz"`
+	// Challenges is the player's stored progress; absent when challenges are unavailable on this connection.
+	Challenges []ChallengeStatus `json:"challenges,omitempty"`
 }
 
 // Snapshot is the authoritative state after Tick fixed steps. AckSeq is the seq of the input applied
@@ -135,4 +139,18 @@ func parseClientMessage(data []byte, lastSeq int64) (clientMessage, error) {
 		return m, fmt.Errorf("unknown message type %q", m.Type)
 	}
 	return m, nil
+}
+
+// ChallengeStatus is one challenge's stored progress; CompletedAt is unix ms, absent until complete.
+type ChallengeStatus struct {
+	ID          string   `json:"id"`
+	Steps       []string `json:"steps"`
+	Total       int      `json:"total"`
+	CompletedAt int64    `json:"completedAt,omitempty"`
+}
+
+// ChallengesMessage reports progress after a visit has been stored.
+type ChallengesMessage struct {
+	Type       string            `json:"type"`
+	Challenges []ChallengeStatus `json:"challenges"`
 }

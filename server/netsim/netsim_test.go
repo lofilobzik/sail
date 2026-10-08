@@ -8,6 +8,7 @@ import (
 	"log"
 	"math"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -49,6 +50,7 @@ type testRoom struct {
 	url   string
 	clock *fakeClock
 	dt    float64
+	room  *Room
 }
 
 func startRoom(t *testing.T, cfg RoomConfig) *testRoom {
@@ -63,17 +65,27 @@ func startRoom(t *testing.T, cfg RoomConfig) *testRoom {
 	go room.Run(roomCtx)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
-	return &testRoom{t: t, ctx: ctx, url: "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws", clock: clock, dt: room.cfg.Dt}
+	return &testRoom{t: t, ctx: ctx, url: "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws", clock: clock, dt: room.cfg.Dt, room: room}
 }
 
 // dial connects a client, with ?resume=token when token is not empty.
-func (tr *testRoom) dial(token string) *websocket.Conn {
+func (tr *testRoom) dial(token string) *websocket.Conn { return tr.dialAs(token, "") }
+
+// dialAs is dial with ?player=player when player is not empty.
+func (tr *testRoom) dialAs(token, player string) *websocket.Conn {
 	tr.t.Helper()
-	url := tr.url
+	q := url.Values{}
 	if token != "" {
-		url += "?resume=" + token
+		q.Set("resume", token)
 	}
-	c, _, err := websocket.Dial(tr.ctx, url, nil)
+	if player != "" {
+		q.Set("player", player)
+	}
+	u := tr.url
+	if len(q) > 0 {
+		u += "?" + q.Encode()
+	}
+	c, _, err := websocket.Dial(tr.ctx, u, nil)
 	if err != nil {
 		tr.t.Fatal(err)
 	}
@@ -218,7 +230,7 @@ func TestParseClientMessage(t *testing.T) {
 // exactly N sim steps from its spawn, which is what the client predicts.
 func TestRoomAppliesEachInputOnceInOrder(t *testing.T) {
 	r := NewRoom(RoomConfig{Seed: testSeed, Now: newFakeClock().Now, Log: quiet})
-	a := r.join("", "a")
+	a := r.join("", "a", nil)
 	b := a.member.boat
 	want := b.state
 	controls := func(seq int64) sim.Controls {
@@ -260,7 +272,7 @@ func TestRoomAppliesEachInputOnceInOrder(t *testing.T) {
 // instead of building up unbounded lag.
 func TestRoomQueueDropsOldestWhenFull(t *testing.T) {
 	r := NewRoom(RoomConfig{Seed: testSeed, Now: newFakeClock().Now, Log: quiet})
-	a := r.join("", "a")
+	a := r.join("", "a", nil)
 	for seq := int64(1); seq <= inputQueueSize+10; seq++ {
 		r.input(a.member, seq, sim.NeutralControls)
 	}
@@ -274,7 +286,7 @@ func TestRoomQueueDropsOldestWhenFull(t *testing.T) {
 func TestRoomResumeKeepsStateAtRoomTime(t *testing.T) {
 	clock := newFakeClock()
 	r := NewRoom(RoomConfig{Seed: testSeed, Now: clock.Now, Log: quiet})
-	a := r.join("", "a")
+	a := r.join("", "a", nil)
 	for seq := int64(1); seq <= 30; seq++ {
 		r.input(a.member, seq, sim.Controls{Tiller: 0.3, Sheet: 0.6, Hike: 1})
 		r.step()
@@ -289,7 +301,7 @@ func TestRoomResumeKeepsStateAtRoomTime(t *testing.T) {
 		r.step()
 	}
 	clock.Advance(DefaultResumeGrace - time.Second)
-	back := r.join(token, "a")
+	back := r.join(token, "a", nil)
 	var w Welcome
 	if err := json.Unmarshal(back.welcome, &w); err != nil {
 		t.Fatal(err)
@@ -309,7 +321,7 @@ func TestRoomResumeKeepsStateAtRoomTime(t *testing.T) {
 	}
 	r.leave(back.member, "a", "test")
 	clock.Advance(DefaultResumeGrace + time.Second)
-	if again := r.join(token, "a"); again.member.boat.id == a.id {
+	if again := r.join(token, "a", nil); again.member.boat.id == a.id {
 		t.Fatal("expired token resumed the boat")
 	}
 }
@@ -413,7 +425,7 @@ func TestSpawnSlotsAreDistinctAndResetPicksAFreeOne(t *testing.T) {
 // the respawned one, however the room's ticks fall between them.
 func TestResetAppliesInOrderWithInputs(t *testing.T) {
 	r := NewRoom(RoomConfig{Seed: testSeed, Now: newFakeClock().Now, Log: quiet})
-	a := r.join("", "a")
+	a := r.join("", "a", nil)
 	spawn := a.member.boat.state
 	for seq := int64(1); seq <= 5; seq++ {
 		r.input(a.member, seq, sim.Controls{Tiller: 1, Sheet: 0.3})
@@ -597,7 +609,7 @@ func BenchmarkRoomTick(b *testing.B) {
 	r := NewRoom(RoomConfig{Seed: testSeed, Log: quiet})
 	members := make([]*member, DefaultMaxBoats)
 	for i := range members {
-		members[i] = r.join("", "bench").member
+		members[i] = r.join("", "bench", nil).member
 	}
 	var seq int64
 	tick := func() {

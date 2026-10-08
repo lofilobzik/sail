@@ -3,7 +3,8 @@
  * boats, measures round trips, and reconnects with the resume token after a drop.
  */
 import { browserConfig, setWaveLayers, setWaveParameters, setWaveWind, type Controls, type SimConfig } from '../sim';
-import type { ClientMessage, ServerMessage, SnapshotMessage, WelcomeMessage } from './protocol';
+import { mergeChallenges } from './challenges';
+import type { ChallengeStatus, ClientMessage, ServerMessage, SnapshotMessage, WelcomeMessage } from './protocol';
 import { RemoteFleet } from './remote';
 
 export type NetStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
@@ -38,6 +39,10 @@ export class NetClient {
   readonly remote = new RemoteFleet();
   /** Fires on every status change and reconnect attempt. */
   onStatus: (status: NetStatus) => void = () => {};
+  /** Challenge progress, merged from every welcome and challenges frame; null until the server sends any. */
+  challenges: ChallengeStatus[] | null = null;
+  /** Fires when `challenges` changes (also on the first arrival). */
+  onChallenges: (challenges: ChallengeStatus[]) => void = () => {};
   /** The first welcome; rejected if the first connection closes before it. */
   readonly welcome: Promise<WelcomeMessage>;
 
@@ -56,7 +61,11 @@ export class NetClient {
   /** The page is going away (or into the back/forward cache): do not reconnect until it comes back. */
   private leaving = false;
 
-  constructor(readonly url: string) {
+  constructor(
+    readonly url: string,
+    /** Sailor code sent as ?player= on every connect. */
+    private readonly player: string,
+  ) {
     const { promise, resolve, reject } = Promise.withResolvers<WelcomeMessage>();
     this.welcome = promise;
     this.resolveWelcome = resolve;
@@ -107,13 +116,10 @@ export class NetClient {
 
   /** Opens a socket: the first join, or a reconnect carrying the resume token. */
   private open(): void {
-    let target = this.url;
-    if (this.resume) {
-      const u = new URL(this.url);
-      u.searchParams.set('resume', this.resume);
-      target = u.toString();
-    }
-    const ws = new WebSocket(target);
+    const u = new URL(this.url);
+    u.searchParams.set('player', this.player);
+    if (this.resume) u.searchParams.set('resume', this.resume);
+    const ws = new WebSocket(u.toString());
     this.ws = ws;
     let ended = false;
     let watchdog = 0;
@@ -159,6 +165,10 @@ export class NetClient {
           this.welcomed = true;
           this.setStatus('connected');
           this.resolveWelcome(msg);
+          if (msg.challenges) this.takeChallenges(msg.challenges);
+          break;
+        case 'challenges':
+          this.takeChallenges(msg.challenges);
           break;
         case 'snapshot':
           this.receive(msg);
@@ -170,6 +180,13 @@ export class NetClient {
     });
     // A socket closed while connecting reports only code 1006.
     ws.addEventListener('close', (e) => end(e.reason || `code ${e.code}`, e.code));
+  }
+
+  private takeChallenges(incoming: ChallengeStatus[]): void {
+    const merged = this.challenges ? mergeChallenges(this.challenges, incoming) : incoming;
+    if (this.challenges && JSON.stringify(merged) === JSON.stringify(this.challenges)) return;
+    this.challenges = merged;
+    this.onChallenges(merged);
   }
 
   private send(msg: ClientMessage): boolean {

@@ -3,7 +3,7 @@ import { Preferences } from './prefs';
 
 describe('Preferences', () => {
   it('starts from the defaults when storage is unavailable', () => {
-    expect(new Preferences().value).toEqual({ volume: 0.7, muted: false, sail: null, guidesSeen: [] });
+    expect(new Preferences().value).toEqual({ volume: 0.7, muted: false, sail: null, guidesSeen: [], player: null });
   });
 
   it('merges a change and tells every subscriber', () => {

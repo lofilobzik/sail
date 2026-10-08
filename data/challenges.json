@@ -1,0 +1,10 @@
+{
+  "source": "TUNING GUESS: visit radius 30 m, about 17 boat lengths (the Laser is 4.2 m), so a pass at a sensible distance counts; no rounding direction is required. Sandbox challenge, not a race mark rounding rule.",
+  "buoyTour": {
+    "id": "buoy-tour",
+    "title": "Buoy tour",
+    "description": "Sail within 30 m of every buoy in the bay, in any order.",
+    "radius": 30,
+    "reward": { "type": "sail", "id": "tide" }
+  }
+}

@@ -3,7 +3,7 @@
 // built site (dist/) on the same origin, so the page can reach /ws without cross-origin rules.
 // GET /healthz answers 200 while the server runs.
 //
-//	go run ./server/cmd/sailserver [-addr :8080] [-seed N] [-snapshot-hz 20] [-max-boats 32] [-static dist]
+//	go run ./server/cmd/sailserver [-addr :8080] [-seed N] [-snapshot-hz 20] [-max-boats 32] [-static dist] [-db sail.db]
 //	sailserver -healthcheck   # exit 0 if the server on -addr answers /healthz (container health check)
 package main
 
@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"sail/server/netsim"
+	"sail/server/store"
 )
 
 func main() {
@@ -29,6 +30,7 @@ func main() {
 	snapshotHz := flag.Float64("snapshot-hz", netsim.DefaultSnapshotHz, "snapshots per second")
 	maxBoats := flag.Int("max-boats", netsim.DefaultMaxBoats, "boats sailing in the room at once")
 	static := flag.String("static", "", "directory with the built site to serve at / (default: none)")
+	db := flag.String("db", "", "SQLite `file` for challenge progress (default: none, challenges off)")
 	healthcheck := flag.Bool("healthcheck", false, "probe /healthz of the server on -addr and exit 0/1")
 	flag.Parse()
 
@@ -55,7 +57,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	room := netsim.NewRoom(netsim.RoomConfig{Seed: roomSeed, MaxBoats: *maxBoats, SnapshotHz: *snapshotHz})
+	cfg := netsim.RoomConfig{Seed: roomSeed, MaxBoats: *maxBoats, SnapshotHz: *snapshotHz}
+	var st *store.Store
+	if *db != "" {
+		var err error
+		if st, err = store.Open(*db); err != nil {
+			log.Fatalf("-db %s: %v", *db, err)
+		}
+		cfg.Store = st // only a real store: a nil *store.Store would be a non-nil interface
+	}
+	room := netsim.NewRoom(cfg)
 	roomDone := make(chan struct{})
 	go func() {
 		defer close(roomDone)
@@ -84,11 +95,20 @@ func main() {
 	if *static != "" {
 		log.Printf("serving the site from %s", *static)
 	}
+	if st != nil {
+		log.Printf("challenge progress in %s", *db)
+	}
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
 	ws.Wait() // connections send their close frames
 	<-roomDone
+	room.WaitWrites() // queued challenge steps reach the database
+	if st != nil {
+		if err := st.Close(); err != nil {
+			log.Printf("close %s: %v", *db, err)
+		}
+	}
 }
 
 // probe asks the local server's /healthz; the container image has no shell or curl.

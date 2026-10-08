@@ -4,6 +4,9 @@ polar-out/
 .DS_Store
 WATCHDOG.yml
 *.swp
+*.db
+*.db-wal
+*.db-shm
 
 # Reference PDFs/OCR text and browser recordings
 docs/*.pdf
