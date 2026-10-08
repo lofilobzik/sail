@@ -9,6 +9,7 @@ import { requestLook } from '../input/mouseLook';
 import { formatSailorCode, normalizeSailorCode } from '../net/sailorCode';
 import type { ChallengeStatus } from '../net/protocol';
 import { CHALLENGES } from './challengeInfo';
+import { VERSION_LABEL } from '../version';
 import { button, heading, installPanelStyle, row } from './panel';
 
 // Sailing controls and developer tools come from the same bindings used by their input handlers.
@@ -106,6 +107,11 @@ export class Menu {
     const developer = keyList(true);
     developer.classList.add('dm-dev');
     panel.append(heading('Developer'), developer);
+
+    const version = document.createElement('p');
+    version.className = 'dm-version';
+    version.textContent = VERSION_LABEL;
+    panel.appendChild(version);
 
     // Esc while the pointer is locked is taken by the browser to release it: that opens the menu.
     document.addEventListener('pointerlockchange', () => {

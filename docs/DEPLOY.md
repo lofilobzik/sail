@@ -104,6 +104,21 @@ should say `wss://dinghysail.ing/ws connected`.
 - **Rotate the tunnel token**: `./install.sh --new-token`.
 - cloudflared also auto-updates from Docker Hub through the same timer; its own updater is off.
 
+## Versions
+
+The Esc menu shows `Alpha v<version> · build <commit>`. The version is maintained by hand, and
+there is no release tooling. The build is the short commit, embedded by `vite.config.ts` in
+production builds: from `GIT_COMMIT` (the workflow passes `github.sha` as a build argument),
+otherwise from the checkout's `git rev-parse HEAD`. The dev server, tests and builds without git
+show `dev`. A local image build passes it explicitly:
+`podman build --build-arg GIT_COMMIT=$(git rev-parse HEAD) -f Containerfile .`
+
+To release, set `"version"` in `package.json` (and `npm install --package-lock-only` so the lock
+file matches), note the release below, and push to `main`. Change the `Alpha` label in
+`src/version.ts` when the game leaves alpha.
+
+- **0.1.0** Alpha: Buoy Tour Update (persistent challenges, the Buoy tour, sailor codes)
+
 ## Not covered
 
 - No uptime alerting. Cloudflare shows the tunnel's health in the dashboard, and visitors get

@@ -10,6 +10,8 @@ COPY index.html vite.config.ts tsconfig.json tsconfig.sim.json ./
 COPY data ./data
 COPY src ./src
 COPY scripts ./scripts
+# The commit shown in the Esc menu (.git is not in the build context); without it the menu says "dev".
+ARG GIT_COMMIT
 # vite build only: typecheck and tests already ran in CI before the image job.
 RUN npx vite build
 

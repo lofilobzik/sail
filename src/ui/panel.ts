@@ -33,6 +33,7 @@ const STYLE = `
 .dm-challenge p{margin:4px 0;color:rgba(255,255,255,0.65);}
 .dm-done{color:#8fd19e;}
 .dm-locked{color:rgba(255,255,255,0.45);}
+.dm-panel p.dm-version{margin:32px 0 0;font-size:11px;letter-spacing:0.02em;color:rgba(255,255,255,0.35);}
 `;
 
 const STYLE_ID = 'dm-style';
