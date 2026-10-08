@@ -251,9 +251,16 @@ fraction of a second and holds its position. Same idea for the sheet.
   distant shorelines do not z-fight. Measured on an M1 the bay adds well under 1 ms per frame (within noise).
 - **Boat:** procedural hull lofted from a few cross-sections using class dimensions,
   plus spars and fittings. Low triangle count.
+- **Rudder refinement** (render-only, `data/rudder-details.json`): a smoothly rounded blade,
+  shaped two-cheek head, exposed axle/fasteners, pintles and retaining pin, tapered wood tiller
+  with socket/grip/end joint, and a restrained downhaul. Fixed gudgeons attach to the transom,
+  independently of the steering pivot; the end joint stays aligned with the existing tiller-hand
+  target at both steering limits. The assembly is 3,508 triangles in two owned static meshes,
+  with no textures or per-frame rebuilding. Detail shapes/finishes are VISUAL ESTIMATE; existing
+  class dimensions, maximum foil thickness, stock, tiller endpoint, steering and TS/Go forces remain unchanged.
 - **Hull and cockpit finish** (render-only, `data/hull-details.json`): warm-white matte gelcoat,
   shallow moulded non-slip on the deck/floor with smooth margins, a raised rounded coaming and
-  floor fillet, and a restrained blue gunwale bead. Two long grip rails have seated fasteners;
+  floor fillet. Two long grip rails have seated fasteners;
   one lifted padded hiking strap has wall/floor anchors. The existing fittings batch also carries
   a daggerboard slot collar, handle and retaining elastic, an inspection cap and a stern drain bung.
   The user's cockpit/empty-hull photos inform arrangement, not dimensions: all added proportions
@@ -262,9 +269,12 @@ fraction of a second and holds its position. Same idea for the sheet.
   Relief, roughness and subtle cream/grey tone are packed into two owned mipmapped textures
   (about 3.3 MiB per boat including mipmaps); tonal shading reuses the roughness-map sample.
   Remote-boat disposal releases those textures. There is no per-frame hull construction work.
-  The completed boat is about 11.9k triangles. A fixed-pose isolated-boat comparison at 1800x1250
+  The sail/cockpit finish pass produced about 11.9k triangles. A fixed-pose isolated-boat comparison at 1800x1250
   in Chrome/SwiftShader measured about 1.5 ms/frame more for the combined sail/hull polish
   (cockpit and outside views); this software-renderer measurement is not a hardware-GPU prediction.
+- **Gelcoat hull edge:** the blue gunwale bead was removed so it no longer reads as a dark
+  cel-shaded outline. The original waterline stripe remains; the deck edge and cockpit coaming
+  keep their actual gelcoat geometry, normals and soft shading.
 - **Working dinghy details:** open low-poly blocks with exposed grooved sheaves and shackles,
   cam cleats, fairleads, deck eyes and a hiking strap replace the placeholder hardware.
   Round six-sided instanced rope spans run through the mainsheet blocks and traveller bridle,
@@ -278,6 +288,10 @@ fraction of a second and holds its position. Same idea for the sheet.
   The initial working-rig pass had about 8.7k triangles. A paired, fixed-pose close-up at 1800x1250 in headless
   Chrome/SwiftShader measured about 0.5 ms/frame for showing all new details versus hiding them
   (15 additional draw calls across the two depth passes); this is not a before/after hardware-GPU benchmark.
+- **Control-tail clearance:** cunningham and vang tails leave their cleats aft, then turn across
+  clear foredeck instead of crossing the raised cockpit rim. End heights are measured once against
+  the actual triangulated shell, not the ideal sheer curve; no arbitrary lift or per-frame raycasts.
+  The regression checks rope clearance against the rendered deck/coaming on both control tails.
 - **Sail:** cloth-like visual (small Verlet grid, around 20x12 points, pinned along luff / foot).
   **It is visual only.** Sail forces come from the foil model in `sim/`. The sim exposes a
   `luffAmount` value (0 = trimmed, 1 = fully luffing) and the cloth reads it to flutter.

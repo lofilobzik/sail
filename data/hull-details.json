@@ -3,7 +3,6 @@
     "gelcoat": "#f4f2e8",
     "deck": "#f3f1e7",
     "floor": "#efeee3",
-    "gunwale": "#477393",
     "rail": "#515c60",
     "railEdge": "#747d7d",
     "strap": "#303b40",
@@ -31,9 +30,7 @@
     "width": 0.032,
     "height": 0.019,
     "floorRadius": 0.025,
-    "cornerSegments": 6,
-    "gunwaleRadius": 0.007,
-    "gunwaleInset": 0.006
+    "cornerSegments": 6
   },
   "gripRail": {
     "endInset": 0.13,
@@ -71,7 +68,7 @@
   },
   "sources": {
     "reference": "User-supplied cockpit and empty-hull photos, 2026-10-07: light cream/white gelcoat, rounded raised cockpit lip, moulded non-slip, two long grey/dark side grip strips, lifted central padded webbing, daggerboard fittings and stern details. Photos describe appearance and arrangement, not calibrated dimensions. No brands or copied sail markings.",
-    "dimensions": "VISUAL ESTIMATE: every dimension and placement offset in this file, including lip cross-section, floor fillet, gunwale bead, rails, screw placement, webbing and padding, anchors, daggerboard collar/handle/elastic, inspection cap and stern bung. All geometry is render-only; the existing hull sections, cockpit layout, daggerboard position, controls and physics remain unchanged.",
+    "dimensions": "VISUAL ESTIMATE: every dimension and placement offset in this file, including lip cross-section, floor fillet, rails, screw placement, webbing and padding, anchors, daggerboard collar/handle/elastic, inspection cap and stern bung. The former blue gunwale bead was removed: the hull's edge is gelcoat rather than a dark outline, while the original waterline stripe remains. All geometry is render-only; the existing hull sections, cockpit layout, daggerboard position, controls and physics remain unchanged.",
     "surface": "TUNING GUESS: warm-white colours, matte roughness, 12 mm low-contrast mould pitch, 1.5 mm bump strength, texture resolutions, mask feather, anisotropy and tessellation. Non-slip uses a 0.96 linear-light tone with 0.018 mould contrast, leaving smooth margins unmodulated; this is shallow cream/grey mould relief, not dirt or speckled pigment. Red relief, green roughness and blue tone are baked into the same per-boat mipmapped texture. A focused material shader patch reuses the existing roughness texture sample for blue-channel diffuse modulation without another sampler/fetch. Smooth margins are part of the same UV/material surface, not overlapping geometry. These are visual screen-space estimates rather than a material specification."
   }
 }

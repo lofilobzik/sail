@@ -69,10 +69,11 @@ export function createBoatMesh(model: BoatModel): BoatMesh {
   yaw.add(pitch);
   pitch.add(heel);
 
-  heel.add(createHull(layout), createDaggerboard(layout), createDeckFittings(layout));
+  const hull = createHull(layout);
+  heel.add(hull, createDaggerboard(layout), createDeckFittings(layout));
   const rudder = createRudder(layout);
-  heel.add(rudder.pivot);
-  const rig = createRig(layout, heel);
+  heel.add(rudder.pivot, rudder.mounts);
+  const rig = createRig(layout, heel, hull);
   const sail: SailView = createSail(layout);
   rig.boom.add(sail.object);
   const sailor = createSailor(layout, heel);

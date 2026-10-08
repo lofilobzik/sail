@@ -69,7 +69,7 @@ function hullShell(layout: BoatLayout): THREE.BufferGeometry {
 }
 
 /** Rounded-rectangle cockpit outline in body (x, y). */
-function cockpitOutline(layout: BoatLayout, offset = 0): THREE.Vector2[] {
+export function cockpitOutline(layout: BoatLayout, offset = 0): THREE.Vector2[] {
   const original = layout.cockpit;
   const c = { aft: original.aft - offset, fore: original.fore + offset, halfWidth: original.halfWidth + offset };
   const shape = new THREE.Shape();
@@ -142,18 +142,6 @@ function cockpitWell(layout: BoatLayout): THREE.BufferGeometry {
   return geometry;
 }
 
-function gunwaleEdge(layout: BoatLayout): THREE.BufferGeometry {
-  const xs = stations(layout, layout.model.cfg.visual.hullStations);
-  const c = details.coaming;
-  const points: THREE.Vector3[] = [];
-  for (const x of xs) points.push(bodyToLocal(x, Math.max(0, layout.halfBeamAt(x) - c.gunwaleInset), layout.sheerAt(x)));
-  // One bow point, then the port edge back to the transom.
-  for (let i = xs.length - 2; i >= 0; i--) {
-    const x = xs[i]!;
-    points.push(bodyToLocal(x, -Math.max(0, layout.halfBeamAt(x) - c.gunwaleInset), layout.sheerAt(x)));
-  }
-  return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points, true), xs.length * 4, c.gunwaleRadius, 6, true);
-}
 
 export function createHull(layout: BoatLayout): THREE.Group {
   const g = new THREE.Group();
@@ -166,8 +154,5 @@ export function createHull(layout: BoatLayout): THREE.Group {
   const floorOutline = cockpitOutline(layout, -details.coaming.floorRadius);
   const floor = mapToBody(new THREE.ShapeGeometry(new THREE.Shape(floorOutline)), (x, y) => [x, y, layout.cockpit.floorZ]);
   g.add(new THREE.Mesh(floor, gelcoatSurface(layout, floor, true)));
-  g.add(new THREE.Mesh(gunwaleEdge(layout), new THREE.MeshStandardMaterial({
-    color: details.colours.gunwale, roughness: 0.82, metalness: 0,
-  })));
   return g;
 }

@@ -28,7 +28,7 @@ export interface Rig {
 }
 
 
-export function createRig(layout: BoatLayout, parent: THREE.Group): Rig {
+export function createRig(layout: BoatLayout, parent: THREE.Group, hull: THREE.Group): Rig {
   const v = layout.model.cfg.visual;
   const rig = layout.model.cfg.rig;
   const spar = new THREE.MeshStandardMaterial({ color: SPAR_COLOR, metalness: 0.3, roughness: 0.4 });
@@ -88,13 +88,31 @@ export function createRig(layout: BoatLayout, parent: THREE.Group): Rig {
   const guideX = layout.mastButt.x - details.deck.controlAftOfMast;
   const cleat = bodyToLocal(cleatX, details.deck.controlSpacing, layout.sheerAt(cleatX) + details.deck.cleatHeight);
   const guide = bodyToLocal(guideX, details.deck.controlSpacing, layout.sheerAt(guideX) + details.deck.fairleadRadius);
-  const tailX = cleatX - details.deck.tailLength / 2;
-  const tail = bodyToLocal(tailX, details.deck.controlSpacing, layout.sheerAt(tailX) + details.rope.controlRadius);
+  // Measure the unposed rendered shell once: triangulated deck heights differ from the sheer spline.
+  hull.updateWorldMatrix(true, true);
+  const deckRay = new THREE.Raycaster();
+  const deckHits: THREE.Intersection[] = [];
+  deckRay.ray.direction.set(0, -1, 0);
+  const deckHeight = (x: number, y: number): number => {
+    deckRay.ray.origin.set(y, layout.sheerAt(x) + layout.loa, -x);
+    deckHits.length = 0;
+    const hit = deckRay.intersectObject(hull, true, deckHits)[0];
+    if (!hit) throw new Error('Control tail lies outside the rendered foredeck');
+    return hit.point.y;
+  };
+  // Loose controls leave the jaws aft, then lie sideways on the foredeck, clear of the raised coaming.
+  const tailX = cleatX - details.deck.cleatWidth;
+  const tailSide = Math.min(
+    details.deck.controlSpacing + details.deck.tailLength - details.deck.cleatWidth,
+    layout.halfBeamAt(tailX) - details.deck.cleatWidth,
+  );
+  const tailExit = bodyToLocal(tailX, details.deck.controlSpacing, deckHeight(tailX, details.deck.controlSpacing) + details.deck.cleatHeight);
+  const tail = bodyToLocal(tailX, tailSide, deckHeight(tailX, tailSide) + details.rope.controlRadius);
   const vangTang = at(v.mast.vangTangAboveButt);
   const vangBoomPoint = new THREE.Vector3(0, -v.boom.diameter / 2, v.boom.vangFromFront);
   const lowerVang = createBlock(details.block.vangScale), upperVang = createBlock(details.block.vangScale);
   lowerVang.name = 'lower-vang-block'; upperVang.name = 'upper-vang-block';
-  const vangPoints = Array.from({ length: 10 }, () => new THREE.Vector3());
+  const vangPoints = Array.from({ length: 11 }, () => new THREE.Vector3());
   const vang = createRope(vangPoints.length, details.colours.vang, details.rope.controlRadius);
   vang.mesh.name = 'vang-purchase';
   parent.add(lowerVang, upperVang, vang.mesh);
@@ -105,7 +123,8 @@ export function createRig(layout: BoatLayout, parent: THREE.Group): Rig {
     bodyToLocal(layout.mastButt.x, -details.deck.controlSpacing, layout.sheerAt(layout.mastButt.x) + details.deck.fairleadRadius),
     bodyToLocal(guideX, -details.deck.controlSpacing, layout.sheerAt(guideX) + details.deck.fairleadRadius),
     bodyToLocal(cleatX, -details.deck.controlSpacing, layout.sheerAt(cleatX) + details.deck.cleatHeight),
-    bodyToLocal(tailX, -details.deck.controlSpacing, layout.sheerAt(tailX) + details.rope.controlRadius),
+    bodyToLocal(tailX, -details.deck.controlSpacing, deckHeight(tailX, -details.deck.controlSpacing) + details.deck.cleatHeight),
+    bodyToLocal(tailX, -tailSide, deckHeight(tailX, -tailSide) + details.rope.controlRadius),
   ];
   const cunningham = createRope(cunninghamPoints.length, details.colours.control, details.rope.controlRadius);
   cunningham.mesh.name = 'cunningham-rope';
@@ -160,7 +179,8 @@ export function createRig(layout: BoatLayout, parent: THREE.Group): Rig {
     blockPoint(vangPoints[6]!, lowerVang, 0, r);
     vangPoints[7]!.copy(guide);
     vangPoints[8]!.copy(cleat);
-    vangPoints[9]!.copy(tail);
+    vangPoints[9]!.copy(tailExit);
+    vangPoints[10]!.copy(tail);
     vang.update(vangPoints);
   };
   update(0);
