@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "polar": "tsx scripts/polar.ts",
-    "golden": "tsx scripts/goldenTraces.ts"
+    "golden": "tsx scripts/goldenTraces.ts",
+    "map": "tsx scripts/renderMap.ts"
   },
   "dependencies": {
     "three": "^0.186.1"
