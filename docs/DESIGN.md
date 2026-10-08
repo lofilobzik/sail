@@ -74,6 +74,9 @@ server/     Go module `sail` (go.mod at the repo root).
 scripts/
   polar.ts         Headless: sails the boat at fixed headings, dumps a polar. Runs in Node.
   goldenTraces.ts  `npm run golden`: writes the TS golden fixtures the Go tests compare against.
+  renderMap.ts     `npm run map`: headless top-down PNG of the bay from the terrain function (no browser).
+  renderChart.ts   `npm run chart`: headless PNG of the in-game paper chart page; shares `nav/chartPrint.ts`
+                   (palette, contour maths) with `render/chartLand.ts`. Keep it in step with `render/chartPage.ts`.
 docs/   Source papers and rules. See INDEX.md.
 ```
 
