@@ -1,6 +1,6 @@
 /**
- * Pure parts of the printed chart, shared by the in-game canvas (render/chartLand.ts) and the headless
- * renderer (scripts/renderChart.ts): the tint palette and the contour segments in world metres.
+ * Pure tint palette and world-space contour segments for the printed chart (render/chartLand.ts).
+ * Browser play and headless export both use that same canvas renderer.
  * Colours are VISUAL ESTIMATE, after the usual paper-chart convention (buff land, blue shallows).
  */
 import type { TerrainGrid } from '../sim/terrain';

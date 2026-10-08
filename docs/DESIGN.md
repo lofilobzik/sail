@@ -75,8 +75,8 @@ scripts/
   polar.ts         Headless: sails the boat at fixed headings, dumps a polar. Runs in Node.
   goldenTraces.ts  `npm run golden`: writes the TS golden fixtures the Go tests compare against.
   renderMap.ts     `npm run map`: headless top-down PNG of the bay from the terrain function (no browser).
-  renderChart.ts   `npm run chart`: headless PNG of the in-game paper chart page; shares `nav/chartPrint.ts`
-                   (palette, contour maths) with `render/chartLand.ts`. Keep it in step with `render/chartPage.ts`.
+  renderChart.ts   `npm run chart`: browserless PNG using the actual `render/chartPage.ts` renderer
+                   on @napi-rs/canvas, with native fonts; no copied chart layout or bitmap-font recreation.
 docs/   Source papers and rules. See INDEX.md.
 ```
 
@@ -532,6 +532,16 @@ The debug overlay is a developer tool, not a player aid, and is toggled off by d
 - There is no "you are here" marker for the true position (a debug toggle may show it).
   The navigation estimator receives only instrument readings, never the true boat position;
   logical navigation coordinates are independent of the render-side floating origin.
+- **Browserless chart export:** `npm run chart` saves the actual paper page at departure to
+  `polar-out/chart.png`, at its configured native 1024x820 texture size. It calls `drawChartPage`
+  with a native Canvas2D / Path2D backend, so framing, terrain, symbols, labels and pencil work
+  come from the in-game code. Fonts use the host's font availability; there is no hand-recreated
+  bitmap font or separately maintained chart layout. `--out` selects the file, `--map-only`
+  crops the real map panel, and `--zoom` resizes the rendered page/panel. The native-size PNG
+  matched the earlier native export byte-for-byte; every crop pixel and both zoom modes were
+  checked. `npm run map` remains the separate top-down terrain overview. Native canvas is a
+  development dependency only. `tsconfig.chart.json` checks the mixed Node/Canvas exporter
+  separately, preserving DOM-free sim/navigation checks and browser-only application globals.
 
 ## Milestones
 
