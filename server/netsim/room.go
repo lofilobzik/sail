@@ -215,7 +215,14 @@ func NewRoom(c RoomConfig) *Room {
 func (r *Room) Run(ctx context.Context) {
 	if r.store != nil {
 		go r.writeLoop()
-		defer close(r.saves) // lets the writer drain queued jobs; runs before close(r.done)
+		// Runs after close(r.done), still on this goroutine: the boats still sailing keep their
+		// positions, then the writer drains every queued job and exits.
+		defer func() {
+			for _, b := range r.sailing {
+				r.savePosition(b, true)
+			}
+			close(r.saves)
+		}()
 	}
 	defer close(r.done)
 	dt := r.cfg.Dt
@@ -366,13 +373,18 @@ func (r *Room) forgetExpired() {
 	}
 }
 
-// join attaches a connection: to the boat of a live resume token, else to a new boat at a free
-// spawn slot. A token whose boat is still sailing hands the boat over and closes the old
-// connection's replaced channel.
+// join attaches a connection to a boat: the boat of a live resume token, else the boat of the
+// player's sailor code (one boat per code, so another tab, a reload or another browser with the same
+// code takes it over), both in place and at rest; else a new boat at the player's last stored
+// position or a free spawn slot. A boat that is still sailing is handed over and the old
+// connection's replaced channel closed.
 func (r *Room) join(resume, addr string, p *playerInfo) joinResult {
 	b := r.byToken[resume]
+	if b == nil && p != nil {
+		b = r.boatOf(p.code)
+	}
 	if b != nil && b.member == nil && r.now().Sub(b.leftAt) > r.grace {
-		delete(r.byToken, resume)
+		delete(r.byToken, b.token)
 		b = nil
 	}
 	if b != nil && b.member != nil {
@@ -385,15 +397,21 @@ func (r *Room) join(resume, addr string, p *playerInfo) joinResult {
 	}
 	resumed := b != nil
 	if resumed {
-		b.state.T = r.time() // the boat was not stepped while away
+		// Back where it was, at the start speed: the boat does not sail on while its player is away.
+		b.state = r.stillAt(b.state.X, b.state.Z, b.state.Heading)
 	} else {
 		b = &roomBoat{id: r.nextID, token: rand.Text(), controls: sim.NeutralControls}
 		r.nextID++
-		b.state = r.spawn(nil)
-		// Others draw the sail of a boat that has not sent an input yet as it stands at the spawn.
-		r.see(b, sim.Evaluate(b.state, b.controls, r.model, &r.cfg))
+		if p != nil && p.position != nil {
+			// A sailor code whose last boat is gone (resume grace over, or a restarted server).
+			b.state = r.stillAt(p.position.X, p.position.Z, p.position.Heading)
+		} else {
+			b.state = r.spawn(nil)
+		}
 		r.byToken[b.token] = b
 	}
+	// Others draw the sail of a boat that has not sent an input yet as it stands.
+	r.see(b, sim.Evaluate(b.state, b.controls, r.model, &r.cfg))
 	// Input seq order is per connection; anything queued from an old connection is dropped.
 	b.ackSeq, b.credit = 0, 0
 	b.queue.clear()
@@ -424,6 +442,16 @@ func (r *Room) join(resume, addr string, p *playerInfo) joinResult {
 	return joinResult{member: m, id: b.id, welcome: welcome}
 }
 
+// boatOf is the sailing or parked boat of sailor code, or nil.
+func (r *Room) boatOf(code string) *roomBoat {
+	for _, b := range r.byToken {
+		if b.player == code {
+			return b
+		}
+	}
+	return nil
+}
+
 // leave parks m's boat for its resume grace, unless a newer connection has taken the boat over.
 func (r *Room) leave(m *member, addr, reason string) {
 	b := m.boat
@@ -432,6 +460,7 @@ func (r *Room) leave(m *member, addr, reason string) {
 		return
 	}
 	r.detach(b)
+	r.savePosition(b, false) // a later boat for this sailor code starts here, also after a restart
 	r.log.Printf("disconnect %s boat %d (%s), room %d/%d", addr, b.id, reason, len(r.sailing), r.maxBoats)
 }
 
@@ -454,6 +483,15 @@ func (r *Room) reset(m *member) {
 	if b := m.boat; b.member == m {
 		b.queue.push(queuedInput{reset: true})
 	}
+}
+
+// stillAt is a fresh start state (StartSpeed, sail and crew at rest) at x, z and heading, at the room
+// time: a boat coming back where it was, without the way it carried when its player left.
+func (r *Room) stillAt(x, z, heading float64) sim.BoatState {
+	s := sim.InitialState(heading, StartSpeed)
+	s.T = r.time()
+	s.X, s.Z = x, z
+	return s
 }
 
 // spawn is the start state at the first spawn slot with no sailing boat other than self within

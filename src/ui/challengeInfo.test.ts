@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import buoyData from '../../data/buoys.json';
 import sailDesigns from '../../data/sail-designs.json';
-import { CHALLENGES, lockedSails } from './challengeInfo';
+import { CHALLENGES, NO_CHALLENGE, lockedSails } from './challengeInfo';
 
 describe('challenge catalogue', () => {
   it('rewards only sail designs that exist', () => {
@@ -15,8 +15,18 @@ describe('challenge catalogue', () => {
 
   it('locks a reward until its challenge is complete', () => {
     const all = buoyData.buoys.map((b) => b.name);
-    expect(lockedSails([])).toEqual(new Map([['tide', 'Buoy tour']]));
-    expect(lockedSails([{ id: 'buoy-tour', steps: all, total: 5 }])).toEqual(new Map([['tide', 'Buoy tour']]));
-    expect(lockedSails([{ id: 'buoy-tour', steps: all, total: 5, completedAt: 1 }]).size).toBe(0);
+    expect(lockedSails([]).get('tide')).toBe('Buoy tour');
+    expect(lockedSails([{ id: 'buoy-tour', steps: all, total: 5 }]).get('tide')).toBe('Buoy tour');
+    expect(lockedSails([{ id: 'buoy-tour', steps: all, total: 5, completedAt: 1 }]).has('tide')).toBe(false);
+    expect(lockedSails(null).has('tide')).toBe(false);
+  });
+
+  it('locks every sail no challenge awards, except the default, with or without progress', () => {
+    const unawarded = sailDesigns.designs.map((d) => d.id).filter((id) => id !== sailDesigns.default && id !== 'tide');
+    for (const list of [null, []]) {
+      const locked = lockedSails(list);
+      expect(locked.has(sailDesigns.default)).toBe(false);
+      for (const id of unawarded) expect(locked.get(id)).toBe(NO_CHALLENGE);
+    }
   });
 });

@@ -46,6 +46,7 @@ var migrations = []string{
 	`CREATE TABLE players (code TEXT PRIMARY KEY, created_at INTEGER NOT NULL);
 CREATE TABLE steps (player TEXT NOT NULL REFERENCES players(code) ON DELETE CASCADE, challenge TEXT NOT NULL, step TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (player, challenge, step));
 CREATE TABLE completions (player TEXT NOT NULL REFERENCES players(code) ON DELETE CASCADE, challenge TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (player, challenge));`,
+	`CREATE TABLE positions (player TEXT PRIMARY KEY REFERENCES players(code) ON DELETE CASCADE, x REAL NOT NULL, z REAL NOT NULL, heading REAL NOT NULL, at INTEGER NOT NULL);`,
 }
 
 // Store is an open database.
@@ -188,4 +189,41 @@ func (s *Store) RecordStep(ctx context.Context, code, challenge, step string, to
 		return Challenge{}, err
 	}
 	return all[challenge], nil
+}
+
+// Position is where a player's boat was when it left: world x east, z south, m; heading, rad.
+type Position struct {
+	X, Z, Heading float64
+}
+
+// SavePosition replaces code's last position.
+func (s *Store) SavePosition(ctx context.Context, code string, p Position, at time.Time) error {
+	if !ValidCode(code) {
+		return errors.New("malformed player code")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	ms := at.UnixMilli()
+	if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO players (code, created_at) VALUES (?, ?)", code, ms); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT OR REPLACE INTO positions (player, x, z, heading, at) VALUES (?, ?, ?, ?, ?)", code, p.X, p.Z, p.Heading, ms); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// LastPosition is code's last saved position; ok is false when none is stored.
+func (s *Store) LastPosition(ctx context.Context, code string) (p Position, ok bool, err error) {
+	if !ValidCode(code) {
+		return p, false, errors.New("malformed player code")
+	}
+	err = s.db.QueryRowContext(ctx, "SELECT x, z, heading FROM positions WHERE player = ?", code).Scan(&p.X, &p.Z, &p.Heading)
+	if errors.Is(err, sql.ErrNoRows) {
+		return p, false, nil
+	}
+	return p, err == nil, err
 }

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -78,6 +79,49 @@ func TestReopen(t *testing.T) {
 	p, err := s2.Progress(ctx, code)
 	if err != nil || len(p["tour"].Steps) != 1 || p["tour"].Steps[0] != "a" {
 		t.Fatalf("progress = %v, %v", p, err)
+	}
+}
+
+func TestPosition(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	if _, ok, err := s.LastPosition(ctx, code); ok || err != nil {
+		t.Fatalf("unknown code: ok %v, %v", ok, err)
+	}
+	for _, p := range []Position{{X: 1, Z: 2, Heading: 3}, {X: -4, Z: 5.5, Heading: -0.5}} {
+		if err := s.SavePosition(ctx, code, p, time.UnixMilli(9)); err != nil {
+			t.Fatal(err)
+		}
+		if got, ok, err := s.LastPosition(ctx, code); !ok || err != nil || got != p {
+			t.Fatalf("position = %+v %v %v, want %+v", got, ok, err, p)
+		}
+	}
+}
+
+// A database written by the first schema version gains positions and keeps its progress.
+func TestMigrateFromVersion1(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{migrations[0], "PRAGMA user_version = 1", "INSERT INTO players VALUES ('" + code + "', 0)", "INSERT INTO steps VALUES ('" + code + "', 'tour', 'a', 0)"} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if p, err := s.Progress(ctx, code); err != nil || len(p["tour"].Steps) != 1 {
+		t.Fatalf("progress = %v, %v", p, err)
+	}
+	if err := s.SavePosition(ctx, code, Position{X: 1}, time.Now()); err != nil {
+		t.Fatal(err)
 	}
 }
 

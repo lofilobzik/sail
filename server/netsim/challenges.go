@@ -10,10 +10,13 @@ import (
 	"sail/server/store"
 )
 
-// Store is the persistence the room needs for challenges; *store.Store satisfies it.
+// Store is the player persistence the room needs (challenge progress, last boat position);
+// *store.Store satisfies it.
 type Store interface {
 	Progress(ctx context.Context, code string) (map[string]store.Challenge, error)
 	RecordStep(ctx context.Context, code, challenge, step string, total int, at time.Time) (store.Challenge, error)
+	LastPosition(ctx context.Context, code string) (store.Position, bool, error)
+	SavePosition(ctx context.Context, code string, p store.Position, at time.Time) error
 }
 
 // unsavedStep is a visit the room has detected whose write the store has not yet confirmed.
@@ -23,19 +26,23 @@ type unsavedStep struct {
 	retryAt  time.Time
 }
 
-// saveJob is one queued write; entry is the exact unsavedStep it was queued for.
+// saveJob is one queued write: a challenge step (entry is the exact unsavedStep it was queued for),
+// or, when pos is set, a player's last position.
 type saveJob struct {
 	boat  *roomBoat
 	index int
 	entry *unsavedStep
 	code  string
 	step  string
+	pos   *store.Position
 }
 
-// playerInfo is a connection's resolved sailor code and its stored progress.
+// playerInfo is a connection's resolved sailor code, its stored progress and its boat's last
+// position (nil when none is stored).
 type playerInfo struct {
 	code     string
 	progress map[string]store.Challenge
+	position *store.Position
 }
 
 // resolve reads code's progress from the store. It returns nil (the connection then plays without
@@ -50,7 +57,14 @@ func (r *Room) resolve(ctx context.Context, code string) *playerInfo {
 		r.log.Printf("progress %s: %v", code, err)
 		return nil
 	}
-	return &playerInfo{code: code, progress: progress}
+	info := &playerInfo{code: code, progress: progress}
+	switch pos, ok, err := r.store.LastPosition(ctx, code); {
+	case err != nil:
+		r.log.Printf("position %s: %v", code, err) // the boat then starts at a spawn slot
+	case ok:
+		info.position = &pos
+	}
+	return info
 }
 
 // statuses is the buoy tour's status for the wire.
@@ -125,14 +139,39 @@ func (r *Room) save(b *roomBoat, i int) {
 	}
 }
 
-// writeLoop is the one writer: stores jobs in the order they were detected, then reports each
-// result to the Run goroutine, so confirmations arrive in the same order.
+// writeLoop is the one writer: stores jobs in the order they were queued, then reports each step
+// result to the Run goroutine, so confirmations arrive in the same order. Position writes are best
+// effort: a failure is logged, not retried.
 func (r *Room) writeLoop() {
 	defer close(r.saveDone)
 	total := len(sim.BuoyData.Buoys)
 	for job := range r.saves {
+		if job.pos != nil {
+			if err := r.store.SavePosition(context.Background(), job.code, *job.pos, r.now()); err != nil {
+				r.log.Printf("save position %s: %v", job.code, err)
+			}
+			continue
+		}
 		ch, err := r.store.RecordStep(context.Background(), job.code, sim.ChallengeParams.BuoyTour.ID, job.step, total, r.now())
 		r.do(context.Background(), func() { r.saved(job, ch, err) })
+	}
+}
+
+// savePosition queues b's position as its player's last one (Run goroutine). block waits for room
+// in the queue (shutdown, while the writer drains); otherwise a full queue drops it, logged.
+func (r *Room) savePosition(b *roomBoat, block bool) {
+	if r.store == nil || b.player == "" {
+		return
+	}
+	job := saveJob{code: b.player, pos: &store.Position{X: b.state.X, Z: b.state.Z, Heading: b.state.Heading}}
+	if block {
+		r.saves <- job
+		return
+	}
+	select {
+	case r.saves <- job:
+	default:
+		r.log.Printf("boat %d: position not saved, write queue full", b.id)
 	}
 }
 

@@ -138,7 +138,8 @@ const knownSail = (id: string | null): id is string => sail.designs.some((d) => 
 if (opts.sail !== null) {
   if (knownSail(opts.sail)) sail.setDesign(opts.sail);
   else console.warn(`unknown ?sail=${opts.sail}; known: ${sail.designs.map((d) => d.id).join(', ')}`);
-} else if (knownSail(prefs.value.sail)) {
+} else if (knownSail(prefs.value.sail) && lockedSails(null).get(prefs.value.sail) === undefined) {
+  // A saved choice of a sail that is no longer obtainable falls back to the default.
   sail.setDesign(prefs.value.sail);
 }
 const debugSailPicker = overlay.addSelect('sail design', sail.designs.map((d) => ({ value: d.id, label: d.name })), sail.design, (id) => prefs.set({ sail: id }));
@@ -167,6 +168,8 @@ const menu = new Menu({
       }
     : undefined,
 });
+// Sails no challenge awards stay locked everywhere; reward sails lock once progress arrives.
+menu.setLockedSails(lockedSails(null));
 const sailName = (id: string): string => sail.designs.find((d) => d.id === id)?.name ?? id;
 // J: the challenge log. Progress comes from the server (verified there), now or on any later
 // welcome, so every update goes through applyChallenges.

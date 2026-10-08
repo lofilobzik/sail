@@ -20,7 +20,7 @@ export interface WelcomeMessage {
   config: SimConfig;
   dt: number;
   tick: number;
-  /** The boat at room time `tick * dt`: the spawn for a new boat. */
+  /** The boat at room time `tick * dt`: for a new boat, a spawn slot or the sailor code's last position; at rest after a resume. */
   state: BoatState;
   snapshotHz: number;
   /** The player's stored challenge progress; absent when challenges are unavailable (no ?player, or a server without -db). */

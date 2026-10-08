@@ -25,6 +25,8 @@ export class NetClient {
   status: NetStatus = 'connecting';
   /** Why the last socket closed. */
   closeReason = '';
+  /** The boat was taken over by another connection with this sailor code (another tab or browser). */
+  replaced = false;
   /** Round trip from sending an input to the first snapshot acking it, ms: last and smoothed. */
   rttMs = NaN;
   meanRttMs = NaN;
@@ -137,6 +139,8 @@ export class NetClient {
         this.setStatus('disconnected');
         this.rejectWelcome(new Error(`could not join ${this.url} (${reason})`));
       } else if (code === CLOSE_REPLACED || this.leaving) {
+        // Replaced: another tab or browser with this sailor code took the boat over. Do not take it back.
+        this.replaced = code === CLOSE_REPLACED;
         this.setStatus('disconnected');
       } else {
         const delay = RECONNECT_DELAYS_MS[Math.min(this.attempt, RECONNECT_DELAYS_MS.length - 1)]!;

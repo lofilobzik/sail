@@ -141,6 +141,11 @@ export async function joinServer(url: string, player: string): Promise<ServerLin
   document.body.appendChild(banner);
   const client = new NetClient(url, player);
   const show = (status: NetStatus): void => {
+    if (client.replaced) {
+      banner.textContent = 'your boat is sailing in another tab or browser: reload this page to take it back';
+      banner.style.display = '';
+      return;
+    }
     const text = BANNER_TEXT[status];
     const attempt = status === 'reconnecting' ? `attempt ${client.attempt}, ` : '';
     banner.textContent = text === null ? '' : `${text} (${attempt}${url}${client.closeReason ? `, ${client.closeReason}` : ''})`;

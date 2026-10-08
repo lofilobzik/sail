@@ -12,7 +12,8 @@
 //	client → server  {"type":"reset"}                                                                        boat back to a free spawn slot
 //
 // Input seq order is per connection: on every (re)connect the boat's newest seq and ackSeq restart at 0.
-// A connection whose boat was resumed by a newer connection is closed with code 4000 "replaced".
+// A connection whose boat was resumed by a newer connection (by ?resume, or by the same ?player code:
+// one boat per sailor code) is closed with code 4000 "replaced".
 package netsim
 
 import (

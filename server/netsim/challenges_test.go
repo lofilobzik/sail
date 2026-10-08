@@ -138,9 +138,11 @@ func TestBuoyTourPersists(t *testing.T) {
 			t.Fatalf("after %s: completedAt %d", b.Name, got.CompletedAt)
 		}
 		tr.clock.Advance(time.Second)
-		w2 := tr.welcomeAs("", codeA) // a fresh connection sees the stored progress
-		if !slices.Equal(w2.Challenges[0].Steps, names) {
-			t.Fatalf("persisted steps %v, want %v", w2.Challenges[0].Steps, names)
+		// A new connection with the same code (another tab) takes the boat over and sees the stored progress.
+		c = tr.dialAs("", codeA)
+		w2 := tr.welcome(c)
+		if w2.ID != w.ID || !slices.Equal(w2.Challenges[0].Steps, names) {
+			t.Fatalf("takeover: boat %d (want %d), steps %v, want %v", w2.ID, w.ID, w2.Challenges[0].Steps, names)
 		}
 	}
 }

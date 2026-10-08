@@ -282,8 +282,9 @@ func TestRoomQueueDropsOldestWhenFull(t *testing.T) {
 	}
 }
 
-// TestRoomResumeKeepsStateAtRoomTime: a parked boat comes back as it left, at the room time.
-func TestRoomResumeKeepsStateAtRoomTime(t *testing.T) {
+// TestRoomResumeStartsInPlaceAtRest: a parked boat comes back where it left, at the start speed and
+// the room time.
+func TestRoomResumeStartsInPlaceAtRest(t *testing.T) {
 	clock := newFakeClock()
 	r := NewRoom(RoomConfig{Seed: testSeed, Now: clock.Now, Log: quiet})
 	a := r.join("", "a", nil)
@@ -312,9 +313,15 @@ func TestRoomResumeKeepsStateAtRoomTime(t *testing.T) {
 	if w.State.T != r.time() {
 		t.Fatalf("resumed t = %v, want room time %v", w.State.T, r.time())
 	}
+	// Same place and heading, but at rest: the boat's way, heel and sail trim from before are gone.
+	want := sim.InitialState(left.Heading, StartSpeed)
+	want.T, want.X, want.Z = left.T, left.X, left.Z
 	w.State.T = left.T
-	if w.State != left {
-		t.Fatalf("resumed state %+v, want %+v as it left", w.State, left)
+	if w.State != want {
+		t.Fatalf("resumed state %+v, want %+v", w.State, want)
+	}
+	if left.U == StartSpeed || left.Heel == 0 {
+		t.Fatalf("test boat never got moving: %+v", left)
 	}
 	if got := back.member.boat.controls; got != (sim.Controls{Tiller: 0.3, Sheet: 0.6, Hike: 1}) {
 		t.Fatalf("resumed controls %+v", got)

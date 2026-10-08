@@ -144,10 +144,18 @@ Rules:
   `error` for a rejected message (the connection stays open). Client sends `input` (strictly
   increasing seq, controls) every local fixed step, and
   `reset`. Origins: same-origin (the deployed site) plus localhost on any port (Vite dev).
+- **One boat per sailor code**: a connection with a sailor code takes over that code's boat, sailing
+  or parked (another tab, a reload, another browser with a restored code), like a resume token.
+  The older connection is closed as "replaced" and its page says the boat is sailing elsewhere
+  (reload takes it back). Connections without a code each sail their own boat.
 - **Reconnect**: a dropped boat is parked for 60 s under its resume token (`/ws?resume=…`). The client
   retries after 1, 2, 4, 8, then every 10 s, and also when no data arrives for 3 s (a silent socket).
-  Resumed: same boat, navigation kept. Otherwise (expired, or a restarted server with a new seed): a
-  fresh spawn, the new config adopted in place, navigation restarted. Leaving the page closes the
+  Resumed: same boat in the same place, navigation kept, but at rest (start speed, no heel or
+  carried way), so a boat never sails on while its player is away. Otherwise (expired, or a
+  restarted server with a new seed): a new boat with the new config adopted in place and navigation
+  restarted, at the sailor code's last position when the server has `-db` (saved when a boat
+  disconnects and when the server shuts down; server-side, so a client cannot pick where it
+  appears), else at a spawn slot. Leaving the page closes the
   socket at once (`pagehide`), so the boat disappears for others immediately.
 - **Client prediction** (`src/net/correction.ts`): the TS sim predicts every step; each snapshot is
   compared with the prediction recorded for its acked input (256-step history), minus corrections
@@ -178,7 +186,9 @@ Rules:
   off and nothing is locked). Writes run on one writer goroutine in detection order, then the
   server sends a `challenges` frame; a failed write is retried every 2 s while the boat exists
   (sailing or parked for its 60 s resume grace). The welcome carries stored progress; the client
-  merges every frame so progress never moves backwards. The sail lock is cosmetic (client side;
+  merges every frame so progress never moves backwards. Every sail other than the default and the
+  challenge rewards is shown but locked ("no challenge yet"), also offline, and a saved choice of
+  one falls back to the default. The sail lock is cosmetic (client side;
   the debug picker and `?sail=` stay open). In the container the database is `/data/sail.db` on the
   `sail-data` podman volume.
 
@@ -199,7 +209,7 @@ Rules:
 | M | Mute / unmute |
 | J | Challenge log: every challenge with its steps, progress and reward, in the menu's panel. Keeps the pointer lock and the sim running; J or Esc closes it |
 | G | Debug free-fly camera: WASD fly along the view, E up, Q down, Shift fast, mouse look turns it in world space. The boat sails on with neutral controls. B (hold) raises the binoculars here too. G or V returns to the cockpit. `?fly=x,z,height[,bearing[,pitch]]` opens already flying |
-| Esc | Menu: controls, volume, sail design (reward sails locked until earned), challenges summary and sailor code, respawn, reset hints. The sim keeps running |
+| Esc | Menu: controls, volume, sail design (reward sails locked until earned, the rest shown but locked for now), challenges summary and sailor code, respawn, reset hints. The sim keeps running |
 
 Inputs are **continuous with rate limits**: no snapping. A tiller key ramps the tiller over a
 fraction of a second and holds its position. Same idea for the sheet.
