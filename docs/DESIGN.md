@@ -251,6 +251,17 @@ fraction of a second and holds its position. Same idea for the sheet.
   distant shorelines do not z-fight. Measured on an M1 the bay adds well under 1 ms per frame (within noise).
 - **Boat:** procedural hull lofted from a few cross-sections using class dimensions,
   plus spars and fittings. Low triangle count.
+- **Working dinghy details:** open low-poly blocks with exposed grooved sheaves and shackles,
+  cam cleats, fairleads, deck eyes and a hiking strap replace the placeholder hardware.
+  Round six-sided instanced rope spans run through the mainsheet blocks and traveller bridle,
+  follow the sheet hand, and dress the vang, cunningham and outhaul; a loose sheet tail sits
+  on the cockpit floor. The same fittings appear on local and remote boats. Geometry uses
+  baked normals and matte finishes, with reused transforms and rope buffers during animation.
+  The reference photo informs appearance only: dimensions and routing in `data/rig-details.json`
+  are VISUAL ESTIMATE, and the ILCA 7 dimensions, controls and TS/Go sailing physics are unchanged.
+  A boat has about 8.7k triangles. A paired, fixed-pose close-up at 1800x1250 in headless
+  Chrome/SwiftShader measured about 0.5 ms/frame for showing all new details versus hiding them
+  (15 additional draw calls across the two depth passes); this is not a before/after hardware-GPU benchmark.
 - **Sail:** cloth-like visual (small Verlet grid, around 20x12 points, pinned along luff / foot).
   **It is visual only.** Sail forces come from the foil model in `sim/`. The sim exposes a
   `luffAmount` value (0 = trimmed, 1 = fully luffing) and the cloth reads it to flutter.

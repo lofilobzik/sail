@@ -1,0 +1,53 @@
+{
+  "colours": {
+    "body": "#283239",
+    "metal": "#969c9d",
+    "sheave": "#b2b8b1",
+    "sheet": "#395e78",
+    "control": "#a9b6ad",
+    "vang": "#404950",
+    "traveller": "#454b50",
+    "strap": "#303b43"
+  },
+  "block": {
+    "sheaveRadius": 0.026,
+    "width": 0.03,
+    "cheekThickness": 0.004,
+    "cheekHeight": 0.079,
+    "cheekWidth": 0.056,
+    "shackleRadius": 0.012,
+    "shackleTube": 0.003,
+    "hangerDrop": 0.064,
+    "ratchetScale": 1.15,
+    "vangScale": 0.8
+  },
+  "rope": {
+    "sheetRadius": 0.0035,
+    "controlRadius": 0.0025,
+    "travellerRadius": 0.003,
+    "radialSegments": 6,
+    "loopSag": 0.09
+  },
+  "deck": {
+    "cleatLength": 0.085,
+    "cleatWidth": 0.043,
+    "cleatHeight": 0.022,
+    "fairleadRadius": 0.012,
+    "controlSpacing": 0.13,
+    "controlAftOfMast": 0.28,
+    "controlForwardOfCockpit": 0.14,
+    "strapWidth": 0.07,
+    "strapRise": 0.06,
+    "strapThickness": 0.008,
+    "eyeRadius": 0.02,
+    "travellerForwardOfTransom": 0.05,
+    "sheetTailTurns": 2,
+    "sheetTailRadius": 0.09,
+    "tailLength": 0.4
+  },
+  "sources": {
+    "reference": "User-supplied reference photograph, 2026-10-07: a white Laser/ILCA on a launch trolley, used for the appearance and relative arrangement of blocks, ropes, control cleats and deck eyes. It is not a dimensioned survey. The simulator remains an ILCA 7; no sail, hull or rig physics dimensions are taken from the photograph.",
+    "hardware": "VISUAL ESTIMATE: all block, shackle, sheave, cleat, fairlead, deck-eye and hiking-strap dimensions, tessellation, finish colours and placement offsets. Hardware roughness 0.84 and metalness 0 avoid hard reflections. Open-cheek proportions (0.70 height, 0.74 width, 0.275 chamfers), groove profiles (0.83/0.86 rim radii, 0.17/0.36 axial offsets), 1.6-times-tube fastener radii and 0.82-width bridges are modelling estimates. Rounded parts use 8 or 12 segments, tubes 6, the strap 8 spans and mounting pads 4 mm. Cleat jaws, fairlead offsets, eye pads, bow setback and strap pads/screws are visual proportions, not measured hardware. Class-sourced attachment positions already in data/laser.json stay unchanged. These are small low-poly visual fittings, not a branded or mechanically calibrated model.",
+    "ropes": "VISUAL ESTIMATE: rope radii, colours, six-sided sections, roughness 0.95, slack-loop sag, tail turns and radius. The floor coil uses 16 spans per turn and three rope radii of clearance. The mainsheet follows the existing traveller, boom blocks, ratchet and sheet hand; added control-line routing is a visual approximation of the reference. No rope tension, friction, control purchase, sailing input or force changes. All data in this file is render-only."
+  }
+}

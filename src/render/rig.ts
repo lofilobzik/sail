@@ -1,64 +1,37 @@
 /**
- * Mast (lower + upper section), boom with its mainsheet blocks, vang and a masthead
- * wind indicator. Dimensions from data/laser.json (ILCA rules p33-34) or visual estimates.
+ * Mast, boom, blocks, control-line purchases and masthead wind indicator.
+ * Class attachment dimensions come from data/laser.json; detail estimates from data/rig-details.json.
  */
 import * as THREE from 'three';
+import details from '../../data/rig-details.json';
 import { bodyToLocal, placeBetween, rod } from './bodyFrame';
 import type { BoatLayout } from './boatLayout';
+import { createBlock } from './hardwareDetails';
+import { createRope } from './rope';
 
 const SPAR_COLOR = 0xb8bcc2; // visual estimate: anodised aluminium
-const BLOCK_COLOR = 0x222222; // visual estimate
-const LINE_COLOR = 0x2b4a8c; // visual estimate: blue rope
 const INDICATOR_COLOR = 0xff3b1f; // visual estimate
-const BLOCK_RADIUS = 0.03; // visual estimate, m
-const BLOCK_DROP = 0.06; // visual estimate: block centre below the boom, m
 
 export interface Rig {
-  /**
-   * Gooseneck swivel about the raked mast axis: boomPivot.rotation.y = +boom swings the boom
-   * to starboard. Children of `boom` are built in the unraked boat frame (local +z aft along
-   * the boom, +y up), so the boom is horizontal at boom = 0 and lifts slightly when eased,
-   * as on the real boat.
-   */
-  boomPivot: THREE.Group;
-  /** Content frame of the boom and sail (see boomPivot). */
+  /** Content frame of the boom and sail, swung about the raked mast axis. */
   boom: THREE.Group;
-  /** Boom-frame positions of the mainsheet blocks and vang point. */
+  /** Boom-frame positions of the mainsheet blocks. */
   boomEndBlock: THREE.Vector3;
   midBoomBlock: THREE.Vector3;
-  vangBoomPoint: THREE.Vector3;
-  /** Heel-group positions. */
-  vangTang: THREE.Vector3;
   indicator: THREE.Group;
-  vang: THREE.Line;
-  /** Boom-frame point -> heel-group local for boom angle b. */
-  fromBoom(p: THREE.Vector3, b: number, out: THREE.Vector3): THREE.Vector3;
-  /** Heel-group local direction -> boom-frame direction for boom angle b. */
-  toBoomDir(v: THREE.Vector3, b: number, out: THREE.Vector3): THREE.Vector3;
+  /** Swing the boom and update the attached visual control lines. */
+  update(boom: number): void;
+  /** Boom-frame point -> heel-group local, after update. */
+  fromBoom(p: THREE.Vector3, out: THREE.Vector3): THREE.Vector3;
+  /** Heel-group local direction -> boom-frame direction, after update. */
+  toBoomDir(v: THREE.Vector3, out: THREE.Vector3): THREE.Vector3;
 }
 
-function block(material: THREE.Material): THREE.Mesh {
-  return new THREE.Mesh(new THREE.SphereGeometry(BLOCK_RADIUS, 6, 4), material);
-}
-
-export function lineMesh(points: number, color = LINE_COLOR): THREE.Line {
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(points * 3), 3));
-  return new THREE.Line(g, new THREE.LineBasicMaterial({ color }));
-}
-
-export function setLine(line: THREE.Line, pts: readonly THREE.Vector3[]): void {
-  const attr = line.geometry.getAttribute('position') as THREE.BufferAttribute;
-  pts.forEach((p, i) => attr.setXYZ(i, p.x, p.y, p.z));
-  attr.needsUpdate = true;
-  line.geometry.computeBoundingSphere();
-}
 
 export function createRig(layout: BoatLayout, parent: THREE.Group): Rig {
   const v = layout.model.cfg.visual;
   const rig = layout.model.cfg.rig;
   const spar = new THREE.MeshStandardMaterial({ color: SPAR_COLOR, metalness: 0.3, roughness: 0.4 });
-  const blockMat = new THREE.MeshStandardMaterial({ color: BLOCK_COLOR });
 
   const d = layout.mastDir;
   const at = (s: number) => bodyToLocal(layout.mastButt.x + d.x * s, 0, layout.mastButt.z + d.z * s);
@@ -84,16 +57,60 @@ export function createRig(layout: BoatLayout, parent: THREE.Group): Rig {
   placeBetween(boomRod, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, rig.foot));
   boomFrame.add(boomRod);
 
-  const boomEndBlock = new THREE.Vector3(0, -BLOCK_DROP, rig.foot - v.boom.endBlockFromAft);
-  const midBoomBlock = new THREE.Vector3(0, -BLOCK_DROP, rig.foot - v.boom.midBlockFromAft);
-  for (const p of [boomEndBlock, midBoomBlock]) {
-    const b = block(blockMat);
+  const boomEndBlock = new THREE.Vector3(0, -details.block.hangerDrop, rig.foot - v.boom.endBlockFromAft);
+  const midBoomBlock = new THREE.Vector3(0, -details.block.hangerDrop, rig.foot - v.boom.midBlockFromAft);
+  for (const [i, p] of [boomEndBlock, midBoomBlock].entries()) {
+    const b = createBlock();
+    b.name = i === 0 ? 'aft-boom-block' : 'forward-boom-block';
     b.position.copy(p);
     boomFrame.add(b);
   }
 
-  const vang = lineMesh(2, 0x333333);
-  parent.add(vang);
+  // VISUAL ESTIMATE: the forward outhaul block and slack control tail under the boom.
+  const outhaulBlock = createBlock(details.block.vangScale);
+  outhaulBlock.name = 'outhaul-block';
+  outhaulBlock.position.set(0, -details.block.hangerDrop, v.boom.vangFromFront / 2);
+  const r = details.block.sheaveRadius * details.block.vangScale;
+  const outhaulPoints = [
+    new THREE.Vector3(rig.mastDiameter / 2, v.boom.diameter / 2, rig.foot),
+    new THREE.Vector3(rig.mastDiameter / 2, -v.boom.diameter / 2, rig.foot - v.boom.endBlockFromAft),
+    new THREE.Vector3(0, outhaulBlock.position.y, outhaulBlock.position.z + r),
+    new THREE.Vector3(0, outhaulBlock.position.y - r, outhaulBlock.position.z),
+    new THREE.Vector3(0, outhaulBlock.position.y, outhaulBlock.position.z - r),
+    new THREE.Vector3(details.deck.controlSpacing, -details.rope.loopSag, v.boom.vangFromFront),
+  ];
+  const outhaul = createRope(outhaulPoints.length, details.colours.control, details.rope.controlRadius);
+  outhaul.mesh.name = 'outhaul-rope';
+  outhaul.update(outhaulPoints);
+  boomFrame.add(outhaulBlock, outhaul.mesh);
+
+  const cleatX = layout.cockpit.fore + details.deck.controlForwardOfCockpit;
+  const guideX = layout.mastButt.x - details.deck.controlAftOfMast;
+  const cleat = bodyToLocal(cleatX, details.deck.controlSpacing, layout.sheerAt(cleatX) + details.deck.cleatHeight);
+  const guide = bodyToLocal(guideX, details.deck.controlSpacing, layout.sheerAt(guideX) + details.deck.fairleadRadius);
+  const tailX = cleatX - details.deck.tailLength / 2;
+  const tail = bodyToLocal(tailX, details.deck.controlSpacing, layout.sheerAt(tailX) + details.rope.controlRadius);
+  const vangTang = at(v.mast.vangTangAboveButt);
+  const vangBoomPoint = new THREE.Vector3(0, -v.boom.diameter / 2, v.boom.vangFromFront);
+  const lowerVang = createBlock(details.block.vangScale), upperVang = createBlock(details.block.vangScale);
+  lowerVang.name = 'lower-vang-block'; upperVang.name = 'upper-vang-block';
+  const vangPoints = Array.from({ length: 10 }, () => new THREE.Vector3());
+  const vang = createRope(vangPoints.length, details.colours.vang, details.rope.controlRadius);
+  vang.mesh.name = 'vang-purchase';
+  parent.add(lowerVang, upperVang, vang.mesh);
+
+  // VISUAL ESTIMATE: cunningham routing beside the mast, through a deck guide and the other cam cleat.
+  const cunninghamPoints = [
+    bodyToLocal(layout.gooseneck.x, -rig.mastDiameter / 2, layout.gooseneck.z + details.block.sheaveRadius),
+    bodyToLocal(layout.mastButt.x, -details.deck.controlSpacing, layout.sheerAt(layout.mastButt.x) + details.deck.fairleadRadius),
+    bodyToLocal(guideX, -details.deck.controlSpacing, layout.sheerAt(guideX) + details.deck.fairleadRadius),
+    bodyToLocal(cleatX, -details.deck.controlSpacing, layout.sheerAt(cleatX) + details.deck.cleatHeight),
+    bodyToLocal(tailX, -details.deck.controlSpacing, layout.sheerAt(tailX) + details.rope.controlRadius),
+  ];
+  const cunningham = createRope(cunninghamPoints.length, details.colours.control, details.rope.controlRadius);
+  cunningham.mesh.name = 'cunningham-rope';
+  cunningham.update(cunninghamPoints);
+  parent.add(cunningham.mesh);
 
   // Masthead wind indicator (Windex-style): arrow points into the apparent wind, fin downwind.
   const indicator = new THREE.Group();
@@ -115,24 +132,42 @@ export function createRig(layout: BoatLayout, parent: THREE.Group): Rig {
 
   const qTilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), layout.mastRake);
   const qUntilt = qTilt.clone().invert();
-  const qSwing = new THREE.Quaternion();
-  const Y = new THREE.Vector3(0, 1, 0);
+  const qSwing = new THREE.Quaternion(), qInverse = new THREE.Quaternion();
+  const Y = new THREE.Vector3(0, 1, 0), direction = new THREE.Vector3(), opposite = new THREE.Vector3(), upperAnchor = new THREE.Vector3();
+  const fromBoom = (p: THREE.Vector3, out: THREE.Vector3): THREE.Vector3 =>
+    out.copy(p).applyQuaternion(qSwing).add(mastFrame.position);
+  const blockPoint = (out: THREE.Vector3, b: THREE.Mesh, y: number, z: number): void => {
+    out.set(0, y, z).applyQuaternion(b.quaternion).add(b.position);
+  };
+  const reach = (details.block.cheekHeight / 2 + details.block.shackleRadius) * details.block.vangScale;
+  const update = (boom: number): void => {
+    boomPivot.rotation.y = boom;
+    qSwing.setFromAxisAngle(Y, boom).premultiply(qTilt).multiply(qUntilt);
+    qInverse.copy(qSwing).invert();
+    fromBoom(vangBoomPoint, upperAnchor);
+    direction.subVectors(upperAnchor, vangTang).normalize();
+    opposite.copy(direction).negate();
+    lowerVang.position.copy(vangTang).addScaledVector(direction, reach);
+    upperVang.position.copy(upperAnchor).addScaledVector(direction, -reach);
+    lowerVang.quaternion.setFromUnitVectors(Y, opposite);
+    upperVang.quaternion.setFromUnitVectors(Y, direction);
+    blockPoint(vangPoints[0]!, lowerVang, 0, r);
+    blockPoint(vangPoints[1]!, upperVang, 0, r);
+    blockPoint(vangPoints[2]!, upperVang, -r, 0);
+    blockPoint(vangPoints[3]!, upperVang, 0, -r);
+    blockPoint(vangPoints[4]!, lowerVang, 0, -r);
+    blockPoint(vangPoints[5]!, lowerVang, -r, 0);
+    blockPoint(vangPoints[6]!, lowerVang, 0, r);
+    vangPoints[7]!.copy(guide);
+    vangPoints[8]!.copy(cleat);
+    vangPoints[9]!.copy(tail);
+    vang.update(vangPoints);
+  };
+  update(0);
   return {
-    boomPivot,
-    boom: boomFrame,
-    boomEndBlock,
-    midBoomBlock,
-    vangBoomPoint: new THREE.Vector3(0, 0, v.boom.vangFromFront),
-    vangTang: at(v.mast.vangTangAboveButt),
-    indicator,
-    vang,
-    fromBoom(p, b, out) {
-      qSwing.setFromAxisAngle(Y, b).premultiply(qTilt).multiply(qUntilt);
-      return out.copy(p).applyQuaternion(qSwing).add(mastFrame.position);
-    },
-    toBoomDir(v, b, out) {
-      qSwing.setFromAxisAngle(Y, b).premultiply(qTilt).multiply(qUntilt).invert();
-      return out.copy(v).applyQuaternion(qSwing);
+    boom: boomFrame, boomEndBlock, midBoomBlock, indicator, update, fromBoom,
+    toBoomDir(v, out) {
+      return out.copy(v).applyQuaternion(qInverse);
     },
   };
 }
