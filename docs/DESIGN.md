@@ -292,6 +292,20 @@ fraction of a second and holds its position. Same idea for the sheet.
   clear foredeck instead of crossing the raised cockpit rim. End heights are measured once against
   the actual triangulated shell, not the ideal sheer curve; no arbitrary lift or per-frame raycasts.
   The regression checks rope clearance against the rendered deck/coaming on both control tails.
+- **Cockpit water exclusion** (render-only, `render/waterExclusion.ts`): water fragments inside
+  the moving cockpit footprint, between its floor and highest coaming rim, are discarded.
+  The polygon comes from the same outline helper as the rendered hull; inverse heel-group matrices
+  follow steering-frame heading, pitch, heel, heave and floating-origin placement. Both split cameras
+  prepare their own screen-tile candidates before their water pass. Tiles restrict fragment work
+  to relevant boats; reusable textures grow with joins/resizes without a fixed boat-count cutoff.
+  Remote registration/removal is tied to boat lifetime. No extra water draws or wave-vertex work.
+  This is not a hull/sea collision system: side clipping and water outside/above the cockpit stay alone.
+  Screen tiling/storage settings in `data/water-exclusion.json` are TUNING GUESS; waves and TS/Go forces
+  remain unchanged. GPU probes covered heel/pitch, rounded corners, near/far passes, eye-plane crossing,
+  large render positions, 40 overlapping boats and removal; real remote joins/removal and logical
+  rebasing were also exercised. In a paired fixed-pose cockpit view at 1800x1250 in Chrome/SwiftShader,
+  enabling the mask was about 0.8 ms/frame cheaper than bypassing it, with identical draw counts.
+  This view-specific software-renderer result is not a general speedup or hardware-GPU prediction.
 - **Sail:** cloth-like visual (small Verlet grid, around 20x12 points, pinned along luff / foot).
   **It is visual only.** Sail forces come from the foil model in `sim/`. The sim exposes a
   `luffAmount` value (0 = trimmed, 1 = fully luffing) and the cloth reads it to flutter.

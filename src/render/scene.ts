@@ -12,6 +12,7 @@ import { GustMap } from './gustMap';
 import { WakeView } from './wake';
 import { setDetailFade, setDetailScale } from './land/detailFade';
 import { createWater, type WaterView } from './water';
+import { WaterExclusion } from './waterExclusion';
 import { createLand, type LandView } from './land';
 import { Binoculars } from './binoculars';
 import type { Navigation } from '../nav/navigation';
@@ -75,6 +76,8 @@ export class SceneView {
   /** Debug free-fly camera position, logical world metres (y up); used in 'fly' mode, where the look yaw is absolute. */
   readonly fly = { x: 0, y: 3, z: 0 };
   private readonly water: WaterView;
+  private readonly waterExclusion: WaterExclusion;
+  private readonly eye = new THREE.Vector3();
   private readonly grid: THREE.GridHelper;
   private readonly buoys = createBuoys();
   private readonly surface = createWaveSample();
@@ -115,7 +118,9 @@ export class SceneView {
 
     this.boat = createBoatMesh(model);
     this.wake = new WakeView(model, this.boat.layout, env);
-    this.water = createWater(waves, this.sky, this.gusts, sun, hemisphere, this.wake);
+    this.waterExclusion = new WaterExclusion(this.boat.layout);
+    this.waterExclusion.add(this.boat);
+    this.water = createWater(waves, this.sky, this.gusts, sun, hemisphere, this.wake, this.waterExclusion);
     this.scene.add(this.water.mesh, this.water.nearMesh);
 
     this.grid = new THREE.GridHelper(GRID_CELL * GRID_CELLS, GRID_CELLS, 0x6f9fbf, 0x4a7a9a);
@@ -128,7 +133,7 @@ export class SceneView {
     this.scene.add(this.land.group);
 
     this.scene.add(this.boat.yaw);
-    this.remoteBoats = new RemoteBoatsView(model);
+    this.remoteBoats = new RemoteBoatsView(model, this.waterExclusion);
     this.scene.add(this.remoteBoats.group);
 
     this.camera = new THREE.PerspectiveCamera(FOV_DEG, 1, 0.05, CAMERA_FAR);
@@ -239,7 +244,9 @@ export class SceneView {
     // Each pass has its own camera object: three re-uploads a projection only when the camera changes.
     this.scene.updateMatrixWorld();
     cam.updateMatrixWorld();
-    this.renderer.render(this.scene, this.passCamera(this.farPass, cam, NEAR_SPLIT, cam.far));
+    const farCamera = this.passCamera(this.farPass, cam, NEAR_SPLIT, cam.far);
+    this.waterExclusion.prepare(this.renderer, farCamera);
+    this.renderer.render(this.scene, farCamera);
     // A colour background makes three clear the colour on every render, autoClear or not: drop it
     // for the near pass so the far pass's picture survives.
     const background = this.scene.background;
@@ -249,11 +256,13 @@ export class SceneView {
     const waterVisible = this.water.mesh.visible;
     this.water.mesh.visible = false;
     this.water.nearMesh.visible = waterVisible;
-    const eye = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
-    this.water.placeNear(eye.x, eye.z);
+    this.eye.setFromMatrixPosition(cam.matrixWorld);
+    this.water.placeNear(this.eye.x, this.eye.z);
     this.renderer.autoClear = false;
     this.renderer.clearDepth();
-    this.renderer.render(this.scene, this.passCamera(this.nearPass, cam, cam.near, NEAR_SPLIT * SPLIT_OVERLAP));
+    const nearCamera = this.passCamera(this.nearPass, cam, cam.near, NEAR_SPLIT * SPLIT_OVERLAP);
+    this.waterExclusion.prepare(this.renderer, nearCamera);
+    this.renderer.render(this.scene, nearCamera);
     this.renderer.autoClear = true;
     this.sky.mesh.visible = true;
     this.water.mesh.visible = waterVisible;

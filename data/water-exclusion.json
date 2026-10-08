@@ -1,0 +1,7 @@
+{
+  "tilePixels": 32,
+  "textureRowTexels": 256,
+  "sources": {
+    "tiling": "TUNING GUESS: 32 drawing-buffer-pixel screen tiles and 256-texel texture rows balance candidate-list uploads against hull-local fragment work. Storage grows with all visible boats, without a boat-count cutoff. Cockpit dimensions and rounded corners reuse the existing render layout and hull-details coaming estimates; no simulation dimensions or wave parameters change."
+  }
+}

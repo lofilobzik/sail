@@ -8,6 +8,7 @@ import { WAKE, wakeFrameGLSL, wakeShadeGLSL } from './wake/kelvin';
 import { skyGLSL, type SkyView } from './sky';
 import { gustGLSL, type GustMap } from './gustMap';
 import { SKY } from './skyModel';
+import type { WaterExclusion } from './waterExclusion';
 
 const WATER_COLOR = 0x1f4f6e; // TUNING GUESS: deep-water body colour
 const WATER_REFRACTIVE_INDEX = 1.333; // Water/air index; https://en.wikipedia.org/wiki/Refractive_index
@@ -155,7 +156,7 @@ function createWaterGrid(
 
 export function createWater(
   cfg: WaveConfig, sky: SkyView, gusts: GustMap, sun: THREE.DirectionalLight,
-  hemisphere: THREE.HemisphereLight, wake: WakeView,
+  hemisphere: THREE.HemisphereLight, wake: WakeView, exclusion: WaterExclusion,
 ): WaterView {
   let components = cfg.components;
   const waveCode = gerstnerGLSL(components);
@@ -182,7 +183,7 @@ export function createWater(
         hemisphereSky: { value: hemisphere.color.clone().multiplyScalar(hemisphere.intensity) },
         hemisphereGround: { value: hemisphere.groundColor.clone().multiplyScalar(hemisphere.intensity) },
       },
-    ]), wake.uniforms, sky.uniforms, gusts.uniforms, {
+    ]), wake.uniforms, sky.uniforms, gusts.uniforms, exclusion.uniforms, {
       // By reference: merge would clone the texture and upload it twice.
       shallowsTexture: { value: shallows.texture },
       shallowsBounds: { value: shallows.bounds },
@@ -243,6 +244,7 @@ export function createWater(
       ${wakeShade}
       ${skyGLSL()}
       ${gustGLSL()}
+      ${exclusion.fragmentGLSL}
       void main() {
         // Fragment normals retain detail that the distant geometry cannot resolve.
         // Pixel-footprint filtering prevents that detail aliasing at grazing angles.
@@ -355,6 +357,9 @@ export function createWater(
           vec3 horizonDirection = vec3(away.x, 0.0, away.y) / max(length(away), 1e-4);
           colour = mix(colour, skyRadiance(horizonDirection, 0, 0.0, 0.0), fogFactor);
         }
+        // Test the rasterized, displaced surface, not the undisplaced Gerstner label.
+        // Keep derivatives above unconditional; the discard changes neither outside sea nor its depth.
+        if (cockpitContains(waterPosition)) discard;
         gl_FragColor = vec4(colour, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
