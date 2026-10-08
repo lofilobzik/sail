@@ -85,7 +85,7 @@ export function createBoatMesh(model: BoatModel): BoatMesh {
   ratchetMesh.rotation.z = Math.PI;
   const ratchet = bodyToLocal(layout.ratchetBlock.x, 0, layout.ratchetBlock.z);
   ratchetMesh.position.copy(ratchet);
-  const sheetPoints = Array.from({ length: 17 }, () => new THREE.Vector3());
+  const sheetPoints = Array.from({ length: 16 }, () => new THREE.Vector3());
   const mainsheet = createRope(sheetPoints.length, details.colours.sheet, details.rope.sheetRadius);
   mainsheet.mesh.name = 'mainsheet';
   const bridlePoints = Array.from({ length: 3 }, () => new THREE.Vector3());
@@ -162,7 +162,7 @@ export function createBoatMesh(model: BoatModel): BoatMesh {
       bridlePoints[1]!.y -= details.block.cheekHeight / 2 + details.block.shackleRadius;
       bridle.update(bridlePoints);
 
-      // VISUAL ESTIMATE: becket, traveller return, rounded block turns and a slack under-boom run.
+      // VISUAL ESTIMATE: becket, traveller return and rounded block turns; the loaded under-boom run stays straight.
       boomRopePoint(rig.boomEndBlock, details.block.cheekHeight / 2, r, sheetPoints[0]!);
       sheetPoints[1]!.copy(travellerBlock.position).z += r;
       sheetPoints[2]!.copy(travellerBlock.position).y += r;
@@ -170,18 +170,16 @@ export function createBoatMesh(model: BoatModel): BoatMesh {
       boomRopePoint(rig.boomEndBlock, 0, r, sheetPoints[4]!);
       boomRopePoint(rig.boomEndBlock, -r, 0, sheetPoints[5]!);
       boomRopePoint(rig.boomEndBlock, 0, -r, sheetPoints[6]!);
-      boomRopePoint(rig.midBoomBlock, 0, r, sheetPoints[8]!);
-      sheetPoints[7]!.copy(sheetPoints[6]!).add(sheetPoints[8]!).multiplyScalar(0.5);
-      sheetPoints[7]!.y -= details.rope.loopSag;
-      boomRopePoint(rig.midBoomBlock, -r, 0, sheetPoints[9]!);
-      boomRopePoint(rig.midBoomBlock, 0, -r, sheetPoints[10]!);
-      sheetPoints[11]!.copy(ratchet).z += rr;
-      sheetPoints[12]!.copy(ratchet).y += rr;
-      sheetPoints[13]!.copy(ratchet).z -= rr;
-      sheetPoints[14]!.copy(sailor.sheetHand);
-      sheetPoints[16]!.copy(coilPoints[0]!);
-      sheetPoints[15]!.copy(sheetPoints[14]!).add(sheetPoints[16]!).multiplyScalar(0.5);
-      sheetPoints[15]!.y -= details.rope.loopSag;
+      boomRopePoint(rig.midBoomBlock, 0, r, sheetPoints[7]!);
+      boomRopePoint(rig.midBoomBlock, -r, 0, sheetPoints[8]!);
+      boomRopePoint(rig.midBoomBlock, 0, -r, sheetPoints[9]!);
+      sheetPoints[10]!.copy(ratchet).z += rr;
+      sheetPoints[11]!.copy(ratchet).y += rr;
+      sheetPoints[12]!.copy(ratchet).z -= rr;
+      sheetPoints[13]!.copy(sailor.sheetHand);
+      sheetPoints[15]!.copy(coilPoints[0]!);
+      sheetPoints[14]!.copy(sheetPoints[13]!).add(sheetPoints[15]!).multiplyScalar(0.5);
+      sheetPoints[14]!.y -= details.rope.loopSag;
       mainsheet.update(sheetPoints);
 
       // Masthead indicator: fin (+z) downwind along the apparent flow, arrow into the wind.

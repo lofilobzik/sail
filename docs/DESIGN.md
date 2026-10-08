@@ -254,8 +254,10 @@ fraction of a second and holds its position. Same idea for the sheet.
 - **Working dinghy details:** open low-poly blocks with exposed grooved sheaves and shackles,
   cam cleats, fairleads, deck eyes and a hiking strap replace the placeholder hardware.
   Round six-sided instanced rope spans run through the mainsheet blocks and traveller bridle,
-  follow the sheet hand, and dress the vang, cunningham and outhaul; a loose sheet tail sits
-  on the cockpit floor. The same fittings appear on local and remote boats. Geometry uses
+  follow the sheet hand, and dress the vang, cunningham and outhaul; a loose sheet tail sits on the cockpit floor.
+  The loaded mainsheet between boom blocks stays straight, without an artificial sag midpoint;
+  only the loose hand-to-floor tail sags.
+  The same fittings appear on local and remote boats. Geometry uses
   baked normals and matte finishes, with reused transforms and rope buffers during animation.
   The reference photo informs appearance only: dimensions and routing in `data/rig-details.json`
   are VISUAL ESTIMATE, and the ILCA 7 dimensions, controls and TS/Go sailing physics are unchanged.
