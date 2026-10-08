@@ -88,6 +88,48 @@ function age(seconds: number): string {
   return s < 90 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`;
 }
 
+interface Box { x: number; y: number; w: number; h: number }
+type PaperPoint = { x: number; y: number };
+
+/** Two lines of text: a 22px name over a 17px bearing. */
+const LABEL_HEIGHT = 44;
+
+function overlapArea(a: Box, b: Box): number {
+  const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
+/**
+ * Pick where a mark's two-line label goes: beside the symbol (right first, as printed), else left,
+ * above or below, whichever collides least with what is already on the paper or sticks off it.
+ */
+function placeLabel(map: PaperRect, taken: readonly Box[], at: PaperPoint, width: number): { box: Box; align: CanvasTextAlign; anchor: number } {
+  const h = LABEL_HEIGHT;
+  const paper: Box = { x: map.x + 4, y: map.y + 4, w: map.width - 8, h: map.height - 8 };
+  const spots: { x: number; y: number; align: CanvasTextAlign }[] = [
+    { x: at.x + 13, y: at.y - 26, align: 'left' },
+    { x: at.x - 13 - width, y: at.y - 26, align: 'right' },
+    { x: at.x + 6, y: at.y - 12 - h, align: 'left' },
+    { x: at.x - 6 - width, y: at.y - 12 - h, align: 'right' },
+    { x: at.x + 6, y: at.y + 12, align: 'left' },
+    { x: at.x - 6 - width, y: at.y + 12, align: 'right' },
+    { x: at.x - width / 2, y: at.y - 12 - h, align: 'center' },
+    { x: at.x - width / 2, y: at.y + 12, align: 'center' },
+  ];
+  let best = 0, bestCost = Infinity;
+  spots.forEach((spot, i) => {
+    const box: Box = { x: spot.x, y: spot.y, w: width, h };
+    const outside = width * h - overlapArea(box, paper);
+    // A small preference for earlier spots keeps ties on the conventional right-hand side.
+    const cost = taken.reduce((sum, other) => sum + overlapArea(box, other), 0) + outside * 4 + i * 20;
+    if (cost < bestCost) { bestCost = cost; best = i; }
+  });
+  const spot = spots[best]!;
+  const anchor = spot.align === 'left' ? spot.x : spot.align === 'right' ? spot.x + width : spot.x + width / 2;
+  return { box: { x: spot.x, y: spot.y, w: width, h }, align: spot.align, anchor };
+}
+
 export function drawChartPage(
   ctx: CanvasRenderingContext2D, nav: Navigation, projection: ChartProjection, debugPosition: Vec2 | null,
 ): void {
@@ -126,9 +168,9 @@ export function drawChartPage(
   ctx.fillStyle = '#293d42';
   ctx.font = 'bold 35px Georgia, serif';
   ctx.fillText('HOLM BAY · PILOTAGE', 48, 64);
-  ctx.font = '23px ui-monospace, monospace';
+  ctx.font = '23px Georgia, serif';
   ctx.fillText('Look down · R: reckon · F: read', 48, 101);
-  ctx.font = '21px ui-monospace, monospace';
+  ctx.font = '21px Georgia, serif';
   const plottedAge = Math.max(0, nav.t - plotted.t);
   ctx.fillText(`PLOTTED ${age(plottedAge)} AGO   DOUBT ±${plotted.radius.toFixed(0)} m`, 48, 132);
 
@@ -175,19 +217,24 @@ export function drawChartPage(
     ctx.beginPath(); ctx.moveTo(map.x, p.y); ctx.lineTo(map.x + map.width, p.y); ctx.stroke();
   }
 
-  // Place names in italics, as printed: towns, islands and shoals.
+  // Place names in italics, as printed: towns, islands and shoals. Each is kept fully on the
+  // paper, and recorded so the mark labels and bearing text avoid it.
   ctx.fillStyle = NAME_INK; ctx.textAlign = 'center';
-  // [name, world anchor, font, paper offset down in pixels]
-  const names: [string, Vec2, string, number][] = [
-    ...BAY.towns.map((t): [string, Vec2, string, number] => [t.name, t, 'italic 20px Georgia, serif', 6]),
+  const obstacles: Box[] = [];
+  // [name, world anchor, font size, paper offset down in pixels]
+  const names: [string, Vec2, number, number][] = [
+    ...BAY.towns.map((t): [string, Vec2, number, number] => [t.name, t, 20, 6]),
     // Island names sit below the summit, clear of a landmark on it.
-    ...BAY.islands.map((i): [string, Vec2, string, number] => [i.name, i, 'italic 19px Georgia, serif', 34]),
-    ...BAY.shoals.map((s): [string, Vec2, string, number] => [s.name, s, 'italic 15px Georgia, serif', 22]),
+    ...BAY.islands.map((i): [string, Vec2, number, number] => [i.name, i, 19, 34]),
+    ...BAY.shoals.map((s): [string, Vec2, number, number] => [s.name, s, 15, 22]),
   ];
-  for (const [name, at, font, down] of names) {
+  for (const [name, at, size, down] of names) {
     const p = projection.toPaper(at);
-    ctx.font = font;
-    ctx.fillText(name, p.x, p.y + down);
+    ctx.font = `italic ${size}px Georgia, serif`;
+    const width = ctx.measureText(name).width;
+    const x = Math.min(Math.max(p.x, map.x + 8 + width / 2), map.x + map.width - 8 - width / 2);
+    ctx.fillText(name, x, p.y + down);
+    obstacles.push({ x: x - width / 2, y: p.y + down - size, w: width, h: size * 1.25 });
   }
   ctx.textAlign = 'left';
 
@@ -209,8 +256,10 @@ export function drawChartPage(
     // The bearing is written along the ruled line, a little way out from its mark.
     const label = projection.toPaper({ x: line.mark.x - line.direction.x * projection.span * 0.2, z: line.mark.z - line.direction.z * projection.span * 0.2 });
     ctx.fillStyle = '#855240';
-    ctx.font = '19px ui-monospace, monospace';
-    ctx.fillText(bearingLabel(note.bearing), label.x + 6, label.y - 6);
+    ctx.font = '19px Arial, sans-serif';
+    const bearingText = bearingLabel(note.bearing);
+    ctx.fillText(bearingText, label.x + 6, label.y - 6);
+    obstacles.push({ x: label.x + 6, y: label.y - 24, w: ctx.measureText(bearingText).width, h: 24 });
   }
   const crossing = used.length === 2 ? lineIntersection(used[0]!, used[1]!) : null;
   if (crossing) {
@@ -243,7 +292,7 @@ export function drawChartPage(
     ctx.setLineDash([10, 7]);
     ctx.beginPath(); ctx.moveTo(dr.x, dr.y); ctx.lineTo(dr.x + dx * length, dr.y + dy * length); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.font = '17px ui-monospace, monospace';
+    ctx.font = '17px Arial, sans-serif';
     for (const minutes of tipTicks) {
       const d = reach(minutes) * map.width / projection.span;
       const tx = dr.x + dx * d, ty = dr.y + dy * d;
@@ -272,6 +321,9 @@ export function drawChartPage(
     } })),
     ...LANDMARKS.map((l) => ({ mark: l, draw: (x: number, y: number) => drawLandmark(ctx, l.kind, x, y, 9) })),
   ];
+  // Symbols first, so every label can steer clear of every symbol, then each label takes the free
+  // spot beside its symbol that collides least with names, bearings and the labels already placed.
+  const pending: { name: string; detail: string; p: PaperPoint }[] = [];
   for (const { mark, draw } of marks) {
     let p = projection.toPaper(mark);
     if (contains(map, p)) draw(p.x, p.y);
@@ -290,22 +342,24 @@ export function drawChartPage(
       ctx.lineTo(p.x + ux * 10 + uy * 6, p.y + uy * 10 - ux * 6);
       ctx.closePath(); ctx.fill();
     }
+    obstacles.push({ x: p.x - 12, y: p.y - 12, w: 24, h: 24 });
     const dxw = mark.x - plotted.x, dzw = mark.z - plotted.z;
-    const distance = Math.hypot(dxw, dzw);
-    const detail = `${bearingLabel(worldToBearing(dxw, dzw))} ${distance.toFixed(0)} m`;
-    ctx.font = '17px ui-monospace, monospace';
-    const nearRight = p.x + 24 + ctx.measureText(detail).width > map.x + map.width;
-    const x = nearRight ? p.x - 14 : p.x + 14;
-    ctx.textAlign = nearRight ? 'right' : 'left';
+    pending.push({ name: mark.name, detail: `${bearingLabel(worldToBearing(dxw, dzw))} ${Math.hypot(dxw, dzw).toFixed(0)} m`, p });
+  }
+  for (const { name, detail, p } of pending) {
+    ctx.font = 'bold 22px ui-monospace, monospace';
+    const nameWidth = ctx.measureText(name).width;
+    ctx.font = '17px Arial, sans-serif';
+    const spot = placeLabel(map, obstacles, p, Math.max(nameWidth, ctx.measureText(detail).width));
+    obstacles.push(spot.box);
+    ctx.textAlign = spot.align;
     ctx.fillStyle = INK;
     ctx.font = 'bold 22px ui-monospace, monospace';
-    // Near the bottom edge the label goes above the symbol so the clip does not cut it.
-    const lift = p.y + 20 > map.y + map.height ? -26 : 0;
-    ctx.fillText(mark.name, x, p.y - 7 + lift);
-    ctx.font = '17px ui-monospace, monospace';
-    ctx.fillText(detail, x, p.y + 13 + lift);
-    ctx.textAlign = 'left';
+    ctx.fillText(name, spot.anchor, spot.box.y + 19);
+    ctx.font = '17px Arial, sans-serif';
+    ctx.fillText(detail, spot.anchor, spot.box.y + 39);
   }
+  ctx.textAlign = 'left';
 
   // The dead-reckoning position is a simple pencil dot.
   ctx.fillStyle = PENCIL;
@@ -325,7 +379,7 @@ export function drawChartPage(
   const bar = roundDown(projection.span / 5);
   const barPixels = bar * map.width / projection.span;
   ctx.beginPath(); ctx.moveTo(map.x + 20, map.y + map.height - 22); ctx.lineTo(map.x + 20 + barPixels, map.y + map.height - 22); ctx.stroke();
-  ctx.font = '20px ui-monospace, monospace';
+  ctx.font = '20px Arial, sans-serif';
   ctx.fillText(`${bar} m`, map.x + 20, map.y + map.height - 35);
   ctx.restore();
   ctx.strokeStyle = '#75847c'; ctx.lineWidth = 2; ctx.strokeRect(map.x, map.y, map.width, map.height);
@@ -339,9 +393,9 @@ export function drawChartPage(
     ctx.fillStyle = next ? '#d2c4a2' : '#dfd6bd';
     ctx.fillRect(674, y, 302, 52);
     const noteAge = Math.max(0, nav.t - note.t);
-    ctx.fillStyle = '#293d42'; ctx.font = '22px ui-monospace, monospace';
+    ctx.fillStyle = '#293d42'; ctx.font = '22px Georgia, serif';
     ctx.fillText(`${note.markId ?? '?'}  ${bearingLabel(note.bearing)}  ${age(noteAge)}`, 686, y + 24);
-    ctx.font = '17px ui-monospace, monospace';
+    ctx.font = '17px Georgia, serif';
     const state = next ? 'next reckoning (R)'
       : note.t <= plotted.t ? 'already plotted'
         : noteAge > NAVIGATION.maxBearingAge ? 'too old'
@@ -355,7 +409,7 @@ export function drawChartPage(
 
   ctx.fillStyle = '#293d42'; ctx.font = 'bold 24px Georgia, serif';
   ctx.fillText('REMEMBERED', 678, 470);
-  ctx.font = '20px ui-monospace, monospace';
+  ctx.font = '20px Georgia, serif';
   ctx.fillText(nav.course ? `Course ${bearingLabel(nav.course.value)} ${age(nav.t - nav.course.t)}` : 'Course  --  (compass on bow)', 678, 500);
   ctx.fillText(nav.speed ? `Speed ${(nav.speed.value / KNOT).toFixed(1)} kn ${age(nav.t - nav.speed.t)}${nav.speedStale ? ' OLD' : ''}` : 'Speed   --  (F, look astern)', 678, 528);
   if (nav.speedStale) {
@@ -369,7 +423,7 @@ export function drawChartPage(
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI); ctx.stroke();
     ctx.strokeStyle = PENCIL;
     ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * nav.progress); ctx.stroke();
-    ctx.fillStyle = PENCIL; ctx.font = '17px ui-monospace, monospace'; ctx.textAlign = 'center';
+    ctx.fillStyle = PENCIL; ctx.font = '17px Georgia, serif'; ctx.textAlign = 'center';
     ctx.fillText(nav.plotting === 'leg' ? 'DR LEG' : 'FIX', cx, cy + 46);
     ctx.textAlign = 'left';
   }

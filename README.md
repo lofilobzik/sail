@@ -76,9 +76,12 @@ npm run chart                # browserless export of the actual paper chart to p
 npm run map                  # separate top-down terrain overview
 ```
 
-The chart export uses a native canvas and the same renderer as the game, including its fonts and
-symbols (font availability depends on your system). Use `npm run chart -- --out my-chart.png`,
-add `--map-only` to crop the map panel, or `--zoom 2` to resize the output.
+The chart export uses a native canvas and the same renderer as the game. Map details use
+`Arial, sans-serif` to keep bearing labels compact; bold map labels and the legend remain
+monospace. The title block, bearing notes and remembered readings use Georgia, serif
+(font availability depends on your system). Use
+`npm run chart -- --out my-chart.png`, add `--map-only` to crop the map panel, or `--zoom 2` to resize
+the output.
 
 Use `./server/...` for Go, not `./...`, because `node_modules` contains a stray Go file. The design notes are in [docs/DESIGN.md](docs/DESIGN.md), the physics model in [docs/PHYSICS.md](docs/PHYSICS.md) and hosting in [docs/DEPLOY.md](docs/DEPLOY.md)
 
