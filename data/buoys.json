@@ -1,5 +1,5 @@
 {
-  "source": "Sandbox landmarks, not a course or IALA navigation marks. Positions are world x (east) and z (south) in metres, named by their bearing from Westcove Harbour's departure (-1740, 760) and set 0.65-1.1 km out in 10-21 m of water, at least 6.9 m deep everywhere within 150 m: N up the west shore (upwind for the default wind from the north), NE off the south side of Great Holm, E out across the bay, SE and S on the way to Westcove's south shore. VISUAL ESTIMATE sizes, distinctive colours/topmarks and painted IDs for milestone 6 sighting and chart identification.",
+  "source": "Sandbox landmarks, not a course or IALA navigation marks. Positions are world x (east) and z (south) in metres, named by their bearing from Westcove Harbour's departure (-1740, 760) and set 0.65-1.1 km out in 10-21 m of water, at least 6.9 m deep everywhere within 150 m: N up the west shore (upwind for the default wind from the north), NE off the south side of Great Holm, E out across the bay, SE and S on the way to Westcove's south shore. VISUAL ESTIMATE sizes, distinctive colours/topmarks and painted IDs for milestone 6 sighting and chart identification. TUNING GUESS proximityRadius: a boat within 30 m of a buoy is near it, about 17 boat lengths (the Laser is 4.2 m), so a pass at a sensible distance counts.",
   "buoys": [
     { "name": "N", "x": -1500, "z": -300, "color": "#ef6f2f", "topmark": "cone" },
     { "name": "NE", "x": -900, "z": 100, "color": "#e8c845", "topmark": "sphere" },
@@ -8,5 +8,6 @@
     { "name": "S", "x": -1300, "z": 1250, "color": "#65aa76", "topmark": "cylinder" }
   ],
   "radius": 1.8,
+  "proximityRadius": 30,
   "height": 4.2
 }

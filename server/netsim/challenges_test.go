@@ -53,13 +53,14 @@ func (h hookStore) RecordStep(ctx context.Context, code, challenge, step string,
 	return h.Store.RecordStep(ctx, code, challenge, step, total, at)
 }
 
-// visit moves the boat with token to (x, z) on the room goroutine and observes it there.
+// visit moves the boat with token to (x, z) on the room goroutine and tracks and observes it there.
 func (tr *testRoom) visit(token string, x, z float64) {
 	tr.t.Helper()
 	done := make(chan struct{})
 	if !tr.room.do(tr.ctx, func() {
 		b := tr.room.byToken[token]
 		b.state.X, b.state.Z = x, z
+		tr.room.track(b)
 		tr.room.observe(b)
 		close(done)
 	}) {
@@ -151,7 +152,7 @@ func TestOutsideRadiusAndNoPlayerRecordNothing(t *testing.T) {
 	st := openStore(t)
 	tr := startRoom(t, RoomConfig{Store: st})
 	b := sim.BuoyData.Buoys[0]
-	r := sim.ChallengeParams.BuoyTour.Radius
+	r := sim.BuoyData.ProximityRadius
 
 	w := tr.welcomeAs("", codeA)
 	tr.visit(w.Resume, b.X+r+1, b.Z)

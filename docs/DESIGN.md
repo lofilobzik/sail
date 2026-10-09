@@ -177,8 +177,13 @@ Rules:
   corrections about 1 cm with no snaps; a leaving tab disappears at once; a server restart
   reconnects within about 1 s as a fresh spawn in the new world.
   Deferred: remote wakes, extrapolation, names, rooms, collisions, rewind/replay reconciliation.
+- **Buoy proximity** (`server/netsim/proximity.go`): after every sim step the server marks, for every
+  boat (with or without a sailor code), which buoys of `data/buoys.json` it is within
+  `proximityRadius` of (30 m, TUNING GUESS), from its own boat state. Buoys are shared world marks:
+  every player sees and is tracked against all of them. Challenges read this instead of measuring
+  distances themselves.
 - **Challenges** (`server/store`, `server/netsim/challenges.go`, `data/challenges.json`): the first
-  is the **Buoy tour**, within 30 m (TUNING GUESS) of each of the 5 buoys, any order, across
+  is the **Buoy tour**, near each of the 5 buoys (buoy proximity above), any order, across
   sessions; it unlocks the "Tide lines" sail. Players are anonymous: the browser generates a
   20-character base32 **sailor code** (kept in prefs, sent as `/ws?player=…`), shown in the Esc menu
   so progress can be restored on another browser. The server checks visits against its own boat

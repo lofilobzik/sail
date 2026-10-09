@@ -111,6 +111,7 @@ type roomBoat struct {
 	member   *member
 	leftAt   time.Time
 
+	near    []bool               // per buoy: within its proximity radius after the last step (proximity.go)
 	player  string               // sailor code of the current connection, "" when none
 	visited []bool               // per buoy: reached (stored or detected)
 	unsaved map[int]*unsavedStep // buoy index -> visit detected but not yet confirmed stored
@@ -294,6 +295,7 @@ func (r *Room) step() {
 			b.queue.pop()
 			res := sim.Step(b.state, b.controls, r.model, &r.cfg)
 			b.state = res.State
+			r.track(b)
 			r.observe(b)
 			r.see(b, res.Diagnostics)
 		}

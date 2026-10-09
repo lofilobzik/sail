@@ -102,18 +102,13 @@ func (r *Room) seedProgress(b *roomBoat, p *playerInfo) {
 	}
 }
 
-// observe marks every buoy within the visit radius of b as visited and queues its write.
+// observe marks every buoy b is near (proximity.go, b.near) as visited and queues its write.
 func (r *Room) observe(b *roomBoat) {
 	if b.player == "" {
 		return
 	}
-	radius := sim.ChallengeParams.BuoyTour.Radius
-	for i, buoy := range sim.BuoyData.Buoys {
-		if b.visited[i] {
-			continue
-		}
-		dx, dz := buoy.X-b.state.X, buoy.Z-b.state.Z
-		if dx*dx+dz*dz > radius*radius {
+	for i, near := range b.near {
+		if !near || b.visited[i] {
 			continue
 		}
 		b.visited[i] = true
