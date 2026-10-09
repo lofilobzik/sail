@@ -37,8 +37,8 @@ export interface Remembered { value: number; t: number }
 export interface PlottedFix extends Vec2 { t: number; radius: number }
 
 /**
- * Where and when dead reckoning starts: a known point, not a reading. Offline the chart's start;
- * on a server the spawn point it announces.
+ * Where and when dead reckoning starts: a known point, not a reading. Offline the berth the boat
+ * starts at (or `?start`); on a server the spawn point it announces.
  */
 export interface Departure extends Vec2 { t: number }
 

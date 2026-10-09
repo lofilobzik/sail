@@ -20,7 +20,7 @@ export interface WelcomeMessage {
   config: SimConfig;
   dt: number;
   tick: number;
-  /** The boat at room time `tick * dt`: for a new boat, a spawn slot or the sailor code's last position; at rest after a resume. */
+  /** The boat at room time `tick * dt`: for a new boat, moored at a free berth, else a spawn slot, or the sailor code's last position; at rest after a resume. */
   state: BoatState;
   snapshotHz: number;
   /** The player's stored challenge progress; absent when challenges are unavailable (no ?player, or a server without -db). */
@@ -62,6 +62,8 @@ export interface RemoteBoat {
   apparentV: number;
   luffAmount: number;
   stallAmount: number;
+  /** Held at a berth (dock lines drawn); a discrete flag, never interpolated. */
+  moored: boolean;
 }
 
 /** Authoritative state after `tick` steps; `ackSeq` is the input applied on that tick (0 before any). */
@@ -84,14 +86,15 @@ export interface ErrorMessage {
 
 export type ServerMessage = WelcomeMessage | SnapshotMessage | ChallengesMessage | ErrorMessage;
 
-/** One per client fixed step, `seq` increasing from 1. */
+/** One per client fixed step, `seq` increasing from 1. `castOff` releases a moored boat before this step. */
 export interface InputMessage {
   type: 'input';
   seq: number;
   controls: Controls;
+  castOff?: true;
 }
 
-/** Boat back to a free spawn slot (heading 90°, 1 m/s). */
+/** Boat back to a free berth (moored), else a free spawn slot (heading 90°, 1 m/s). */
 export interface ResetMessage {
   type: 'reset';
 }

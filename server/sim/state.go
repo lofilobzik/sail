@@ -36,6 +36,8 @@ type BoatState struct {
 	BoomSide int `json:"boomSide"`
 	// Crew CG offset from the centreline, m (+ = starboard).
 	CrewY float64 `json:"crewY"`
+	// Held at a berth: position, heading and velocities stay fixed; heel, pitch, boom and crew still move.
+	Moored bool `json:"moored"`
 }
 
 // InitialState is TS initialState(heading, speed); the TS defaults are 0, 0.

@@ -91,10 +91,10 @@ export class NetClient {
     return this.seq + 1;
   }
 
-  /** Sends one fixed step's controls; returns its seq. Inputs while disconnected are numbered but dropped. */
-  sendInput(controls: Controls): number {
+  /** Sends one fixed step's controls (with the cast-off flag when set); returns its seq. Inputs while disconnected are numbered but dropped. */
+  sendInput(controls: Controls, castOff: boolean): number {
     const seq = ++this.seq;
-    if (this.send({ type: 'input', seq, controls })) this.sentAt.set(seq, performance.now());
+    if (this.send(castOff ? { type: 'input', seq, controls, castOff: true } : { type: 'input', seq, controls })) this.sentAt.set(seq, performance.now());
     return seq;
   }
 

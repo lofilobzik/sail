@@ -57,6 +57,8 @@ export interface BoatMesh {
   sail: SailView;
   layout: BoatLayout;
   lookTargets: LookTargets;
+  /** Where dock lines attach (children of `heel`): bow eye and the traveller eyes on each side. */
+  mooringPoints: { bow: THREE.Object3D; port: THREE.Object3D; starboard: THREE.Object3D };
   update(pose: BoatPose): void;
 }
 
@@ -116,6 +118,13 @@ export function createBoatMesh(model: BoatModel): BoatMesh {
   sheetCoil.mesh.name = 'sheet-tail-coil';
   sheetCoil.update(coilPoints);
   heel.add(sheetCoil.mesh);
+  // Dock lines reuse the bow eye and the traveller eyes of hardwareDetails (body +y is starboard).
+  const bowEyeX = layout.bowX - details.deck.cleatLength * 2;
+  const mooringPoints = { bow: new THREE.Object3D(), port: new THREE.Object3D(), starboard: new THREE.Object3D() };
+  bodyToLocal(bowEyeX, 0, layout.sheerAt(bowEyeX) + details.deck.eyeRadius, mooringPoints.bow.position);
+  bodyToLocal(travellerX, -v.traveller.halfWidth, travellerDeck + details.deck.eyeRadius, mooringPoints.port.position);
+  bodyToLocal(travellerX, v.traveller.halfWidth, travellerDeck + details.deck.eyeRadius, mooringPoints.starboard.position);
+  heel.add(mooringPoints.bow, mooringPoints.port, mooringPoints.starboard);
   const tmp = {
     end: new THREE.Vector3(),
     mid: new THREE.Vector3(),
@@ -138,6 +147,7 @@ export function createBoatMesh(model: BoatModel): BoatMesh {
     sailor,
     sail,
     layout,
+    mooringPoints,
     lookTargets: { windex: rig.indicator, telltales: sail.telltaleMark, tiller: tillerEnd },
     update(pose) {
       pitch.rotation.x = pose.pitch;

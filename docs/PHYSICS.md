@@ -430,8 +430,9 @@ geometry: it is a soft stop for play, all **TUNING GUESS**.
 The DR position lives in `nav/`, separate from the true state. There is no live dead-reckoning
 position: the sailor reads values, remembers them and later plots them.
 - Receives only `{ t, speed }`: signed forward surge speed averaged over each fixed simulation step.
-  It cannot read true position, heading or sideways velocity. The known departure origin comes from
-  `data/navigation.json`, not the live boat state.
+  It cannot read true position, heading or sideways velocity. The known departure origin is the start
+  the boat is given at a (re)spawn (offline the berth in `data/bay.json`, on a server the announced
+  spawn), never the live boat state.
 - Course and bearings come from the hand-bearing compass: the actual camera world direction (so
   heel and pitch included), graduated to half a degree, taken after holding steady for
   `timing.bearingRead` s without straying more than `aimToleranceDeg` from its recent mean; the bearing

@@ -43,6 +43,8 @@ export class Corrector {
   private readonly seqs = new Float64Array(HISTORY_STEPS).fill(-1);
   private readonly states = new Float64Array(HISTORY_STEPS * N);
   private readonly boomSides = new Int8Array(HISTORY_STEPS);
+  /** 1 where the boat was moored after that input; discrete, compared like boomSide. */
+  private readonly mooreds = new Uint8Array(HISTORY_STEPS);
   /** `total` when each history entry was recorded. */
   private readonly totals = new Float64Array(HISTORY_STEPS * N);
   /** Sum of all corrections applied so far. */
@@ -52,6 +54,11 @@ export class Corrector {
   private blendLeft = 0;
   /** Acks below this predate the last reset/resync and are ignored. */
   private minAck = 1;
+  /**
+   * Seq of a sent cast-off input the server has not acked yet, else 0. Until it is acked, snapshots
+   * still say moored and must not moor the boat again.
+   */
+  private castOffSeq = 0;
 
   /** Applies this step's share of the blend to `s` (the state after input `seq`) and records it. */
   afterStep(s: BoatState, seq: number, dt: number): void {
@@ -68,6 +75,7 @@ export class Corrector {
     const slot = seq % HISTORY_STEPS;
     this.seqs[slot] = seq;
     this.boomSides[slot] = s.boomSide;
+    this.mooreds[slot] = s.moored ? 1 : 0;
     for (let i = 0; i < N; i++) {
       this.states[slot * N + i] = s[FIELDS[i]!];
       this.totals[slot * N + i] = this.total[i]!;
@@ -80,6 +88,7 @@ export class Corrector {
    */
   apply(snap: SnapshotMessage, s: BoatState, nextSeq: number): boolean {
     if (snap.ackSeq < this.minAck) return false;
+    if (this.castOffSeq && snap.ackSeq >= this.castOffSeq) this.castOffSeq = 0;
     const server = snap.state;
     const slot = snap.ackSeq % HISTORY_STEPS;
     if (this.seqs[slot] !== snap.ackSeq) {
@@ -96,13 +105,15 @@ export class Corrector {
     }
     const position = Math.hypot(e[X]!, e[Z]!);
     const heading = Math.abs(e[HEADING]!);
-    if (position > SNAP_DISTANCE || heading > SNAP_HEADING || server.boomSide !== this.boomSides[slot]) {
+    const mooredChanged = (server.moored ? 1 : 0) !== this.mooreds[slot];
+    if (position > SNAP_DISTANCE || heading > SNAP_HEADING || server.boomSide !== this.boomSides[slot] || mooredChanged) {
       this.report('snap', position, heading);
       for (let i = 0; i < N; i++) {
         s[FIELDS[i]!] += e[i]!;
         this.total[i]! += e[i]!;
       }
       s.boomSide = server.boomSide;
+      s.moored = server.moored && this.castOffSeq === 0;
       this.pending.fill(0);
       this.blendLeft = 0;
       return true;
@@ -118,10 +129,21 @@ export class Corrector {
   resync(server: BoatState, s: BoatState, nextSeq: number): void {
     this.report('resync', Math.hypot(server.x - s.x, server.z - s.z), Math.abs(wrapPi(server.heading - s.heading)));
     Object.assign(s, server);
+    s.moored = server.moored && this.castOffSeq === 0;
     this.reset(nextSeq);
   }
 
-  /** Forgets all predictions; acks below `nextSeq` are ignored from now on. */
+  /** Input `seq` carries a cast-off: snapshots acking older inputs must not moor the boat again. */
+  noteCastOff(seq: number): void {
+    this.castOffSeq = seq;
+  }
+
+  /** The pending cast-off will never apply (the server boat or connection changed): the server's moored flag is the truth. */
+  forgetCastOff(): void {
+    this.castOffSeq = 0;
+  }
+
+  /** Forgets all predictions (not a pending cast-off); acks below `nextSeq` are ignored from now on. */
   reset(nextSeq: number): void {
     this.seqs.fill(-1);
     this.total.fill(0);

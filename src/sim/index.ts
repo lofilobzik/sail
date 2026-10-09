@@ -16,6 +16,7 @@ export { FixedStep } from './fixedStep';
 export * from './frames';
 export { CubicSpline } from './spline';
 export { initialState, NEUTRAL_CONTROLS, type BoatState, type Controls } from './state';
+export { BERTHS, berthIndexAt, mooredAt, type Berth } from './mooring';
 export { evaluate, step, type Diagnostics, type StepResult } from './step';
 export { getWind, meanWind, windShiftDeg, windSpeedFactor, WIND_PARAMETERS } from './wind';
 export { delftUpright } from './layers/hull';

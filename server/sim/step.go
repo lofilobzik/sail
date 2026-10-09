@@ -296,7 +296,7 @@ func integrate(state *BoatState, d *Diagnostics, boat *BoatModel, cfg *SimConfig
 	maxMove := CrewCrossingSpeed * h
 	crewY := state.CrewY + Clamp(d.Heel.CrewTargetY-state.CrewY, -maxMove, maxMove)
 
-	return BoatState{
+	next := BoatState{
 		T:         state.T + h,
 		X:         state.X + vel.X*h,
 		Z:         state.Z + vel.Z*h,
@@ -311,7 +311,14 @@ func integrate(state *BoatState, d *Diagnostics, boat *BoatModel, cfg *SimConfig
 		Boom:      boom,
 		BoomSide:  boomSide,
 		CrewY:     crewY,
+		Moored:    state.Moored,
 	}
+	// At a berth the dock lines hold position and heading; heel, pitch, boom and crew still move.
+	if state.Moored {
+		next.X, next.Z, next.Heading = state.X, state.Z, state.Heading
+		next.U, next.V, next.R = 0, 0, 0
+	}
+	return next
 }
 
 // Step advances one fixed step of cfg.Dt with cfg.Substeps substeps. Controls are clamped to

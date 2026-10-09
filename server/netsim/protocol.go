@@ -8,8 +8,8 @@
 //	server → client  {"type":"snapshot","tick","ackSeq","state","controls","boats":[RemoteBoat]}            at snapshotHz
 //	server → client  {"type":"challenges","challenges":[ChallengeStatus]}                                    after a visit is stored (only with a valid ?player and -db)
 //	server → client  {"type":"error","message"}                                                              rejected message, or "room full" (then close 1013)
-//	client → server  {"type":"input","seq","controls":{"tiller","sheet","hike"}}                             once per client fixed step
-//	client → server  {"type":"reset"}                                                                        boat back to a free spawn slot
+//	client → server  {"type":"input","seq","controls":{"tiller","sheet","hike"},"castOff"?:true}             once per client fixed step; castOff releases a moored boat before this step
+//	client → server  {"type":"reset"}                                                                        boat back to a free berth (moored), else a free spawn slot
 //
 // Input seq order is per connection: on every (re)connect the boat's newest seq and ackSeq restart at 0.
 // A connection whose boat was resumed by a newer connection (by ?resume, or by the same ?player code:
@@ -105,6 +105,8 @@ type RemoteBoat struct {
 	ApparentV   float64 `json:"apparentV"`
 	LuffAmount  float64 `json:"luffAmount"`
 	StallAmount float64 `json:"stallAmount"`
+	// Moored: held at a berth, drawn with dock lines.
+	Moored bool `json:"moored"`
 }
 
 // ErrorMessage reports a rejected client message (the connection stays open) or a full room.
@@ -118,6 +120,7 @@ type clientMessage struct {
 	Type     string        `json:"type"`
 	Seq      *int64        `json:"seq"`
 	Controls *sim.Controls `json:"controls"`
+	CastOff  bool          `json:"castOff"`
 }
 
 // parseClientMessage decodes and checks one client frame. lastSeq is the newest input seq accepted

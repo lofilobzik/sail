@@ -179,6 +179,19 @@ func find(boats []RemoteBoat, id int) (RemoteBoat, bool) {
 	return RemoteBoat{}, false
 }
 
+// forget advances the clock past the resume grace and waits until the parked boat with token is gone.
+func (tr *testRoom) forget(token string) {
+	tr.t.Helper()
+	tr.clock.Advance(DefaultResumeGrace + time.Second)
+	tr.settle(func() bool {
+		var gone bool
+		done := make(chan struct{})
+		tr.room.do(tr.ctx, func() { _, has := tr.room.byToken[token]; gone = !has; close(done) })
+		<-done
+		return gone
+	})
+}
+
 func TestSpawnSlots(t *testing.T) {
 	s := 15.0
 	dep := sim.Bay.Harbour.Departure
@@ -242,7 +255,7 @@ func TestRoomAppliesEachInputOnceInOrder(t *testing.T) {
 	for _, n := range arrivals {
 		for range n {
 			seq++
-			r.input(a.member, seq, controls(seq))
+			r.input(a.member, seq, controls(seq), false)
 		}
 		before := b.ackSeq
 		r.step()
@@ -274,7 +287,7 @@ func TestRoomQueueDropsOldestWhenFull(t *testing.T) {
 	r := NewRoom(RoomConfig{Seed: testSeed, Now: newFakeClock().Now, Log: quiet})
 	a := r.join("", "a", nil)
 	for seq := int64(1); seq <= inputQueueSize+10; seq++ {
-		r.input(a.member, seq, sim.NeutralControls)
+		r.input(a.member, seq, sim.NeutralControls, false)
 	}
 	r.step()
 	if got := a.member.boat.ackSeq; got != 11 {
@@ -289,7 +302,7 @@ func TestRoomResumeStartsInPlaceAtRest(t *testing.T) {
 	r := NewRoom(RoomConfig{Seed: testSeed, Now: clock.Now, Log: quiet})
 	a := r.join("", "a", nil)
 	for seq := int64(1); seq <= 30; seq++ {
-		r.input(a.member, seq, sim.Controls{Tiller: 0.3, Sheet: 0.6, Hike: 1})
+		r.input(a.member, seq, sim.Controls{Tiller: 0.3, Sheet: 0.6, Hike: 1}, seq == 1)
 		r.step()
 	}
 	for range 30 {
@@ -333,6 +346,24 @@ func TestRoomResumeStartsInPlaceAtRest(t *testing.T) {
 	}
 }
 
+// TestRoomResumeKeepsBerth: a boat parked while moored comes back still held at its berth.
+func TestRoomResumeKeepsBerth(t *testing.T) {
+	r := NewRoom(RoomConfig{Seed: testSeed, Now: newFakeClock().Now, Log: quiet})
+	a := r.join("", "a", nil)
+	for seq := int64(1); seq <= 30; seq++ {
+		r.input(a.member, seq, sim.Controls{Sheet: 1}, false)
+		r.step()
+	}
+	token := a.member.boat.token
+	r.leave(a.member, "a", "test")
+	r.step()
+	back := r.join(token, "a", nil).member.boat.state
+	want := sim.MooredAt(sim.Bay.Harbour.Berths[0], r.time(), r.model, &r.cfg)
+	if back != want {
+		t.Fatalf("resumed %+v, want %+v", back, want)
+	}
+}
+
 func TestWelcome(t *testing.T) {
 	tr := startRoom(t, RoomConfig{})
 	_, w := tr.join("")
@@ -340,12 +371,9 @@ func TestWelcome(t *testing.T) {
 	if w.Seed != testSeed || w.Dt != cfg.Dt || w.SnapshotHz != DefaultSnapshotHz || w.ID < 1 || w.Resume == "" || w.Resumed {
 		t.Fatalf("welcome = seed %d dt %v hz %v id %d resume %q resumed %v", w.Seed, w.Dt, w.SnapshotHz, w.ID, w.Resume, w.Resumed)
 	}
-	dep := sim.Bay.Harbour.Departure
-	start := sim.InitialState(dep.HeadingDeg*sim.DEG, StartSpeed)
-	start.X, start.Z = dep.X, dep.Z
-	start.T = float64(w.Tick) * w.Dt
+	start := sim.MooredAt(sim.Bay.Harbour.Berths[0], float64(w.Tick)*w.Dt, tr.room.model, &tr.room.cfg)
 	if w.State != start {
-		t.Fatalf("welcome state %+v, want %+v (slot 0 at the room time)", w.State, start)
+		t.Fatalf("welcome state %+v, want %+v (berth 0 at the room time)", w.State, start)
 	}
 	if !w.Config.Waves.Enabled || !w.Config.Land || w.Config.Substeps != cfg.Substeps {
 		t.Fatalf("welcome config is not BrowserConfig: %+v", w.Config)
@@ -393,7 +421,7 @@ func TestTwoClientsShareTheWorld(t *testing.T) {
 	want := RemoteBoat{
 		ID: wa.ID, X: s.X, Z: s.Z, Heading: s.Heading, U: s.U, Heel: s.Heel, Pitch: s.Pitch, Boom: s.Boom, CrewY: s.CrewY,
 		Tiller: sa.Controls.Tiller, Sheet: sa.Controls.Sheet,
-		ApparentU: ra.ApparentU, ApparentV: ra.ApparentV, LuffAmount: ra.LuffAmount, StallAmount: ra.StallAmount,
+		ApparentU: ra.ApparentU, ApparentV: ra.ApparentV, LuffAmount: ra.LuffAmount, StallAmount: ra.StallAmount, Moored: s.Moored,
 	}
 	if ra != want {
 		t.Fatalf("b sees a as %+v, a's own snapshot says %+v", ra, want)
@@ -403,28 +431,65 @@ func TestTwoClientsShareTheWorld(t *testing.T) {
 	}
 }
 
-func TestSpawnSlotsAreDistinctAndResetPicksAFreeOne(t *testing.T) {
+func TestBerthsAreDistinctAndResetPicksAFreeOne(t *testing.T) {
 	tr := startRoom(t, RoomConfig{})
-	slots := spawnSlots(DefaultMaxBoats)
-	at := func(s sim.BoatState, p sim.Vec2) bool { return math.Hypot(s.X-p.X, s.Z-p.Z) < 1 }
+	berths := sim.Bay.Harbour.Berths
+	at := func(s sim.BoatState, b sim.Berth) bool { return s.Moored && math.Hypot(s.X-b.X, s.Z-b.Z) < 1 }
 	a, wa := tr.join("")
 	b, wb := tr.join("")
-	if !at(wa.State, slots[0]) || !at(wb.State, slots[1]) {
-		t.Fatalf("spawned at (%v, %v) and (%v, %v), want slots 0 and 1", wa.State.X, wa.State.Z, wb.State.X, wb.State.Z)
+	if !at(wa.State, berths[0]) || !at(wb.State, berths[1]) {
+		t.Fatalf("started at (%v, %v) and (%v, %v), want moored at berths 0 and 1", wa.State.X, wa.State.Z, wb.State.X, wb.State.Z)
 	}
 	// Ops from one connection apply in order, so the snapshot acking the next input follows the reset.
 	tr.write(b, `{"type":"reset"}`)
 	tr.write(b, `{"type":"input","seq":1,"controls":{"tiller":0,"sheet":0.5,"hike":0}}`)
-	if s := tr.snapshotWhere(b, func(s Snapshot) bool { return s.AckSeq == 1 }); !at(s.State, slots[1]) {
-		t.Fatalf("reset with slot 0 taken put b at (%v, %v), want slot 1", s.State.X, s.State.Z)
+	if s := tr.snapshotWhere(b, func(s Snapshot) bool { return s.AckSeq == 1 }); !at(s.State, berths[1]) {
+		t.Fatalf("reset with berth 0 taken put b at (%v, %v), want berth 1", s.State.X, s.State.Z)
 	}
+	// A parked boat still takes its berth; once forgotten, the berth is free.
 	a.Close(websocket.StatusNormalClosure, "")
 	tr.waitGone(b, wa.ID)
+	tr.forget(wa.Resume)
 	tr.write(b, `{"type":"reset"}`)
 	tr.write(b, `{"type":"input","seq":2,"controls":{"tiller":0,"sheet":0.5,"hike":0}}`)
 	s := tr.snapshotWhere(b, func(s Snapshot) bool { return s.AckSeq == 2 })
-	if !at(s.State, slots[0]) {
-		t.Fatalf("reset with slot 0 free put b at (%v, %v), want slot 0", s.State.X, s.State.Z)
+	if !at(s.State, berths[0]) {
+		t.Fatalf("reset with berth 0 free put b at (%v, %v), want berth 0", s.State.X, s.State.Z)
+	}
+}
+
+// TestMooredSpawnAndCastOff: new boats take the free berths, later ones the spawn grid; a cast-off
+// input releases its boat on exactly its own step, and a boat just cast off still takes its berth.
+func TestMooredSpawnAndCastOff(t *testing.T) {
+	tr := startRoom(t, RoomConfig{})
+	berths := sim.Bay.Harbour.Berths
+	slots := spawnSlots(DefaultMaxBoats)
+	var conns []*websocket.Conn
+	for i := range 4 {
+		c, w := tr.join("")
+		conns = append(conns, c)
+		if i < len(berths) {
+			if !w.State.Moored || w.State.X != berths[i].X || w.State.Z != berths[i].Z || w.State.U != 0 {
+				t.Fatalf("boat %d started %+v, want moored at berth %d", i+1, w.State, i)
+			}
+		} else if w.State.Moored || w.State.X != slots[0].X || w.State.Z != slots[0].Z {
+			t.Fatalf("boat %d started %+v, want unmoored at spawn slot 0", i+1, w.State)
+		}
+	}
+	a := conns[0]
+	tr.write(a, `{"type":"input","seq":1,"controls":{"tiller":0,"sheet":0.25,"hike":0}}`)
+	s1 := tr.snapshotWhere(a, func(s Snapshot) bool { return s.AckSeq == 1 })
+	if !s1.State.Moored || s1.State.U != 0 || s1.State.X != berths[0].X || s1.State.Z != berths[0].Z {
+		t.Fatalf("after input 1: %+v, want held at berth 0", s1.State)
+	}
+	tr.write(a, `{"type":"input","seq":2,"controls":{"tiller":0,"sheet":0.25,"hike":0},"castOff":true}`)
+	if s2 := tr.snapshotWhere(a, func(s Snapshot) bool { return s.AckSeq == 2 }); s2.State.Moored {
+		t.Fatalf("after the cast-off input: %+v, want unmoored", s2.State)
+	}
+	// Boat 1 is still alongside berth 0, so a fifth boat goes to the next free spawn slot.
+	_, w5 := tr.join("")
+	if w5.State.Moored || w5.State.X != slots[1].X || w5.State.Z != slots[1].Z {
+		t.Fatalf("fifth boat started %+v, want unmoored at spawn slot 1", w5.State)
 	}
 }
 
@@ -433,19 +498,19 @@ func TestSpawnSlotsAreDistinctAndResetPicksAFreeOne(t *testing.T) {
 func TestResetAppliesInOrderWithInputs(t *testing.T) {
 	r := NewRoom(RoomConfig{Seed: testSeed, Now: newFakeClock().Now, Log: quiet})
 	a := r.join("", "a", nil)
-	spawn := a.member.boat.state
+	// Inputs 1-5 cast off and sail; the reset puts the boat back at its berth.
 	for seq := int64(1); seq <= 5; seq++ {
-		r.input(a.member, seq, sim.Controls{Tiller: 1, Sheet: 0.3})
+		r.input(a.member, seq, sim.Controls{Tiller: 1, Sheet: 0.3}, seq == 1)
 	}
 	r.reset(a.member)
-	r.input(a.member, 6, sim.NeutralControls)
+	r.input(a.member, 6, sim.NeutralControls, false)
 	for range 10 {
 		r.step()
 	}
 	b := a.member.boat
 	cfg := sim.BrowserConfig(testSeed)
-	respawn := spawn
-	respawn.T = b.state.T - cfg.Dt // the reset happened at the room time of the tick that applied it
+	// The reset happened at the room time of the tick that applied it.
+	respawn := sim.MooredAt(sim.Bay.Harbour.Berths[0], b.state.T-cfg.Dt, r.model, &cfg)
 	want := sim.Step(respawn, sim.NeutralControls, r.model, &cfg).State
 	if b.ackSeq != 6 || b.state != want {
 		t.Fatalf("after reset + input 6: ack %d state %+v, want %+v", b.ackSeq, b.state, want)
@@ -622,7 +687,7 @@ func BenchmarkRoomTick(b *testing.B) {
 	tick := func() {
 		seq++
 		for i, m := range members {
-			r.input(m, seq, sim.Controls{Tiller: 0.1 * float64(i%5), Sheet: 0.5, Hike: 1})
+			r.input(m, seq, sim.Controls{Tiller: 0.1 * float64(i%5), Sheet: 0.5, Hike: 1}, false)
 		}
 		r.step()
 	}

@@ -15,6 +15,7 @@ const SHEET_RATE = 0.4; // TUNING GUESS: sheet travel per second while W/S held 
 const SHEET_WHEEL_STEP = 0.03; // TUNING GUESS: sheet target change per wheel notch
 const HIKE_RATE = 1.5; // TUNING GUESS: hike travel per second
 const INITIAL_SHEET = 0.25; // best trim on the default beam reach: polar sheet 0.25-0.27 at TWA 90, 6-9 kn (milestone 2)
+export const MOORED_SHEET = 1; // fully eased: at a berth the boom weathervanes and the sail luffs
 // The Laser carries weather helm: hands off at tiller 0 the spawn reach rounds up into irons within
 // about 40 s and then slides astern. A sailor already holds a little helm against it, so the tiller
 // starts where it balances the spawn reach (headless sweep, 7 kn: -0.05 still rounds up, -0.06 holds
@@ -62,9 +63,10 @@ export class ControlInput {
     );
   }
 
-  reset(): void {
+  /** Back to the starting controls; `sheet` is where the mainsheet starts (MOORED_SHEET at a berth). */
+  reset(sheet = INITIAL_SHEET): void {
     this.tiller = INITIAL_TILLER;
-    this.sheet = this.sheetTarget = INITIAL_SHEET;
+    this.sheet = this.sheetTarget = sheet;
     this.hike = 0;
   }
 

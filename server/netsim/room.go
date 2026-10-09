@@ -28,6 +28,9 @@ const (
 	// spawnSpacing is the grid step of the spawn slots around the departure point, m; a slot is free
 	// when no sailing boat is within half of it.
 	spawnSpacing = 15.0 // TUNING GUESS
+	// berthClearance is how near a boat (sailing or parked) must be to a berth to take it, m: more than
+	// a 4.23 m hull, so a boat still alongside, just cast off or parked blocks the berth.
+	berthClearance = 5.0 // TUNING GUESS
 	// opsSize buffers connection → room requests (inputs from all connections, joins, leaves).
 	opsSize = 256 // TUNING GUESS
 	// outboxSize buffers snapshots to one connection; a client that falls further behind loses its
@@ -122,6 +125,8 @@ type queuedInput struct {
 	seq      int64
 	controls sim.Controls
 	reset    bool
+	// castOff releases a moored boat immediately before this input's step.
+	castOff bool
 }
 
 // inputQueue is a fixed ring of a boat's waiting inputs, oldest first, so queueing never allocates.
@@ -281,7 +286,7 @@ func (r *Room) step() {
 		for b.queue.size > 0 {
 			e := b.queue.front()
 			if e.reset {
-				b.state = r.spawn(b)
+				b.state = r.start(b)
 				r.see(b, sim.Evaluate(b.state, b.controls, r.model, &r.cfg))
 				b.queue.pop()
 				continue
@@ -293,6 +298,9 @@ func (r *Room) step() {
 			b.controls = e.controls
 			b.ackSeq = e.seq
 			b.queue.pop()
+			if e.castOff {
+				b.state.Moored = false
+			}
 			res := sim.Step(b.state, b.controls, r.model, &r.cfg)
 			b.state = res.State
 			r.track(b)
@@ -319,7 +327,7 @@ func (r *Room) broadcast() {
 			Heel: b.state.Heel, Pitch: b.state.Pitch, Boom: b.state.Boom, CrewY: b.state.CrewY,
 			Tiller: b.controls.Tiller, Sheet: b.controls.Sheet,
 			ApparentU: b.sail.apparentU, ApparentV: b.sail.apparentV,
-			LuffAmount: b.sail.luffAmount, StallAmount: b.sail.stallAmount,
+			LuffAmount: b.sail.luffAmount, StallAmount: b.sail.stallAmount, Moored: b.state.Moored,
 		})
 		if err != nil {
 			r.log.Printf("encode boat %d: %v", b.id, err)
@@ -377,8 +385,9 @@ func (r *Room) forgetExpired() {
 
 // join attaches a connection to a boat: the boat of a live resume token, else the boat of the
 // player's sailor code (one boat per code, so another tab, a reload or another browser with the same
-// code takes it over), both in place and at rest; else a new boat at the player's last stored
-// position or a free spawn slot. A boat that is still sailing is handed over and the old
+// code takes it over), both in place and at rest (a moored boat stays moored); else a new boat at the
+// player's last stored position (at a free berth if it was left moored), or moored at a free berth,
+// or a free spawn slot. A boat that is still sailing is handed over and the old
 // connection's replaced channel closed.
 func (r *Room) join(resume, addr string, p *playerInfo) joinResult {
 	b := r.byToken[resume]
@@ -400,15 +409,24 @@ func (r *Room) join(resume, addr string, p *playerInfo) joinResult {
 	resumed := b != nil
 	if resumed {
 		// Back where it was, at the start speed: the boat does not sail on while its player is away.
+		// A boat that was moored is still held at its berth, at rest.
+		moored := b.state.Moored
 		b.state = r.stillAt(b.state.X, b.state.Z, b.state.Heading)
+		if moored {
+			b.state = sim.Moor(b.state, r.model, &r.cfg)
+		}
 	} else {
 		b = &roomBoat{id: r.nextID, token: rand.Text(), controls: sim.NeutralControls}
 		r.nextID++
-		if p != nil && p.position != nil {
+		switch {
+		case p != nil && p.position != nil && p.position.Moored:
+			// A sailor code whose last boat was left at its berth starts at a free one.
+			b.state = r.start(nil)
+		case p != nil && p.position != nil:
 			// A sailor code whose last boat is gone (resume grace over, or a restarted server).
 			b.state = r.stillAt(p.position.X, p.position.Z, p.position.Heading)
-		} else {
-			b.state = r.spawn(nil)
+		default:
+			b.state = r.start(nil)
 		}
 		r.byToken[b.token] = b
 	}
@@ -473,9 +491,9 @@ func (r *Room) detach(b *roomBoat) {
 }
 
 // input queues one input for m's boat; step applies it as one sim step, in seq order.
-func (r *Room) input(m *member, seq int64, c sim.Controls) {
+func (r *Room) input(m *member, seq int64, c sim.Controls, castOff bool) {
 	if b := m.boat; b.member == m {
-		b.queue.push(queuedInput{seq: seq, controls: clampControls(c)})
+		b.queue.push(queuedInput{seq: seq, controls: clampControls(c), castOff: castOff})
 	}
 }
 
@@ -494,6 +512,29 @@ func (r *Room) stillAt(x, z, heading float64) sim.BoatState {
 	s.T = r.time()
 	s.X, s.Z = x, z
 	return s
+}
+
+// start is where a new or reset boat begins: moored at the first free berth, else unmoored on the
+// spawn grid.
+func (r *Room) start(self *roomBoat) sim.BoatState {
+	for i, berth := range sim.Bay.Harbour.Berths {
+		if r.berthFree(i, self) {
+			return sim.MooredAt(berth, r.time(), r.model, &r.cfg)
+		}
+	}
+	return r.spawn(self)
+}
+
+// berthFree reports whether no boat other than self, sailing or parked, moored or not, is within
+// berthClearance of berth i: a berth is taken by a body alongside it, not by a flag.
+func (r *Room) berthFree(i int, self *roomBoat) bool {
+	berth := sim.Bay.Harbour.Berths[i]
+	for _, b := range r.byToken {
+		if b != self && math.Hypot(b.state.X-berth.X, b.state.Z-berth.Z) < berthClearance {
+			return false
+		}
+	}
+	return true
 }
 
 // spawn is the start state at the first spawn slot with no sailing boat other than self within

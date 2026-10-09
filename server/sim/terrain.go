@@ -69,6 +69,7 @@ type BayParameters struct {
 		} `json:"departure"`
 		Reclaimed []HarbourRect `json:"reclaimed"`
 		Dredged   []HarbourRect `json:"dredged"`
+		Berths    []Berth       `json:"berths"`
 	} `json:"harbour"`
 	Grounding struct {
 		PushStiffness  float64 `json:"pushStiffness"`

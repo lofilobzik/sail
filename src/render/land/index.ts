@@ -12,6 +12,7 @@ import type { WaveConfig } from '../../sim/waves';
 import type { SkyView } from '../sky';
 import { Footprints, waterDistance } from './ground';
 import { fadeDetailBySize } from './detailFade';
+import type { FloatingHarbour } from './floatingDocks';
 import { createHarbour } from './harbour';
 import { ROADS, createRoadMesh, sampleRoad } from './roads';
 import { createHouseMeshes, placeHouses } from './houses';
@@ -24,6 +25,8 @@ const LAND_RENDER_ORDER = -1; // opaque land before the water (renderOrder 0)
 
 export interface LandView {
   group: THREE.Group;
+  /** Westcove berth cleat tops, indexed like BERTHS: [bow, stern]. */
+  berthCleats: FloatingHarbour['berthCleats'];
   /** Rebase for the floating origin and update waterborne harbour details on the shared waves. */
   update(origin: Readonly<Vec2>, waves: WaveConfig, t: number): void;
 }
@@ -68,6 +71,7 @@ export function createLand(sky: SkyView): LandView {
 
   return {
     group,
+    berthCleats: harbour.afloat.berthCleats,
     update(origin, waves, t) {
       group.position.set(-origin.x, 0, -origin.z);
       harbour.afloat.update(waves, t);

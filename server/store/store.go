@@ -47,6 +47,7 @@ var migrations = []string{
 CREATE TABLE steps (player TEXT NOT NULL REFERENCES players(code) ON DELETE CASCADE, challenge TEXT NOT NULL, step TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (player, challenge, step));
 CREATE TABLE completions (player TEXT NOT NULL REFERENCES players(code) ON DELETE CASCADE, challenge TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (player, challenge));`,
 	`CREATE TABLE positions (player TEXT PRIMARY KEY REFERENCES players(code) ON DELETE CASCADE, x REAL NOT NULL, z REAL NOT NULL, heading REAL NOT NULL, at INTEGER NOT NULL);`,
+	`ALTER TABLE positions ADD COLUMN moored INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // Store is an open database.
@@ -191,9 +192,11 @@ func (s *Store) RecordStep(ctx context.Context, code, challenge, step string, to
 	return all[challenge], nil
 }
 
-// Position is where a player's boat was when it left: world x east, z south, m; heading, rad.
+// Position is where a player's boat was when it left: world x east, z south, m; heading, rad;
+// Moored when it was still held at a berth.
 type Position struct {
 	X, Z, Heading float64
+	Moored        bool
 }
 
 // SavePosition replaces code's last position.
@@ -210,7 +213,7 @@ func (s *Store) SavePosition(ctx context.Context, code string, p Position, at ti
 	if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO players (code, created_at) VALUES (?, ?)", code, ms); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT OR REPLACE INTO positions (player, x, z, heading, at) VALUES (?, ?, ?, ?, ?)", code, p.X, p.Z, p.Heading, ms); err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT OR REPLACE INTO positions (player, x, z, heading, moored, at) VALUES (?, ?, ?, ?, ?, ?)", code, p.X, p.Z, p.Heading, p.Moored, ms); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -221,7 +224,7 @@ func (s *Store) LastPosition(ctx context.Context, code string) (p Position, ok b
 	if !ValidCode(code) {
 		return p, false, errors.New("malformed player code")
 	}
-	err = s.db.QueryRowContext(ctx, "SELECT x, z, heading FROM positions WHERE player = ?", code).Scan(&p.X, &p.Z, &p.Heading)
+	err = s.db.QueryRowContext(ctx, "SELECT x, z, heading, moored FROM positions WHERE player = ?", code).Scan(&p.X, &p.Z, &p.Heading, &p.Moored)
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, false, nil
 	}

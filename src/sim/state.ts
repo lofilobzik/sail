@@ -33,6 +33,8 @@ export interface BoatState {
   boomSide: 1 | -1;
   /** Crew CG offset from the centreline, m (+ = starboard). */
   crewY: number;
+  /** Held at a berth: position, heading and velocities stay fixed; heel, pitch, boom and crew still move. */
+  moored: boolean;
 }
 
 export function initialState(heading = 0, speed = 0): BoatState {
@@ -51,6 +53,7 @@ export function initialState(heading = 0, speed = 0): BoatState {
     boom: 0,
     boomSide: 1,
     crewY: 0,
+    moored: false,
   };
 }
 

@@ -49,6 +49,11 @@ export class RemoteBoatsView {
     return this.boats.size;
   }
 
+  /** The mesh drawn for remote boat `id`, if it is in the room. */
+  mesh(id: number): BoatMesh | undefined {
+    return this.boats.get(id)?.mesh;
+  }
+
   /**
    * Draws `remotes` for one frame: render-local around `origin` (the own boat), on the water at
    * time `t` (the time the water is drawn at), near sails advanced by `dt`. Boats missing from

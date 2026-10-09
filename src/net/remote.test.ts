@@ -7,7 +7,7 @@ const DT = 0.05; // 20 Hz snapshots
 function boat(id: number, fields: Partial<RemoteBoat> = {}): RemoteBoat {
   return {
     id, x: 0, z: 0, heading: 0, u: 0, heel: 0, pitch: 0, boom: 0, crewY: 0, tiller: 0, sheet: 0,
-    apparentU: 0, apparentV: 0, luffAmount: 0, stallAmount: 0, ...fields,
+    apparentU: 0, apparentV: 0, luffAmount: 0, stallAmount: 0, moored: false, ...fields,
   };
 }
 

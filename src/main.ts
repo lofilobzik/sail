@@ -2,7 +2,7 @@
 import { TestHud } from './debug/hud';
 import { DebugOverlay } from './debug/overlay';
 import { parseDevOptions } from './debug/urlParams';
-import { ControlInput, isTypingTarget } from './input/controls';
+import { ControlInput, MOORED_SHEET, isTypingTarget } from './input/controls';
 import { MouseLook } from './input/mouseLook';
 import { BinocularInput } from './input/binoculars';
 import { NavigationInput } from './input/navigation';
@@ -12,7 +12,7 @@ import { Vector2 } from 'three';
 import { interpolatePose } from './render/pose';
 import { SceneView, type RenderPose } from './render/scene';
 import { ForceVectors } from './render/vectors';
-import { DEG, FixedStep, NEUTRAL_CONTROLS, WAVE_PARAMETERS, browserConfig, buildBoat, clamp, evaluate, initialState, setWaveParameters, step, type BoatState, type Diagnostics } from './sim';
+import { BERTHS, DEG, FixedStep, NEUTRAL_CONTROLS, WAVE_PARAMETERS, browserConfig, buildBoat, clamp, evaluate, initialState, mooredAt, setWaveParameters, step, type BoatState, type Diagnostics } from './sim';
 import { joinServer, serverChoice } from './net/link';
 import type { RemotePose } from './net/remote';
 import { SailSound } from './audio/sound';
@@ -27,7 +27,7 @@ import { newSailorCode } from './net/sailorCode';
 import type { ChallengeStatus } from './net/protocol';
 import { SKY } from './render/skyModel';
 import { BAY } from './sim/terrain';
-import { BINDINGS } from './input/bindings';
+import { BINDINGS, keyLabels } from './input/bindings';
 
 const START_SPEED = 1; // TUNING GUESS: initial boat speed, m/s
 const FRAME_SMOOTHING = 0.05; // exponential smoothing of the frame-time readout
@@ -35,13 +35,14 @@ const BENCH_FRAMES = 200; // ?perf=1: frames rendered back to back, each synchro
 const BENCH_DELAY_MS = 2000;
 
 /**
- * Offline start: afloat in Westcove Harbour, bow where data/bay.json `harbour.departure` points it (a
- * beam reach for the default wind from 0°); `?start=x,z[,heading]` puts it anywhere else to look around.
+ * Offline start: moored at the first Westcove berth (data/bay.json `harbour.berths`), waiting for E
+ * to cast off; `?start=x,z[,heading]` puts it afloat anywhere else to look around (heading defaults to
+ * `harbour.departure`'s).
  */
 function harbourStart(): BoatState {
-  const { x, z, headingDeg } = opts.start
-    ? { ...opts.start, headingDeg: opts.start.headingDeg ?? BAY.harbour.departure.headingDeg }
-    : BAY.harbour.departure;
+  if (!opts.start) return mooredAt(BERTHS[0]!, boat, cfg);
+  const { x, z } = opts.start;
+  const headingDeg = opts.start.headingDeg ?? BAY.harbour.departure.headingDeg;
   return { ...initialState(headingDeg * DEG, START_SPEED), x, z };
 }
 
@@ -90,19 +91,21 @@ const vectors = new ForceVectors(boat, view.scene, view.boat.yaw, view.boat.heel
 let prev: BoatState;
 let curr: BoatState;
 let diagnostics: Diagnostics;
+/** E was pressed at a berth: the next fixed step casts off. */
+let castOffRequested = false;
 
 /**
- * Puts the boat at `start` and restarts navigation from the known departure: on a server the spawn
- * it announced (position and room time), offline the chart's start.
+ * Puts the boat at `start` and restarts navigation from it, the known departure: on a server the
+ * spawn it announced (position and room time), offline the berth (or `?start`).
  */
 function resetBoat(start: BoatState): void {
   curr = prev = { ...start };
   navigationInput.cancel();
-  const departure = server ? start : undefined;
-  navigation.reset(departure);
-  view.navigation.chart.reset(departure);
+  navigation.reset(start);
+  view.navigation.chart.reset(start);
   memory.update(navigation, false);
-  input.reset();
+  input.reset(start.moored ? MOORED_SHEET : undefined);
+  castOffRequested = false;
   diagnostics = evaluate(curr, input.update(0), boat, cfg);
 }
 resetBoat(server ? server.spawn : harbourStart());
@@ -167,6 +170,12 @@ const menu = new Menu({
         },
       }
     : undefined,
+});
+// E: cast off from the berth on the next fixed step (fly mode uses E for up, so cockpit only).
+const CAST_OFF_PROMPT = `${keyLabels(BINDINGS.castOff.keys)} — Cast off`;
+window.addEventListener('keydown', (e) => {
+  if (e.code !== BINDINGS.castOff.keys.press || e.repeat || isTypingTarget(e.target)) return;
+  if (view.mode === 'cockpit' && !menu.open && curr.moored) castOffRequested = true;
 });
 // Sails no challenge awards stay locked everywhere; reward sails lock once progress arrives.
 menu.setLockedSails(lockedSails(null));
@@ -300,11 +309,16 @@ function frame(now: number): void {
   for (let i = 0; i < steps; i++) {
     // Flying the camera borrows WASD: the boat sails on with neutral controls.
     const controls = view.mode === 'fly' ? (input.reset(), { ...NEUTRAL_CONTROLS }) : input.update(cfg.dt);
+    const castOff = castOffRequested && curr.moored;
+    if (castOff) {
+      curr.moored = false;
+      castOffRequested = false;
+    }
     const result = step(curr, controls, boat, cfg);
     prev = curr;
     curr = result.state;
     diagnostics = result.diagnostics;
-    server?.afterStep(curr, controls);
+    server?.afterStep(curr, controls, castOff);
     // Narrow instrument boundary: only the speed through the water; no true x/z, heading or sway.
     navigation.advance({ t: curr.t, speed: (prev.u + curr.u) / 2 }, cfg.dt);
   }
@@ -331,6 +345,7 @@ function frame(now: number): void {
       speed: diagnostics.speed,
       luffAmount,
       trimTravel: input.trimTravel,
+      prompt: curr.moored && view.mode === 'cockpit' ? CAST_OFF_PROMPT : null,
     },
     menu.open,
   );

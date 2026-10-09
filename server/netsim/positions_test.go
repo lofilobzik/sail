@@ -45,12 +45,51 @@ func TestNewBoatStartsAtLastPosition(t *testing.T) {
 		t.Fatalf("new boat %+v, want %+v", back.State, want)
 	}
 
-	// Another code, and no code at all, still start at a spawn slot.
+	// Another code, and no code at all, still start moored at a free berth.
 	for _, player := range []string{codeB, ""} {
 		other := tr.welcomeAs("", player)
+		if !other.State.Moored {
+			t.Fatalf("player %q started unmoored: %+v", player, other.State)
+		}
 		if dx, dz := other.State.X-spawn.X, other.State.Z-spawn.Z; dx*dx+dz*dz > spawnSpacing*spawnSpacing*16 {
 			t.Fatalf("player %q started at %v, %v, far from the spawn grid", player, other.State.X, other.State.Z)
 		}
+	}
+}
+
+// A sailor code whose boat was left at its berth starts its next boat moored at the first free
+// berth, not at the stored coordinates.
+func TestNewBoatStartsMooredWhenLeftMoored(t *testing.T) {
+	st := openStore(t)
+	tr := startRoom(t, RoomConfig{Store: st})
+	berths := sim.Bay.Harbour.Berths
+	c := tr.dialAs("", codeA)
+	w := tr.welcome(c)
+	if !w.State.Moored || w.State.X != berths[0].X || w.State.Z != berths[0].Z {
+		t.Fatalf("first boat %+v, want moored at berth 0", w.State)
+	}
+	c.Close(websocket.StatusNormalClosure, "bye")
+	tr.settle(func() bool {
+		p, ok, err := st.LastPosition(context.Background(), codeA)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok && p.Moored
+	})
+	// The parked boat still takes berth 0; once it is forgotten, another boat takes berth 0.
+	if b := tr.welcomeAs("", codeB); b.State.X != berths[1].X || b.State.Z != berths[1].Z {
+		t.Fatalf("second boat %+v, want berth 1", b.State)
+	}
+	tr.forget(w.Resume)
+	if other := tr.welcomeAs("", ""); other.State.X != berths[0].X || other.State.Z != berths[0].Z {
+		t.Fatalf("third boat %+v, want berth 0", other.State)
+	}
+	back := tr.welcomeAs("", codeA)
+	if back.Resumed || back.ID == w.ID {
+		t.Fatalf("resumed %v id %d", back.Resumed, back.ID)
+	}
+	if want := sim.MooredAt(berths[2], back.State.T, tr.room.model, &tr.room.cfg); back.State != want {
+		t.Fatalf("new boat %+v, want %+v (the first free berth)", back.State, want)
 	}
 }
 
@@ -64,7 +103,7 @@ func TestShutdownSavesPositions(t *testing.T) {
 	done := make(chan struct{})
 	room.do(context.Background(), func() {
 		b := room.join("", "a", p).member.boat
-		b.state.X, b.state.Z, b.state.Heading = -1500, 650, 2
+		b.state.X, b.state.Z, b.state.Heading, b.state.Moored = -1500, 650, 2, false
 		close(done)
 	})
 	<-done

@@ -3,7 +3,7 @@
  * and cameras (first-person, plus an outside view for checking). Reads state only.
  */
 import * as THREE from 'three';
-import { meanWind, type BoatModel, type EnvironmentConfig, type Vec2, type WindConfig } from '../sim';
+import { BERTHS, berthIndexAt, meanWind, type BoatModel, type EnvironmentConfig, type Vec2, type WindConfig } from '../sim';
 import { createWaveSample, sampleWaves, waveAmplitude, type WaveConfig } from '../sim/waves';
 import { createBoatMesh, type BoatMesh, type BoatPose } from './boatMesh';
 import { createBuoys } from './environment';
@@ -19,6 +19,7 @@ import type { Navigation } from '../nav/navigation';
 import { NavigationView } from './navigation';
 import { RemoteBoatsView } from './remoteBoats';
 import type { RemotePose } from '../net/remote';
+import { MooringLines } from './mooringLines';
 
 const GRID_CELL = 5; // TUNING GUESS: grid cell size, m (grid snaps to multiples of this)
 const GRID_CELLS = 80; // TUNING GUESS: grid cells per side
@@ -54,6 +55,8 @@ export interface RenderPose extends BoatPose {
   surge: number;
   lookYaw: number;
   lookPitch: number;
+  /** Held at a berth: dock lines are drawn. */
+  moored: boolean;
 }
 
 export class SceneView {
@@ -82,6 +85,8 @@ export class SceneView {
   private readonly buoys = createBuoys();
   private readonly surface = createWaveSample();
   private readonly land: LandView;
+  /** Dock lines of every moored boat, own and remote. */
+  private readonly mooring = new MooringLines(2 * BERTHS.length);
   /** The far and near passes' cameras (see render); never in the scene graph, placed from the real camera. */
   private readonly farPass = SceneView.passCameraObject();
   private readonly nearPass = SceneView.passCameraObject();
@@ -135,6 +140,7 @@ export class SceneView {
     this.scene.add(this.boat.yaw);
     this.remoteBoats = new RemoteBoatsView(model, this.waterExclusion);
     this.scene.add(this.remoteBoats.group);
+    this.scene.add(this.mooring.group);
 
     this.camera = new THREE.PerspectiveCamera(FOV_DEG, 1, 0.05, CAMERA_FAR);
     this.camera.rotation.order = 'YXZ';
@@ -189,6 +195,14 @@ export class SceneView {
     this.buoys.position.set(-this.origin.x, 0, -this.origin.z);
     this.land.update(this.origin, this.waves, pose.t);
     this.remoteBoats.update(remotes, this.origin, this.waves, pose.t, pose.dt);
+    // After land and remote boats are placed: getWorldPosition refreshes each anchor's ancestors.
+    this.mooring.begin();
+    if (pose.moored) this.moor(b, pose.x, pose.z);
+    for (const [id, remote] of remotes) {
+      const mesh = remote.moored ? this.remoteBoats.mesh(id) : undefined;
+      if (mesh) this.moor(mesh, remote.x, remote.z);
+    }
+    this.mooring.end();
     this.wake.update(pose, this.origin, this.waves, this.surface.y, b.pitch.rotation.x);
     this.water.update(this.origin, pose.t);
     this.gusts.update(this.wind, this.origin, pose.t);
@@ -268,6 +282,15 @@ export class SceneView {
     this.water.mesh.visible = waterVisible;
     this.water.nearMesh.visible = false;
     this.scene.background = background;
+  }
+
+  /** Dock lines from `mesh` to the cleats of the berth at logical (x, z), if any. */
+  private moor(mesh: BoatMesh, x: number, z: number): void {
+    const i = berthIndexAt(x, z);
+    if (i < 0) return;
+    const cleats = this.land.berthCleats[i]!;
+    this.mooring.add(mesh.mooringPoints.bow, cleats[0]);
+    this.mooring.add(mesh.mooringPoints[BERTHS[i]!.side], cleats[1]);
   }
 
   /** `pass` placed and aimed like `cam`, with its own near and far planes. */

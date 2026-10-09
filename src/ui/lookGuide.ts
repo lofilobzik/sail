@@ -11,6 +11,7 @@
  *              "soft") for a moment, or the player first trims the sail (W/S or wheel), so they see
  *              what the trim did. Not when stopped head to wind: then everything flogs and the Windex
  *              is the answer.
+ * Also shows a one-line action prompt the caller supplies (e.g. "E — Cast off" at a berth).
  * Reads only the camera and the boat's look targets; it never changes the sim.
  */
 import * as THREE from 'three';
@@ -50,9 +51,10 @@ const CHEVRON_PX = 40;
 
 const STYLE = `
 @keyframes lg-pulse{0%,100%{opacity:0.35}50%{opacity:1}}
-.lg-click{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);display:none;flex-direction:column;align-items:center;gap:10px;
-  pointer-events:none;user-select:none;z-index:6;color:rgba(255,255,255,0.9);
+.lg-click,.lg-prompt{position:fixed;left:50%;display:none;pointer-events:none;user-select:none;z-index:6;color:rgba(255,255,255,0.9);
   font:500 12px system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:0.04em;filter:drop-shadow(0 0 3px rgba(0,0,0,0.5));}
+.lg-click{top:50%;transform:translate(-50%,-50%);flex-direction:column;align-items:center;gap:10px;}
+.lg-prompt{bottom:96px;transform:translateX(-50%);}
 .lg-click .lg-button{animation:lg-pulse 1.4s ease-in-out infinite;}
 .lg-mark{position:fixed;left:0;top:0;pointer-events:none;z-index:6;opacity:0;filter:drop-shadow(0 0 3px rgba(0,20,30,0.9));}
 .lg-mark.lg-fade{transition:opacity 0.6s;}
@@ -87,10 +89,13 @@ export interface GuideInput {
   luffAmount: number;
   /** ControlInput.trimTravel: running total of the player's own sheet trimming. */
   trimTravel: number;
+  /** A contextual action, e.g. "E — Cast off"; null for none. */
+  prompt: string | null;
 }
 
 export class LookGuide {
   private readonly click = document.createElement('div');
+  private readonly prompt = document.createElement('div');
   private readonly chevron = document.createElement('div');
   /** The arrow inside the chevron mark: it rotates toward the target while the label stays upright. */
   private readonly chevronArrow: HTMLElement;
@@ -132,7 +137,8 @@ export class LookGuide {
     this.chevronArrow = this.chevron.firstElementChild as HTMLElement;
     this.ring.className = 'lg-mark';
     this.ring.innerHTML = '<div class="lg-ring"></div><div class="lg-label"></div>';
-    document.body.append(this.click, this.chevron, this.ring);
+    this.prompt.className = 'lg-prompt';
+    document.body.append(this.click, this.prompt, this.chevron, this.ring);
   }
 
   /** Forgets every completed guide, so they appear again as they become relevant. */
@@ -149,6 +155,8 @@ export class LookGuide {
 
   update(input: GuideInput, menuOpen: boolean): void {
     this.click.style.display = !input.looking && !menuOpen ? 'flex' : 'none';
+    this.prompt.style.display = input.prompt && !menuOpen ? 'block' : 'none';
+    if (input.prompt && this.prompt.textContent !== input.prompt) this.prompt.textContent = input.prompt;
     this.clock += input.dt;
 
     // Triggers: each guide becomes relevant once, unless already completed.

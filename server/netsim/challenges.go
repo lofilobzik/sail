@@ -158,7 +158,7 @@ func (r *Room) savePosition(b *roomBoat, block bool) {
 	if r.store == nil || b.player == "" {
 		return
 	}
-	job := saveJob{code: b.player, pos: &store.Position{X: b.state.X, Z: b.state.Z, Heading: b.state.Heading}}
+	job := saveJob{code: b.player, pos: &store.Position{X: b.state.X, Z: b.state.Z, Heading: b.state.Heading, Moored: b.state.Moored}}
 	if block {
 		r.saves <- job
 		return

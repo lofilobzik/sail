@@ -37,6 +37,7 @@ export function interpolatePose(
     apparentV: diagnostics.apparent.v,
     luffAmount: diagnostics.sail?.luffAmount ?? 0,
     stallAmount: diagnostics.sail?.stallAmount ?? 0,
+    moored: curr.moored,
     dt,
     lookYaw: look.yaw,
     lookPitch: look.pitch,

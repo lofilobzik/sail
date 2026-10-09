@@ -90,6 +90,8 @@ export class RemoteFleet {
       const a = samples[0]!.boat;
       const b = samples[1];
       const pose = track.pose;
+      // Booleans are not interpolated: `a` is the sample at or before the render time.
+      pose.moored = a.moored;
       if (!b || time <= samples[0]!.time) {
         // Starved (or not yet reached the first snapshot): hold the pose.
         for (const f of FIELDS) pose[f] = a[f];

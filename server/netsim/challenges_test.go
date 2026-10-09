@@ -54,12 +54,14 @@ func (h hookStore) RecordStep(ctx context.Context, code, challenge, step string,
 }
 
 // visit moves the boat with token to (x, z) on the room goroutine and tracks and observes it there.
+// A teleported boat is no longer at its berth, so it is unmoored.
 func (tr *testRoom) visit(token string, x, z float64) {
 	tr.t.Helper()
 	done := make(chan struct{})
 	if !tr.room.do(tr.ctx, func() {
 		b := tr.room.byToken[token]
 		b.state.X, b.state.Z = x, z
+		b.state.Moored = false
 		tr.room.track(b)
 		tr.room.observe(b)
 		close(done)

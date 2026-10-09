@@ -88,7 +88,7 @@ func TestPosition(t *testing.T) {
 	if _, ok, err := s.LastPosition(ctx, code); ok || err != nil {
 		t.Fatalf("unknown code: ok %v, %v", ok, err)
 	}
-	for _, p := range []Position{{X: 1, Z: 2, Heading: 3}, {X: -4, Z: 5.5, Heading: -0.5}} {
+	for _, p := range []Position{{X: 1, Z: 2, Heading: 3, Moored: true}, {X: -4, Z: 5.5, Heading: -0.5}} {
 		if err := s.SavePosition(ctx, code, p, time.UnixMilli(9)); err != nil {
 			t.Fatal(err)
 		}

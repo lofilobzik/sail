@@ -137,8 +137,8 @@ func (s *Server) relay(ctx context.Context, c *websocket.Conn, j joinResult) err
 			switch msg.Type {
 			case TypeInput:
 				lastSeq = *msg.Seq
-				seq, controls := *msg.Seq, *msg.Controls
-				op = func() { room.input(m, seq, controls) }
+				seq, controls, castOff := *msg.Seq, *msg.Controls, msg.CastOff
+				op = func() { room.input(m, seq, controls, castOff) }
 			case TypeReset:
 				op = func() { room.reset(m) }
 			}

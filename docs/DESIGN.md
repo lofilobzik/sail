@@ -123,8 +123,9 @@ Rules:
   See `DEPLOY.md`.
 - **One public room** (multiplayer v1, `server/netsim/room.go`): one seed and `BrowserConfig` per
   server process, one room clock (`tick`), and every boat stepped in the same fixed-step loop owned by
-  one goroutine; connections talk to it over channels. New boats and resets spawn at the room time at
-  the first free slot of a 15 m grid around the departure point (TUNING GUESS), all in deep water.
+  one goroutine; connections talk to it over channels. New boats and resets start at the room time
+  moored at the first free Westcove berth (no boat, sailing or parked, within 5 m: TUNING GUESS), else
+  at the first free slot of a 15 m grid around the departure point (TUNING GUESS), all in deep water.
   `-max-boats` (default 32) caps the room ("room full", close 1013). No names, no races, no
   collisions or wind shadow: other boats are visual only. 32 boats cost about 1.1 ms per tick on an
   M1 (about 8% of one core with snapshots).
@@ -142,8 +143,8 @@ Rules:
   then `snapshot` (tick, ackSeq, state, applied controls, and `boats`: every other boat's pose,
   controls, apparent wind and luff) at 20 Hz, `challenges` after a challenge step is stored, and
   `error` for a rejected message (the connection stays open). Client sends `input` (strictly
-  increasing seq, controls) every local fixed step, and
-  `reset`. Origins: same-origin (the deployed site) plus localhost on any port (Vite dev).
+  increasing seq, controls, and `castOff: true` on the step that leaves the berth) every local fixed
+  step, and `reset`. Origins: same-origin (the deployed site) plus localhost on any port (Vite dev).
 - **One boat per sailor code**: a connection with a sailor code takes over that code's boat, sailing
   or parked (another tab, a reload, another browser with a restored code), like a resume token.
   The older connection is closed as "replaced" and its page says the boat is sailing elsewhere
@@ -151,16 +152,19 @@ Rules:
 - **Reconnect**: a dropped boat is parked for 60 s under its resume token (`/ws?resume=…`). The client
   retries after 1, 2, 4, 8, then every 10 s, and also when no data arrives for 3 s (a silent socket).
   Resumed: same boat in the same place, navigation kept, but at rest (start speed, no heel or
-  carried way), so a boat never sails on while its player is away. Otherwise (expired, or a
-  restarted server with a new seed): a new boat with the new config adopted in place and navigation
-  restarted, at the sailor code's last position when the server has `-db` (saved when a boat
-  disconnects and when the server shuts down; server-side, so a client cannot pick where it
-  appears), else at a spawn slot. Leaving the page closes the
+  carried way; a moored boat stays moored), so a boat never sails on while its player is away.
+  Otherwise (expired, or a restarted server with a new seed): a new boat with the new config adopted
+  in place and navigation restarted, at the sailor code's last position when the server has `-db`
+  (saved, with whether it was still moored, when a boat disconnects and when the server shuts down;
+  server-side, so a client cannot pick where it appears; a boat left moored starts at a free berth),
+  else at a free berth or spawn slot. Leaving the page closes the
   socket at once (`pagehide`), so the boat disappears for others immediately.
 - **Client prediction** (`src/net/correction.ts`): the TS sim predicts every step; each snapshot is
   compared with the prediction recorded for its acked input (256-step history), minus corrections
-  applied since. Small errors blend out over 0.2 s; over 2 m, 20 degrees or a different boom side the
-  state snaps; an ack older than the history resyncs. All TUNING GUESS. No rewind/replay yet.
+  applied since. Small errors blend out over 0.2 s; over 2 m, 20 degrees, a different boom side or
+  a different moored flag the state snaps; an ack older than the history resyncs. A cast-off the
+  server has not acked yet is kept: older snapshots, still moored, never moor the boat again. All
+  TUNING GUESS. No rewind/replay yet.
 - **Other boats** (`src/net/remote.ts`, `src/render/remoteBoats.ts`): buffered per boat and drawn
   0.1 s in the past (TUNING GUESS), interpolated with heading wrap, holding the last pose if snapshots
   stop; server time is estimated from arrivals. Each is a full boat mesh on the waves with its cloth
@@ -168,10 +172,10 @@ Rules:
   150 m run the cloth every frame; the others take turns (24 remote boats: about 17 ms per frame in
   headless Chromium).
 - **Navigation per player**: the known departure is the spawn the server announces (welcome
-  `state`), so `Navigation.reset` and the chart take it instead of the fixed start (offline still
-  uses `NAVIGATION.start`). Nobody sees other players' charts or bearings.
+  `state`), so `Navigation.reset` and the chart take it (offline: the berth the boat starts at).
+  Nobody sees other players' charts or bearings.
 - In server mode the debug panel's physics controls are read-only (the server owns config); Reset
-  respawns at a free slot. The panel's Network section shows status, round-trip time, the last
+  respawns at a free berth or slot. The panel's Network section shows status, round-trip time, the last
   correction, own id, room boat count and reconnect attempts.
 - Checked on localhost: two tabs see each other within the 15 m spawn grid; RTT about 8-13 ms;
   corrections about 1 cm with no snaps; a leaving tab disappears at once; a server restart
@@ -425,8 +429,8 @@ fraction of a second and holds its position. Same idea for the sheet.
   mustard, teal, cobalt) on 8 % of walls and most doors. The quay, mole and terrace, plus 12 m around
   them, stay clear for the hand-built harbour front. Cost measured at 2880x1566: about 16.0 ms against
   14.75 ms before (+1.25 ms), 492k vs 474k triangles in the default view.
-- **Westcove Harbour** (`data/bay.json` `harbour`): the starting town on the west shore, where every
-  boat spawns (offline and on the server) at `harbour.departure` (-1740, 760), bow east, in a basin a
+- **Westcove Harbour** (`data/bay.json` `harbour`): the starting town on the west shore. Boats start
+  moored at its berths (below), later ones on the spawn grid around `harbour.departure` (-1740, 760), bow east, in a basin a
   breakwater mole shelters. The same elevation function carves it: `dredged` rectangles deepen the
   basin, `reclaimed` ones are flattened to a quay, the mole and a terrace for houses behind them
   (smoothstep blend of `edge` metres, applied in order; identical in `sim/terrain.ts` and
@@ -457,7 +461,18 @@ fraction of a second and holds its position. Same idea for the sheet.
   At 1800x1125, paired show/hide split-pass rendering samples averaged 7.4 / 7.8 ms (about +0.3 ms,
   within sample noise); dock and dinghy wave updates averaged 0.036 ms separately. Browser smoke
   checked close-up gear, docks and hulls, connected gangways, fixed berths/piles, flat water and
-  0/7/16 kn wave settings; gameplay mooring and casting off are still the next milestone.
+  0/7/16 kn wave settings.
+- **Moored start** (`data/bay.json` `harbour.berths`, `sim/mooring.ts`, `server/sim/mooring.go`): a new
+  boat starts moored on the leeward (south) side of fingers 0-2, bow east, so with the default north
+  wind a boat that casts off is blown away from the pontoon. `BoatState.moored` holds position,
+  heading and velocities in `integrate` (TS and Go, golden trace `moored`); heel, pitch, boom and crew
+  still move with the waves. The sheet starts fully eased and the boom already weathervaned, so the
+  sail luffs. E (cockpit only; fly mode uses E for up) casts off on the next fixed step: the flag
+  rides on that step's input, so server and prediction release on the same step. Two cosmetic dock
+  lines (`render/mooringLines.ts`, any boat anchor to any shore anchor) run from the bow eye and the
+  pontoon-side traveller eye to cleats with two rubber fenders per berth, drawn for every moored
+  boat, own and remote (`RemoteBoat.moored`). Three berths; later boats start on the spawn grid. A
+  southerly would blow a cast-off boat through the pontoon (no collisions); accepted.
 - **One elevation function** (`sim/terrain.ts`, pure and seeded): a mainland polygon and island
   ellipses as signed distances, their coasts perturbed by fractal noise; beaches, then low hills
   modulated by noise ashore; a seeded 1:60-1:20 nearshore slope saturating at 28 m offshore.

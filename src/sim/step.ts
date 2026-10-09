@@ -242,7 +242,7 @@ function integrate(state: BoatState, d: Diagnostics, boat: BoatModel, cfg: SimCo
   const maxMove = CREW_CROSSING_SPEED * h;
   const crewY = state.crewY + clamp(d.heel.crewTargetY - state.crewY, -maxMove, maxMove);
 
-  return {
+  const next: BoatState = {
     t: state.t + h,
     x: state.x + vel.x * h,
     z: state.z + vel.z * h,
@@ -257,7 +257,11 @@ function integrate(state: BoatState, d: Diagnostics, boat: BoatModel, cfg: SimCo
     boom,
     boomSide,
     crewY,
+    moored: state.moored,
   };
+  // At a berth the dock lines hold position and heading; heel, pitch, boom and crew still move.
+  if (state.moored) Object.assign(next, { x: state.x, z: state.z, heading: state.heading, u: 0, v: 0, r: 0 });
+  return next;
 }
 
 export interface StepResult {

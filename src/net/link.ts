@@ -44,6 +44,8 @@ export class ServerLink {
     if (w) {
       this.welcome = w;
       this.respawnSeq = 0;
+      // A new connection drops the old one's queued inputs, so a cast-off sent there never applied.
+      this.corrector.forgetCastOff();
       if (!w.resumed) {
         // A new boat, maybe in a restarted server's new world: adopt its config too.
         adoptServerConfig(this.cfg, w);
@@ -64,18 +66,22 @@ export class ServerLink {
     return w || jumped ? 'jumped' : 'steady';
   }
 
-  /** Sends one fixed step's controls and records `s`, the predicted state after them. */
-  afterStep(s: BoatState, controls: Controls): void {
-    this.corrector.afterStep(s, this.client.sendInput(controls), this.cfg.dt);
+  /** Sends one fixed step's controls (and cast-off, if this step releases the boat) and records `s`, the predicted state after them. */
+  afterStep(s: BoatState, controls: Controls, castOff: boolean): void {
+    const seq = this.client.sendInput(controls, castOff);
+    this.corrector.afterStep(s, seq, this.cfg.dt);
+    if (castOff) this.corrector.noteCastOff(seq);
   }
 
   /**
-   * Respawns the server's boat at a free slot. The local boat sails on until the first snapshot
+   * Respawns the server's boat at a free berth (else a spawn slot). The local boat sails on until the first snapshot
    * after the reset, which `sync` reports as 'respawned'.
    */
   reset(): void {
     this.client.sendReset();
     this.respawnSeq = this.client.nextSeq;
+    // The respawn returns the boat to a berth; a cast-off still in flight is moot.
+    this.corrector.forgetCastOff();
     this.corrector.reset(this.respawnSeq);
   }
 

@@ -5,12 +5,16 @@
  * All positions are logical-world coordinates under the caller's rebased land group.
  */
 import * as THREE from 'three';
+import { DEG } from '../../sim/frames';
+import { BERTHS } from '../../sim/mooring';
 import { BAY } from '../../sim/terrain';
 import { createWaveSample, defaultWaves, sampleWaves, type WaveConfig } from '../../sim/waves';
 import { faceted, merge, paint } from './parts';
 
 export interface FloatingHarbour {
   group: THREE.Group;
+  /** Per berth, indexed like BERTHS: [bow cleat, stern cleat] tops, moving with their finger. */
+  berthCleats: readonly (readonly [THREE.Object3D, THREE.Object3D])[];
   update(waves: WaveConfig, t: number): void;
 }
 
@@ -26,6 +30,7 @@ const RUB_RAIL = 0x655b4d;
 const METAL = 0x60696b;
 const PILE = 0x46423a;
 const ROPE = 0x625649;
+const RUBBER = 0x2c3134;
 const HULL_COLOURS = [0xb0bcb8, 0x8b9ea8, 0xbeb5a1, 0x9ca99a, 0xb3aaa1, 0x8d9eaa, 0xb7b6a7];
 // TUNING GUESS: attenuate short chop and cap dock/boat response in sheltered water.
 const DOCK_HEAVE = 0.28;
@@ -60,7 +65,7 @@ function cleat(parts: THREE.BufferGeometry[], x: number, z: number): void {
 }
 
 /** Top is local y=0: floats, rub rails, collars and cleats all move with this body. */
-function floatingDeck(length: number, width: number, dock: number, centreX: number): THREE.BufferGeometry {
+function floatingDeck(length: number, width: number, dock: number, centreX: number, centreZ: number): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   const planks = Math.ceil(length / 1);
   const run = length / planks;
@@ -85,6 +90,14 @@ function floatingDeck(length: number, width: number, dock: number, centreX: numb
   for (const end of [-1, 1]) parts.push(box(0.24, 0.26, width, RUB_RAIL, end * (length / 2 - 0.12), -0.07, 0));
   for (const boat of MOORINGS) if (boat.dock === dock) {
     for (const dx of [-1.25, 1.25]) cleat(parts, boat.x + dx - centreX, boat.side * (width / 2 - 0.3));
+  }
+  for (const berth of BERTHS) if (berth.pontoon === dock) {
+    const bow = Math.sin(berth.headingDeg * DEG), edge = Math.sign(berth.z - centreZ);
+    for (const dx of [-2.6, 2.6]) cleat(parts, berth.x + dx * bow - centreX, edge * (width / 2 - 0.3));
+    for (const dx of [-1, 1]) {
+      parts.push(paint(new THREE.CylinderGeometry(0.1, 0.1, 0.5, 8), RUBBER,
+        new THREE.Matrix4().makeTranslation(berth.x + dx - centreX, -0.3, edge * (width / 2 + 0.26))));
+    }
   }
   return faceted(merge(parts));
 }
@@ -159,7 +172,7 @@ export function createFloatingHarbour(material: THREE.Material): FloatingHarbour
     const x0 = r.x0 - QUAY_OVERLAP + GANGWAY_RUN;
     const length = r.x1 - x0, width = r.z1 - r.z0;
     const x = (x0 + r.x1) / 2, z = (r.z0 + r.z1) / 2;
-    const body = new THREE.Mesh(floatingDeck(length, width, index, x), material);
+    const body = new THREE.Mesh(floatingDeck(length, width, index, x, z), material);
     body.name = `floating-finger:${index}`;
     body.position.set(x, FREEBOARD, z);
     const gangway = new THREE.Mesh(rampGeometry, material);
@@ -175,6 +188,18 @@ export function createFloatingHarbour(material: THREE.Material): FloatingHarbour
   const piles = new THREE.Mesh(faceted(merge(pileParts)), material);
   piles.name = 'fixed-guide-piles';
   group.add(piles);
+  // Cleat tops sit at y 0.26 above the deck (see cleat); anchors ride the finger's wave motion.
+  const berthCleats = BERTHS.map((berth) => {
+    const dock = docks[berth.pontoon]!;
+    const bow = Math.sin(berth.headingDeg * DEG), edge = Math.sign(berth.z - dock.z);
+    const anchor = (dx: number) => {
+      const point = new THREE.Object3D();
+      point.position.set(berth.x + dx * bow - dock.x, 0.26, edge * (dock.width / 2 - 0.3));
+      dock.body.add(point);
+      return point;
+    };
+    return [anchor(2.6), anchor(-2.6)] as const;
+  });
 
   const hullGeometry = dinghyGeometry();
   const hulls = new THREE.InstancedMesh(hullGeometry, material, MOORINGS.length);
@@ -263,5 +288,5 @@ export function createFloatingHarbour(material: THREE.Material): FloatingHarbour
   };
   // Populate gangway attachment and ropes before the first frame, using shared flat-water defaults.
   update(defaultWaves(), 0);
-  return { group, update };
+  return { group, berthCleats, update };
 }

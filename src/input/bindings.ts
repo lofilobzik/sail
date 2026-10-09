@@ -9,6 +9,7 @@ export const BINDINGS = {
   reading: { keys: { hold: 'KeyF' }, action: 'Bearing, or wake speed', developer: false },
   binoculars: { keys: { hold: 'KeyB' }, action: 'Binoculars', developer: false },
   reckon: { keys: { press: 'KeyR' }, action: 'Plot on the chart', developer: false },
+  castOff: { keys: { press: 'KeyE' }, action: 'Cast off from the berth', developer: false },
   mute: { keys: { toggle: 'KeyM' }, action: 'Mute', developer: false },
   challenges: { keys: { toggle: 'KeyJ' }, action: 'Challenge log', developer: false },
   menu: { keys: { toggle: 'Escape' }, action: 'Menu', developer: false },

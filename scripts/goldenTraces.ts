@@ -14,6 +14,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  BERTHS,
   DEG,
   browserConfig,
   buildBoat,
@@ -21,6 +22,7 @@ import {
   defaultWaves,
   getWind,
   initialState,
+  mooredAt,
   sampleWaves,
   setWaveLayers,
   setWaveParameters,
@@ -289,6 +291,10 @@ function scenarios(): Scenario[] {
     {
       name: 'waves', description: 'browserConfig(1) with gusts off: waves sized by the wind, bay seabed on',
       config: wavesNoGusts, initial: reachStart, steps: 1800, controls: reach,
+    },
+    {
+      name: 'moored', description: 'browserConfig(1), gusts off, held at berth 0 with the sheet eased: heel and pitch on the waves, no translation',
+      config: wavesNoGusts, initial: mooredAt(BERTHS[0]!, buildBoat(), wavesNoGusts), steps: 1800, controls: () => control(0, 1, 0),
     },
     {
       name: 'waves-steep', description: '16 kn, 2 s steep sea at the steepness limit, quartering: pitch clamp',
