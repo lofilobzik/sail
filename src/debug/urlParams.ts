@@ -1,4 +1,5 @@
 /** The page's `?param` checking aids, parsed once into typed values. `main.ts` applies them. */
+import type { Quality } from '../render/quality';
 
 export interface DevOptions {
   /** ?gusts=0 keeps the wind constant. */
@@ -31,6 +32,8 @@ export interface DevOptions {
   detailFade: boolean;
   /** ?perf=1 runs the frame-cost benchmark. */
   perf: boolean;
+  /** ?quality=low|high overrides the detected rendering preset. */
+  quality: Quality | null;
 }
 
 export function parseDevOptions(params: URLSearchParams): DevOptions {
@@ -41,6 +44,7 @@ export function parseDevOptions(params: URLSearchParams): DevOptions {
   const look = params.get('look')?.split(',').map(Number);
   const start = params.get('start')?.split(',').map(Number);
   const fly = params.get('fly')?.split(',').map(Number);
+  const quality = params.get('quality');
   return {
     gusts: params.get('gusts') !== '0',
     waves: params.get('waves') !== '0',
@@ -61,5 +65,6 @@ export function parseDevOptions(params: URLSearchParams): DevOptions {
       ? { x: fly[0]!, z: fly[1]!, height: fly[2]!, bearingDeg: fly[3] ?? 0, pitchDeg: fly[4] ?? 0 } : null,
     detailFade: params.get('detailfade') !== '0',
     perf: params.get('perf') === '1',
+    quality: quality === 'low' || quality === 'high' ? quality : null,
   };
 }

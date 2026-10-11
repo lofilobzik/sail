@@ -28,11 +28,15 @@ import type { ChallengeStatus } from './net/protocol';
 import { SKY } from './render/skyModel';
 import { BAY } from './sim/terrain';
 import { BINDINGS, keyLabels } from './input/bindings';
+import { GPU_LABELS } from './debug/gpuTimer';
+import { QUALITY, detectQuality } from './render/quality';
 
 const START_SPEED = 1; // TUNING GUESS: initial boat speed, m/s
 const FRAME_SMOOTHING = 0.05; // exponential smoothing of the frame-time readout
 const BENCH_FRAMES = 200; // ?perf=1: frames rendered back to back, each synchronised with a 1-pixel readback
 const BENCH_DELAY_MS = 2000;
+const PERF_SETTLE_MS = 1000; // ?perf=1: normal frames between the bench and the recorded window
+const PERF_FRAMES = 600; // ?perf=1: normal rAF frames recorded for the perf: line
 
 /**
  * Offline start: moored at the first Westcove berth (data/bay.json `harbour.berths`), waiting for E
@@ -75,7 +79,10 @@ const fixed = new FixedStep(cfg.dt);
 
 const navigation = new Navigation();
 const memory = new MemoryReadout();
-const view = new SceneView(boat, cfg.waves, cfg.env, cfg.wind, navigation);
+// Graphics: ?quality= for checking, else the player's menu choice, else detected from the GPU.
+const detectedQuality = detectQuality();
+const quality = opts.quality ?? (prefs.value.graphics === 'auto' ? detectedQuality : prefs.value.graphics);
+const view = new SceneView(boat, cfg.waves, cfg.env, cfg.wind, navigation, quality);
 if (!opts.wake) view.wake.enabled = false;
 
 let sunElevation = clamp(opts.sunElevation ?? SKY.sunElevationDeg, -10, 90);
@@ -159,6 +166,14 @@ const menu = new Menu({
   muted: prefs.value.muted,
   onVolume: (volume) => prefs.set({ volume }),
   onMuted: (muted) => prefs.set({ muted }),
+  lookSensitivity: prefs.value.lookSensitivity,
+  onLookSensitivity: (lookSensitivity) => prefs.set({ lookSensitivity }),
+  graphics: prefs.value.graphics,
+  detectedGraphics: detectedQuality,
+  onGraphics: (graphics) => {
+    prefs.set({ graphics });
+    location.reload();
+  },
   onRespawn: respawn,
   onShowGuidance: () => guide.reset(),
   sailor: server
@@ -171,6 +186,7 @@ const menu = new Menu({
       }
     : undefined,
 });
+look.playerSensitivity = prefs.value.lookSensitivity;
 // E: cast off from the berth on the next fixed step (fly mode uses E for up, so cockpit only).
 const CAST_OFF_PROMPT = `${keyLabels(BINDINGS.castOff.keys)} — Cast off`;
 window.addEventListener('keydown', (e) => {
@@ -215,6 +231,7 @@ let savedSail = prefs.value.sail;
 prefs.subscribe((p) => {
   sound.setVolume(p.volume);
   sound.setMuted(p.muted);
+  look.playerSensitivity = p.lookSensitivity;
   menu.setMuted(p.muted);
   // Only a changed sail choice acts, so a ?sail= override survives unrelated changes.
   if (p.sail !== savedSail && knownSail(p.sail)) {
@@ -286,6 +303,9 @@ let frameMs = 16.7;
 let cpuMs = 0;
 let lastPose: RenderPose | null = null;
 let lastRemotes: ReadonlyMap<number, RemotePose> | undefined;
+const hudBuffer = new Vector2(); // drawing buffer size for the H overlay, reused every frame
+/** ?perf=1: per-frame rAF interval and frame() CPU time over the recorded window. */
+let perfWindow: { frame: number[]; cpu: number[]; done: () => void } | null = null;
 function frame(now: number): void {
   const t0 = performance.now();
   const frameSeconds = (now - last) / 1000;
@@ -356,8 +376,17 @@ function frame(now: number): void {
   overlay.update(diagnostics, curr);
   if (server && overlay.visible) overlay.setNetwork(server.describe());
   const info = view.renderer.info.render;
-  hud.update(diagnostics, curr, { frameMs, cpuMs, triangles: info.triangles, calls: info.calls }, now);
+  view.renderer.getDrawingBufferSize(hudBuffer);
+  hud.update(diagnostics, curr, {
+    frameMs, cpuMs, gpu: view.gpu.lastFrame, quality: view.quality, trees: QUALITY[view.quality].trees,
+    triangles: info.triangles, calls: info.calls, width: hudBuffer.x, height: hudBuffer.y,
+  }, now);
   cpuMs += (performance.now() - t0 - cpuMs) * FRAME_SMOOTHING;
+  if (perfWindow) {
+    perfWindow.frame.push(frameSeconds * 1000);
+    perfWindow.cpu.push(performance.now() - t0);
+    if (perfWindow.frame.length === PERF_FRAMES) perfWindow.done();
+  }
 
   requestAnimationFrame(frame);
 }
@@ -366,6 +395,8 @@ requestAnimationFrame(frame);
 
 // Checking aid: ?perf=1 renders BENCH_FRAMES frames back to back, each followed by a 1-pixel
 // readPixels (which waits for the GPU, unlike gl.finish in Chrome), and logs the mean frame cost.
+// After PERF_SETTLE_MS more, it records PERF_FRAMES normal frames and logs one perf: line with
+// frame, CPU and GPU (timer query) percentiles.
 if (opts.perf) {
   setTimeout(() => {
     if (!lastPose) return;
@@ -376,8 +407,41 @@ if (opts.perf) {
       view.render(lastPose, lastRemotes);
       gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
     }
-    const ms = (performance.now() - t0) / BENCH_FRAMES;
+    const benchMs = (performance.now() - t0) / BENCH_FRAMES;
     const size = view.renderer.getDrawingBufferSize(new Vector2());
-    console.log(`bench: ${ms.toFixed(2)} ms/frame at ${size.x}x${size.y}, ${view.renderer.info.render.triangles} triangles, ${view.renderer.info.render.calls} draw calls, ${view.remoteBoats.count} remote boats`);
+    console.log(`bench: ${benchMs.toFixed(2)} ms/frame at ${size.x}x${size.y}, ${view.renderer.info.render.triangles} triangles, ${view.renderer.info.render.calls} draw calls, ${view.remoteBoats.count} remote boats`);
+    setTimeout(() => void recordPerf(benchMs), PERF_SETTLE_MS);
   }, BENCH_DELAY_MS);
+}
+
+async function recordPerf(benchMs: number): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  const samples = { frame: [] as number[], cpu: [] as number[], done: resolve };
+  const gpuFrames = view.gpu.recordFrames(PERF_FRAMES);
+  perfWindow = samples;
+  await promise;
+  perfWindow = null;
+  const info = view.renderer.info.render;
+  const size = view.renderer.getDrawingBufferSize(new Vector2());
+  const frames = await gpuFrames;
+  // Nearest-rank percentile of an ascending array.
+  const pct = (sorted: number[], p: number) => sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)]!;
+  const ms = (v: number, digits = 2) => v.toFixed(digits);
+  const frame = [...samples.frame].sort((a, b) => a - b);
+  const cpu = [...samples.cpu].sort((a, b) => a - b);
+  let gpu = 'gpu n/a';
+  if (view.gpu.supported) {
+    const valid = frames.filter((f) => f.valid);
+    const totals = valid.map((f) => f.total).sort((a, b) => a - b);
+    const mean = (values: number[]) => values.reduce((s, v) => s + v, 0) / Math.max(1, values.length);
+    const labels = GPU_LABELS.map((l) => `${l} ${ms(mean(valid.map((f) => f.ms[l]!)), 3)}`).join(' ');
+    gpu = valid.length === 0
+      ? `gpu total n/a [no valid frames] valid 0/${PERF_FRAMES}`
+      : `gpu total mean ${ms(mean(totals), 3)} p50 ${ms(pct(totals, 0.5))} p95 ${ms(pct(totals, 0.95))} p99 ${ms(pct(totals, 0.99))} max ${ms(totals[totals.length - 1]!)} ms [${labels} mean ms] valid ${valid.length}/${PERF_FRAMES}`;
+  }
+  console.log(
+    `perf: bench ${ms(benchMs)} ms · frame p50 ${ms(pct(frame, 0.5))} p95 ${ms(pct(frame, 0.95))} p99 ${ms(pct(frame, 0.99))} max ${ms(frame[frame.length - 1]!)} ms · ` +
+    `cpu p50 ${ms(pct(cpu, 0.5))} p95 ${ms(pct(cpu, 0.95))} max ${ms(cpu[cpu.length - 1]!)} ms · ${gpu} · ` +
+    `${(info.triangles / 1000).toFixed(1)}k tris · ${info.calls} calls · ${size.x}x${size.y} · quality ${view.quality}`,
+  );
 }

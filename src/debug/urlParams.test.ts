@@ -23,6 +23,7 @@ describe('parseDevOptions', () => {
       fly: null,
       detailFade: true,
       perf: false,
+      quality: null,
     });
   });
 

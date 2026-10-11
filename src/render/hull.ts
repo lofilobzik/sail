@@ -142,6 +142,10 @@ function cockpitWell(layout: BoatLayout): THREE.BufferGeometry {
   return geometry;
 }
 
+/** The cockpit opening, closed at the coaming rim: the cap's depth hides the water inside the well. */
+function cockpitCap(layout: BoatLayout): THREE.BufferGeometry {
+  return mapToBody(new THREE.ShapeGeometry(new THREE.Shape(cockpitOutline(layout))), (x, y) => [x, y, layout.sheerAt(x) + details.coaming.height]);
+}
 
 export function createHull(layout: BoatLayout): THREE.Group {
   const g = new THREE.Group();
@@ -154,5 +158,14 @@ export function createHull(layout: BoatLayout): THREE.Group {
   const floorOutline = cockpitOutline(layout, -details.coaming.floorRadius);
   const floor = mapToBody(new THREE.ShapeGeometry(new THREE.Shape(floorOutline)), (x, y) => [x, y, layout.cockpit.floorZ]);
   g.add(new THREE.Mesh(floor, gelcoatSurface(layout, floor, true)));
+  // Keeps the water out of the cockpit: depth only, drawn after the opaque boats (renderOrder 0) and
+  // before the water (1), so water behind the opening fails the depth test. Transparent surfaces
+  // behind it would be hidden too; none sits inside the well.
+  const cap = new THREE.Mesh(cockpitCap(layout), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, side: THREE.DoubleSide }));
+  cap.name = 'cockpit-water-mask';
+  cap.renderOrder = 0.5;
+  // Not a surface: deck-height rays (rig.ts) and look targets pass through it.
+  cap.raycast = () => {};
+  g.add(cap);
   return g;
 }

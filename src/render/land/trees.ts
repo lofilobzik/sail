@@ -3,8 +3,10 @@
  * woods and in the forest belt behind Westcove (forest.ts), with meadow clearings, thinner near the
  * beach and the towns, and never on the beach, bare rock, steep ground, water, roads, house plots or
  * the harbour works. Conifers are narrow, dark, fir-like and dominate the hills and the belt; broadleaves
- * fill the lowlands. Drawn as InstancedMeshes per 500 m square (so off-screen forest is skipped), each
- * a LOD with the full model near and a trunkless crown far. Seeded from BAY.seed.
+ * fill the lowlands. Drawn as InstancedMeshes per 500 m square (so off-screen forest is skipped), with
+ * the full model near and a trunkless crown far, switched by TreeField from the eye position (no
+ * per-frame LOD traversal); the split-depth near pass draws only the near squares within its reach.
+ * Seeded from BAY.seed.
  */
 import * as THREE from 'three';
 import { BAY, LANDMARKS, fbm, type TerrainGrid } from '../../sim/terrain';
@@ -40,6 +42,9 @@ const CONIFER_SHARE = 0.45; // lowland share of conifers; woods, height and the 
 const CHUNK = 500; // m: trees are grouped per square of this size
 const FAR_DISTANCE = 1000; // m from a chunk's centre: the trunkless far models beyond
 const LOD_HYSTERESIS = 0.15; // fraction of the distance, so a square at the boundary never flickers
+const LOD_REFRESH_DISTANCE = 20; // m the eye moves before the near/far choice is refreshed
+// m: the near pass (15.3 m of view depth, scene.ts) plus a generous widest crown radius.
+const NEAR_TREE_REACH = 33;
 
 /** Colours (sRGB), VISUAL ESTIMATE. */
 const TRUNK = 0x5a4634;
@@ -130,48 +135,96 @@ export function placeTrees(grid: TerrainGrid, shore: Float32Array, houses: Footp
   return trees;
 }
 
+interface TreeChunk {
+  /** Logical-world corner (x0, z0) and centre of the CHUNK square. */
+  x0: number;
+  z0: number;
+  centreX: number;
+  centreZ: number;
+  near: THREE.InstancedMesh;
+  far: THREE.InstancedMesh;
+  isNear: boolean;
+}
+
 /**
- * Trees as LOD objects per CHUNK square and kind: the full model near, a trunkless crown far. Instance
- * matrices are relative to the chunk's centre, where the LOD object sits, so the camera distance
- * used to pick the level is the chunk's.
+ * Trees per CHUNK square and kind: the full model near, a trunkless crown far. Instance matrices are
+ * relative to the chunk's centre, where both meshes sit, so the eye distance picking the model is the
+ * chunk's.
  */
-export function createTreeMeshes(trees: readonly Tree[], material: THREE.Material): THREE.LOD[] {
-  const random = seededRandom(BAY.seed * 32452843 + 7);
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
-  const position = new THREE.Vector3(), scale = new THREE.Vector3();
-  const groups = new Map<string, Tree[]>();
-  for (const t of trees) {
-    const key = `${Math.floor(t.x / CHUNK)},${Math.floor(t.z / CHUNK)},${t.conifer ? 1 : 0}`;
-    const list = groups.get(key);
-    if (list) list.push(t);
-    else groups.set(key, [t]);
-  }
-  const shared = {
-    near: [broadleafGeometry(), coniferGeometry()],
-    far: [farBroadleafGeometry(), farConiferGeometry()],
-  };
-  const lods: THREE.LOD[] = [];
-  for (const [key, group] of groups) {
-    const [ix, iz, kind] = key.split(',').map(Number) as [number, number, number];
-    const centreX = (ix + 0.5) * CHUNK, centreZ = (iz + 0.5) * CHUNK;
-    const lod = new THREE.LOD();
-    lod.position.set(centreX, 0, centreZ);
-    // One tint per tree, shared by both levels so a tree keeps its shade when the model swaps.
-    const tints = group.map((t) => new THREE.Color(
-      1 + (random() * 2 - 1) * TINT, 1 + (random() * 2 - 1) * TINT, 1 + (random() * 2 - 1) * TINT * 0.6,
-    ).multiplyScalar(t.shade));
-    for (const [level, geometry] of [[0, shared.near[kind]!], [FAR_DISTANCE, shared.far[kind]!]] as const) {
-      const mesh = new THREE.InstancedMesh(geometry, material, group.length);
-      group.forEach((t, i) => {
-        // Sink the trunk a little so it never floats on the triangulated slope.
-        m.compose(position.set(t.x - centreX, t.y - 0.4, t.z - centreZ), q.setFromAxisAngle(up, t.yaw), scale.set(t.width, t.height, t.width));
-        mesh.setMatrixAt(i, m);
-        mesh.setColorAt(i, tints[i]!);
-      });
-      mesh.computeBoundingSphere();
-      lod.addLevel(mesh, level, level > 0 ? LOD_HYSTERESIS : 0);
+export class TreeField {
+  readonly objects: THREE.InstancedMesh[] = [];
+  private readonly chunks: TreeChunk[] = [];
+  private lastX = NaN;
+  private lastZ = NaN;
+
+  constructor(trees: readonly Tree[], material: THREE.Material) {
+    const random = seededRandom(BAY.seed * 32452843 + 7);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+    const position = new THREE.Vector3(), scale = new THREE.Vector3();
+    const groups = new Map<string, Tree[]>();
+    for (const t of trees) {
+      const key = `${Math.floor(t.x / CHUNK)},${Math.floor(t.z / CHUNK)},${t.conifer ? 1 : 0}`;
+      const list = groups.get(key);
+      if (list) list.push(t);
+      else groups.set(key, [t]);
     }
-    lods.push(lod);
+    const shared = {
+      near: [broadleafGeometry(), coniferGeometry()],
+      far: [farBroadleafGeometry(), farConiferGeometry()],
+    };
+    for (const [key, group] of groups) {
+      const [ix, iz, kind] = key.split(',').map(Number) as [number, number, number];
+      const centreX = (ix + 0.5) * CHUNK, centreZ = (iz + 0.5) * CHUNK;
+      // One tint per tree, shared by both models so a tree keeps its shade when the model swaps.
+      const tints = group.map((t) => new THREE.Color(
+        1 + (random() * 2 - 1) * TINT, 1 + (random() * 2 - 1) * TINT, 1 + (random() * 2 - 1) * TINT * 0.6,
+      ).multiplyScalar(t.shade));
+      const [near, far] = [shared.near[kind]!, shared.far[kind]!].map((geometry) => {
+        const mesh = new THREE.InstancedMesh(geometry, material, group.length);
+        mesh.position.set(centreX, 0, centreZ);
+        group.forEach((t, i) => {
+          // Sink the trunk a little so it never floats on the triangulated slope.
+          m.compose(position.set(t.x - centreX, t.y - 0.4, t.z - centreZ), q.setFromAxisAngle(up, t.yaw), scale.set(t.width, t.height, t.width));
+          mesh.setMatrixAt(i, m);
+          mesh.setColorAt(i, tints[i]!);
+        });
+        mesh.computeBoundingSphere();
+        this.objects.push(mesh);
+        return mesh;
+      }) as [THREE.InstancedMesh, THREE.InstancedMesh];
+      near.visible = false;
+      this.chunks.push({ x0: ix * CHUNK, z0: iz * CHUNK, centreX, centreZ, near, far, isNear: false });
+    }
   }
-  return lods;
+
+  /** Picks each square's model from the logical eye position (x, z); refreshes every 20 m of travel. */
+  update(x: number, z: number): void {
+    if (Math.hypot(x - this.lastX, z - this.lastZ) < LOD_REFRESH_DISTANCE) return;
+    this.lastX = x;
+    this.lastZ = z;
+    for (const c of this.chunks) {
+      const d = Math.hypot(c.centreX - x, c.centreZ - z);
+      c.isNear = d < FAR_DISTANCE * (c.isNear ? 1 + LOD_HYSTERESIS : 1);
+      c.near.visible = c.isNear;
+      c.far.visible = !c.isNear;
+    }
+  }
+
+  /** Near pass from the logical eye (x, z): only near models of squares within NEAR_TREE_REACH. */
+  beginNearPass(x: number, z: number): void {
+    for (const c of this.chunks) {
+      c.far.visible = false;
+      const dx = Math.max(c.x0 - x, 0, x - (c.x0 + CHUNK));
+      const dz = Math.max(c.z0 - z, 0, z - (c.z0 + CHUNK));
+      c.near.visible = dx * dx + dz * dz <= NEAR_TREE_REACH * NEAR_TREE_REACH;
+    }
+  }
+
+  /** Restores the near/far choice after the near pass. */
+  endNearPass(): void {
+    for (const c of this.chunks) {
+      c.near.visible = c.isNear;
+      c.far.visible = !c.isNear;
+    }
+  }
 }

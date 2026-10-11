@@ -11,6 +11,8 @@ import type { ChallengeStatus } from '../net/protocol';
 import { CHALLENGES } from './challengeInfo';
 import { VERSION_LABEL } from '../version';
 import { button, heading, installPanelStyle, row } from './panel';
+import { LOOK_SENSITIVITY_MAX, LOOK_SENSITIVITY_MIN } from './prefs';
+import type { Quality } from '../render/quality';
 
 // Sailing controls and developer tools come from the same bindings used by their input handlers.
 
@@ -24,6 +26,14 @@ export interface MenuOptions {
   muted: boolean;
   onVolume(volume: number): void;
   onMuted(muted: boolean): void;
+  /** Mouse-look speed multiplier (prefs.ts LOOK_SENSITIVITY_MIN..MAX). */
+  lookSensitivity: number;
+  onLookSensitivity(sensitivity: number): void;
+  /** The saved graphics choice and what 'auto' picked on this machine. */
+  graphics: 'auto' | Quality;
+  detectedGraphics: Quality;
+  /** A new graphics choice; the renderer is built at load, so this reloads the page. */
+  onGraphics(graphics: 'auto' | Quality): void;
   /** Respawns the boat (on a server, in the shared room). */
   onRespawn(): void;
   onShowGuidance(): void;
@@ -79,6 +89,34 @@ export class Menu {
     const muteLabel = document.createElement('label');
     muteLabel.append(this.muteBox, 'Mute');
     panel.appendChild(row('Sound', this.volumeSlider, muteLabel));
+
+    // Logarithmic, so the default sits in the middle and halving or doubling is the same distance.
+    const look = document.createElement('input');
+    look.type = 'range';
+    look.min = String(Math.log2(LOOK_SENSITIVITY_MIN));
+    look.max = String(Math.log2(LOOK_SENSITIVITY_MAX));
+    look.step = '0.05';
+    look.value = String(Math.log2(opts.lookSensitivity));
+    const lookValue = document.createElement('label');
+    const showLook = (s: number) => { lookValue.textContent = `×${s.toFixed(2)}`; };
+    showLook(opts.lookSensitivity);
+    look.addEventListener('input', () => {
+      const s = 2 ** Number(look.value);
+      showLook(s);
+      opts.onLookSensitivity(s);
+    });
+    panel.appendChild(row('Look', look, lookValue));
+
+    const graphics = document.createElement('select');
+    graphics.add(new Option(`Auto (${opts.detectedGraphics})`, 'auto'));
+    graphics.add(new Option('High', 'high'));
+    graphics.add(new Option('Low: no trees, no antialiasing', 'low'));
+    graphics.value = opts.graphics;
+    graphics.addEventListener('change', () => {
+      const v = graphics.value;
+      opts.onGraphics(v === 'low' || v === 'high' ? v : 'auto');
+    });
+    panel.appendChild(row('Graphics', graphics));
 
     const select = this.sailSelect;
     this.fillSails(opts.sailDesign);

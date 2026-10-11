@@ -12,3 +12,6 @@ WATCHDOG.yml
 docs/*.pdf
 docs/PrinciplesYachtDesign.txt
 omp-browser-recording-*/
+
+# Other
+.handoffs/

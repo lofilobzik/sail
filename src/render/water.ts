@@ -1,6 +1,6 @@
 /** World-anchored Gerstner water, tinted over baked shallows; CPU samples and this shader share waves.ts. */
 import * as THREE from 'three';
-import { gerstnerGLSL, waveAmplitude, wavePhaseAt, WAVE_PARAMETERS, type WaveConfig } from '../sim/waves';
+import { gerstnerGLSL, rippleCutoff, waveAmplitude, wavePhaseAt, WAVE_PARAMETERS, type WaveConfig } from '../sim/waves';
 import type { Vec2 } from '../sim/frames';
 import { terrainGrid } from '../sim/terrain';
 import type { WakeView } from './wake';
@@ -8,7 +8,6 @@ import { WAKE, wakeFrameGLSL, wakeShadeGLSL } from './wake/kelvin';
 import { skyGLSL, type SkyView } from './sky';
 import { gustGLSL, type GustMap } from './gustMap';
 import { SKY } from './skyModel';
-import type { WaterExclusion } from './waterExclusion';
 
 const WATER_COLOR = 0x1f4f6e; // TUNING GUESS: deep-water body colour
 const WATER_REFRACTIVE_INDEX = 1.333; // Water/air index; https://en.wikipedia.org/wiki/Refractive_index
@@ -83,14 +82,19 @@ export interface WaterView {
   nearMesh: THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>;
   /** Centres `nearMesh` under the render-local point (x, z), snapped to its cells so the waves do not swim. */
   placeNear(x: number, z: number): void;
-  /** The patch is centred at render-local zero; origin stays in logical world coordinates. */
+  /** Centres `mesh` under the render-local point (x, z) (the boat), snapped to its cells like `placeNear`. */
+  placeFar(x: number, z: number): void;
+  /** Sun, sky, wave and time uniforms; `origin` is the logical position of render-local zero. */
   update(origin: Readonly<Vec2>, t: number): void;
 }
 
-const NEAR_PATCH_SIZE = 40; // TUNING GUESS, m: covers the 8 m close pass at the cockpit's wide FOV
+// TUNING GUESS, m: covers the 15.3 m close pass at the cockpit's wide FOV (the frustum corner rays reach
+// about 2.1 times the view depth sideways, so about 33 m; plus margin).
+const NEAR_PATCH_SIZE = 70;
 const NEAR_PATCH_INNER_SIZE = 8; // TUNING GUESS, m: keep the original fine patch under the camera
-const NEAR_PATCH_SEGMENTS = 96; // TUNING GUESS: grow outer cells rather than tessellating all 40 m finely
-const NEAR_PATCH_CELL = 0.2; // m: the inner patch's cell size (data/waves.json waterInnerSize / waterInnerSegments)
+const NEAR_PATCH_SEGMENTS = 128; // TUNING GUESS: grow outer cells rather than tessellating all 70 m finely
+// m: the fine cells of both water meshes; whole-cell placement keeps the grid fixed in the world.
+const WATER_CELL = WAVE_PARAMETERS.waterInnerSize / WAVE_PARAMETERS.waterInnerSegments;
 
 /** Uniform near-boat cells; smoothly growing outer cells cover the fog horizon. */
 function createWaterGrid(
@@ -156,10 +160,11 @@ function createWaterGrid(
 
 export function createWater(
   cfg: WaveConfig, sky: SkyView, gusts: GustMap, sun: THREE.DirectionalLight,
-  hemisphere: THREE.HemisphereLight, wake: WakeView, exclusion: WaterExclusion,
+  hemisphere: THREE.HemisphereLight, wake: WakeView,
 ): WaterView {
   let components = cfg.components;
-  const waveCode = gerstnerGLSL(components);
+  const bigCount = WAVE_PARAMETERS.bigWaves.length;
+  const waveCode = gerstnerGLSL(components, bigCount);
   const wakeShade = wakeShadeGLSL();
   const shallows = createShallowsTexture();
   const material = new THREE.ShaderMaterial({
@@ -171,6 +176,8 @@ export function createWater(
         waveScale: { value: waveAmplitude(cfg) },
         waveShape: { value: components.map((w) => new THREE.Vector4(w.dx, w.dz, w.k, w.amplitude)) },
         waveMotion: { value: components.map((w) => new THREE.Vector2(w.phase, w.choppiness)) },
+        // Footprint beyond which every ripple is filtered out exactly (waves.ts rippleCutoff).
+        waveRippleCutoff: { value: rippleCutoff(components, bigCount) },
         waterColour: { value: new THREE.Color(WATER_COLOR) },
         shallowSand: { value: new THREE.Color(SHALLOW_SAND) },
         shallowTurquoise: { value: new THREE.Color(SHALLOW_TURQUOISE) },
@@ -183,9 +190,11 @@ export function createWater(
         hemisphereSky: { value: hemisphere.color.clone().multiplyScalar(hemisphere.intensity) },
         hemisphereGround: { value: hemisphere.groundColor.clone().multiplyScalar(hemisphere.intensity) },
       },
-    ]), wake.uniforms, sky.uniforms, gusts.uniforms, exclusion.uniforms, {
+    ]), wake.uniforms, sky.uniforms, gusts.uniforms, {
       // By reference: merge would clone the texture and upload it twice.
       shallowsTexture: { value: shallows.texture },
+      skyReflectionClear: { value: sky.reflectionClear.texture },
+      skyReflectionCloudy: { value: sky.reflectionCloudy.texture },
       shallowsBounds: { value: shallows.bounds },
       // Logical world position of render-local zero, for the world-anchored seabed lookup.
       renderOrigin: { value: new THREE.Vector2() },
@@ -228,6 +237,8 @@ export function createWater(
       uniform float waterTime;
       uniform float waveHeight;
       uniform sampler2D shallowsTexture;
+      uniform samplerCube skyReflectionClear;
+      uniform samplerCube skyReflectionCloudy;
       uniform vec4 shallowsBounds; // world corner x, z; 1 / world width, 1 / world depth
       uniform vec2 renderOrigin;
       uniform vec3 sunDirection;
@@ -244,7 +255,6 @@ export function createWater(
       ${wakeShade}
       ${skyGLSL()}
       ${gustGLSL()}
-      ${exclusion.fragmentGLSL}
       void main() {
         // Fragment normals retain detail that the distant geometry cannot resolve.
         // Pixel-footprint filtering prevents that detail aliasing at grazing angles.
@@ -282,9 +292,9 @@ export function createWater(
         // Schlick Fresnel: water/air normal-incidence reflectance from their indices.
         float fresnel = ${WATER_F0.toExponential(16)} + (1.0 - ${WATER_F0.toExponential(16)})
           * pow(1.0 - max(dot(normal, view), 0.0), 5.0);
-        // The same sky function as the dome. Clouds fade in with the reflectance (TUNING GUESS,
-        // data/sky.json) so steep, weakly reflecting views skip the cloud noise.
-        vec3 reflectedSky = skyRadiance(reflection, ${SKY.waterCloudOctaves}, 0.0,
+        // The same sky as the dome, through its reflection cubemaps (sky.ts). Clouds fade in with the
+        // reflectance (TUNING GUESS, data/sky.json) so steep, weakly reflecting views show the clear sky.
+        vec3 reflectedSky = mix(textureCube(skyReflectionClear, reflection).rgb, textureCube(skyReflectionCloudy, reflection).rgb,
           smoothstep(${SKY.waterCloudFresnelFrom}, ${SKY.waterCloudFresnelFull}, fresnel));
         vec3 ambient = mix(hemisphereGround, hemisphereSky, normal.y * 0.5 + 0.5);
         // Shallows: one filtered fetch of the baked seabed, in logical world coordinates. Outside
@@ -353,13 +363,8 @@ export function createWater(
         // water meets the horizon without a seam.
         float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
         if (fogFactor > 0.0) {
-          vec2 away = -view.xz;
-          vec3 horizonDirection = vec3(away.x, 0.0, away.y) / max(length(away), 1e-4);
-          colour = mix(colour, skyRadiance(horizonDirection, 0, 0.0, 0.0), fogFactor);
+          colour = mix(colour, skyHorizonColour(-view.xz), fogFactor);
         }
-        // Test the rasterized, displaced surface, not the undisplaced Gerstner label.
-        // Keep derivatives above unconditional; the discard changes neither outside sea nor its depth.
-        if (cockpitContains(waterPosition)) discard;
         gl_FragColor = vec4(colour, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -369,16 +374,22 @@ export function createWater(
   const mesh = new THREE.Mesh(createWaterGrid(), material);
   // Shader displacement and a recentered horizon invalidate CPU frustum bounds.
   mesh.frustumCulled = false;
+  // After the opaque boats and the cockpit cap (renderOrder 0.5), whose depth masks the water.
+  mesh.renderOrder = 1;
   const nearMesh = new THREE.Mesh(createWaterGrid(
-    NEAR_PATCH_SIZE, NEAR_PATCH_SEGMENTS, NEAR_PATCH_INNER_SIZE, NEAR_PATCH_INNER_SIZE / NEAR_PATCH_CELL,
+    NEAR_PATCH_SIZE, NEAR_PATCH_SEGMENTS, NEAR_PATCH_INNER_SIZE, NEAR_PATCH_INNER_SIZE / WATER_CELL,
   ), material);
   nearMesh.frustumCulled = false;
+  nearMesh.renderOrder = 1;
   nearMesh.visible = false;
   return {
     mesh,
     nearMesh,
     placeNear(x, z) {
-      nearMesh.position.set(Math.round(x / NEAR_PATCH_CELL) * NEAR_PATCH_CELL, 0, Math.round(z / NEAR_PATCH_CELL) * NEAR_PATCH_CELL);
+      nearMesh.position.set(Math.round(x / WATER_CELL) * WATER_CELL, 0, Math.round(z / WATER_CELL) * WATER_CELL);
+    },
+    placeFar(x, z) {
+      mesh.position.set(Math.round(x / WATER_CELL) * WATER_CELL, 0, Math.round(z / WATER_CELL) * WATER_CELL);
     },
     update(origin, t) {
       const u = material.uniforms;
@@ -394,6 +405,7 @@ export function createWater(
           const w = components[i]!;
           shapes[i]!.set(w.dx, w.dz, w.k, w.amplitude);
         }
+        material.uniforms.waveRippleCutoff!.value = rippleCutoff(components, bigCount);
       }
       const motions = material.uniforms.waveMotion!.value as THREE.Vector2[];
       for (let i = 0; i < components.length; i++) {

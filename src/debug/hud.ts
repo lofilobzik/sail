@@ -7,6 +7,7 @@
 import { DEG, KNOT, wrap2Pi, worldToBody, type BoatModel, type BoatState, type Diagnostics } from '../sim';
 import { isTypingTarget } from '../input/controls';
 import { BINDINGS } from '../input/bindings';
+import { GPU_LABELS, type GpuFrame } from './gpuTimer';
 
 const UPDATE_INTERVAL_MS = 100; // readouts refresh at 10 Hz so digits stay readable
 
@@ -34,8 +35,17 @@ export interface FrameStats {
   frameMs: number;
   /** Smoothed main-thread time spent in the frame callback (sim + render submit), ms. */
   cpuMs: number;
+  /** The latest measured frame's GPU time per pass, ms (null without timer queries). */
+  gpu: GpuFrame | null;
+  /** Rendering preset in use. */
+  quality: string;
+  /** Trees are drawn (the low preset leaves them out). */
+  trees: boolean;
   triangles: number;
   calls: number;
+  /** Drawing buffer size, px. */
+  width: number;
+  height: number;
 }
 
 const deg = (rad: number, digits = 0) => `${Math.abs(rad / DEG).toFixed(digits)}°`;
@@ -59,7 +69,7 @@ export class TestHud {
     for (const key of Object.keys(TILE_LABELS) as TileKey[]) tiles[key] = this.tile(TILE_LABELS[key], key === 'luff');
     this.tiles = tiles;
     this.perf.style.cssText =
-      'position:fixed;right:10px;top:8px;font:13px ui-monospace,Menlo,monospace;color:#fff;' +
+      'position:fixed;right:10px;top:8px;font:13px ui-monospace,Menlo,monospace;color:#fff;white-space:pre;' +
       'background:rgba(0,0,0,0.4);padding:2px 6px;border-radius:4px;pointer-events:none;z-index:5;';
     document.body.append(this.root, this.perf);
     this.root.style.display = 'none';
@@ -131,8 +141,13 @@ export class TestHud {
     this.set('luff', `${luff.toFixed(2)} / ${stall.toFixed(2)}`, state);
     this.luffBar.style.width = `${(luff * 100).toFixed(0)}%`;
     this.stallBar.style.width = `${(stall * 100).toFixed(0)}%`;
-    this.perf.textContent =
-      `frame ${perf.frameMs.toFixed(1)} ms · cpu ${perf.cpuMs.toFixed(2)} ms · ` +
-      `${(perf.triangles / 1000).toFixed(1)}k tris · ${perf.calls} calls`;
+    const gpu = perf.gpu;
+    const passes = gpu ? GPU_LABELS.filter((l) => gpu.ms[l]! > 0).map((l) => `${l} ${gpu.ms[l]!.toFixed(2)}`).join(' · ') : '';
+    this.perf.textContent = [
+      `frame ${perf.frameMs.toFixed(1)} ms · cpu ${perf.cpuMs.toFixed(2)} ms`,
+      gpu ? `gpu ${gpu.total.toFixed(2)} ms: ${passes}` : 'gpu n/a (no timer queries)',
+      `${(perf.triangles / 1000).toFixed(1)}k tris · ${perf.calls} calls`,
+      `${perf.width}x${perf.height} · quality ${perf.quality} · trees ${perf.trees ? 'on' : 'off'}`,
+    ].join('\n');
   }
 }

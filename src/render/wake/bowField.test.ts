@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { BowWaveField, type BowEmitter } from './bowField';
+import { BowWaveField, bowFieldNode, type BowEmitter } from './bowField';
 import { WAKE } from './kelvin';
+import { BOW_SCENARIOS, scenarioGrid } from './bowField.scenarios';
+import golden from './bowField.golden.json';
 
 const center = { x: 0, z: 0 };
 const height = 0.04;
@@ -27,9 +29,23 @@ function maxDifference(a: Float32Array, b: Float32Array, channel?: number): numb
   return difference;
 }
 
+/** Every node of the field (RGBA, row-major), from the TS mirror of the GPU shader. */
+function raster(field: BowWaveField): Float32Array {
+  const res = field.resolution;
+  const out = new Float32Array(res * res * 4);
+  const node = new Float64Array(4);
+  for (let iz = 0; iz < res; iz++) {
+    for (let ix = 0; ix < res; ix++) {
+      bowFieldNode(field.packed, WAKE, ix * field.cellSize, iz * field.cellSize, node);
+      out.set(node, (iz * res + ix) * 4);
+    }
+  }
+  return out;
+}
+
 function expectZero(field: BowWaveField): void {
   let maximum = 0;
-  for (const value of field.data) maximum = Math.max(maximum, Math.abs(value));
+  for (const value of raster(field)) maximum = Math.max(maximum, Math.abs(value));
   expect(maximum).toBe(0);
 }
 
@@ -70,7 +86,7 @@ describe('independent emitted bow fronts', () => {
     for (const field of [shifted, isolated]) field.update(emitter(0), center);
     shifted.update(emitter(0.3, { x: 20, height: 0.12, speed: 5, foam: 0.3 }), center);
     isolated.update(emitter(0.3, { height: 0 }), center);
-    expect(maxDifference(shifted.data, isolated.data)).toBe(0);
+    expect(maxDifference(raster(shifted), raster(isolated))).toBe(0);
 
     shifted.update(emitter(0.9, { x: 20, height: 0.12, speed: 5, foam: 0.3 }), center);
     // A later source change must leave the second birth's speed and strength intact too.
@@ -149,19 +165,20 @@ describe('independent emitted bow fronts', () => {
     for (const f of [ongoing, oldOnly]) f.update(emitter(0), center);
     ongoing.update(emitter(period), center);
     oldOnly.update(emitter(period, { height: 0 }), center);
-    expect(maxDifference(ongoing.data, oldOnly.data)).toBe(0);
+    expect(maxDifference(raster(ongoing), raster(oldOnly))).toBe(0);
     ongoing.update(emitter(period + 0.001), center);
     oldOnly.update(emitter(period + 0.001, { height: 0 }), center);
-    expect(maxDifference(ongoing.data, oldOnly.data, 0)).toBeLessThan(height * 0.001);
+    expect(maxDifference(raster(ongoing), raster(oldOnly), 0)).toBeLessThan(height * 0.001);
 
     ongoing.update(emitter(4), center);
     let strongest = 0;
     let trough = 0;
     let reference = 0;
-    for (let i = 0; i < ongoing.data.length; i += 4) {
-      strongest = Math.max(strongest, ongoing.data[i]!);
-      trough = Math.min(trough, ongoing.data[i]!);
-      reference = Math.max(reference, ongoing.data[i + 1]!);
+    const data = raster(ongoing);
+    for (let i = 0; i < data.length; i += 4) {
+      strongest = Math.max(strongest, data[i]!);
+      trough = Math.min(trough, data[i]!);
+      reference = Math.max(reference, data[i + 1]!);
     }
     expect(Math.max(strongest, -trough)).toBeLessThanOrEqual(height);
     expect(reference).toBeLessThanOrEqual(height);
@@ -178,8 +195,9 @@ describe('independent emitted bow fronts', () => {
       const time = frame / 2;
       const moving = { x: 0, z: -slow * time };
       field.update(emitter(time, { ...moving, speed: slow }), moving);
-      for (let index = 0; index < field.data.length; index += 4) {
-        const displacement = field.data[index]!;
+      const data = raster(field);
+      for (let index = 0; index < data.length; index += 4) {
+        const displacement = data[index]!;
         deepest = Math.min(deepest, displacement);
         strongest = Math.max(strongest, Math.abs(displacement));
       }
@@ -204,7 +222,7 @@ describe('independent emitted bow fronts', () => {
       }
     }
     expect(sample(coarse, -(WAKE.bowOffset + c * 3.25))[0]).toBeGreaterThan(0.02 * 0.1);
-    expect(maxDifference(coarse.data, fine.data)).toBeLessThan(1e-6);
+    expect(maxDifference(raster(coarse), raster(fine))).toBeLessThan(1e-6);
   });
 
   it('skips stale births across a long wet time jump without changing the surviving emission phase', () => {
@@ -217,7 +235,7 @@ describe('independent emitted bow fronts', () => {
     recent.update(emitter(firstSurvivor), center);
     recent.update(emitter(time), center);
     expect(sample(jumped, WAKE.bowOffset + c * 3)[1]).toBeCloseTo(height, 7);
-    expect(maxDifference(jumped.data, recent.data)).toBeLessThan(1e-5);
+    expect(maxDifference(raster(jumped), raster(recent))).toBeLessThan(1e-5);
   });
 });
 
@@ -245,7 +263,7 @@ describe('world-space bow field cache', () => {
     distant.update(emitter(0, { x: shift.x + 0.125, z: shift.z - 0.375 }), shift);
     local.update(emitter(3, { height: 0 }), center);
     distant.update(emitter(3, { height: 0, x: shift.x, z: shift.z }), shift);
-    expect(maxDifference(local.data, distant.data)).toBe(0);
+    expect(maxDifference(raster(local), raster(distant))).toBe(0);
     for (const [x, z] of [[3.205, -0.375], [0.625, 2.525], [-2.625, -0.5]]) {
       const near = sample(local, x!, z!);
       const far = sample(distant, shift.x + x!, shift.z + z!);
@@ -288,7 +306,7 @@ describe('world-space bow field cache', () => {
     fresh.update(emitter(0.5), center);
     fresh.update(emitter(0.8, { height: 0 }), center);
     expect(sample(field, WAKE.bowOffset + c * 0.3)[0]).toBeGreaterThan(0);
-    expect(maxDifference(field.data, fresh.data)).toBe(0);
+    expect(maxDifference(raster(field), raster(fresh))).toBe(0);
     // The old birth remains inside the cache after this boat jump, so zero
     // proves reset rather than merely cropping the old front out of view.
     field.update(emitter(0.9, { height: 0 }), { x: WAKE.teleportDistance + 1, z: 0 });
@@ -303,5 +321,26 @@ describe('world-space bow field cache', () => {
     field.update(emitter(10), center);
     field.update(emitter(10.3, { height: 0 }), center);
     expect(sample(field, WAKE.bowOffset + c * 0.3)[0]).toBeGreaterThan(0);
+  });
+
+  it('matches the recorded reference of the original rasterizer', () => {
+    // GPU input stores front positions as float32 offsets from the field origin (about 4e-6 m over
+    // fronts at least 0.14 m wide, so about 3e-5 in q), plus float32 node storage.
+    const reference = golden as Record<string, number[]>;
+    const out = new Float64Array(4);
+    for (const scenario of BOW_SCENARIOS) {
+      const field = new BowWaveField(WAKE);
+      for (const step of scenario.steps) field.update(step.emitter, step.center);
+      const expected = reference[scenario.name]!;
+      let index = 0;
+      for (const [x, z] of scenarioGrid(scenario.steps[scenario.steps.length - 1]!.center)) {
+        field.sample(x, z, out);
+        for (let channel = 0; channel < 4; channel++, index++) {
+          const b = expected[index]!;
+          expect(Math.abs(out[channel]! - b), `${scenario.name} at (${x}, ${z}) channel ${channel}`).toBeLessThanOrEqual(1e-6 + 2e-4 * Math.abs(b));
+        }
+      }
+      expect(index).toBe(expected.length);
+    }
   });
 });

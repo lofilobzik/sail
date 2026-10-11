@@ -283,7 +283,8 @@ fraction of a second and holds its position. Same idea for the sheet.
   shore; and the four landmark models. Land draws before the water so hills reject hidden water by
   depth, and fogs toward the sky's horizon colour like the water. The water shader reads a baked
   seabed-height texture and tints the shallows sand/turquoise. To see land across the bay the fog
-  runs 0-9 km, the water mesh is 40 km across, the dome radius is 25 km and the far plane 30 km;
+  runs 0-9 km, the water mesh is 40 km across, the dome radius is 25 km and the far plane 9.5 km (just past
+  opaque fog; the dome is drawn on the far plane);
   the frame is drawn in two depth passes (near plane 2 m, then 5 cm for the nearest 2 m; see below) so
   distant shorelines do not z-fight. Measured on an M1 the bay adds well under 1 ms per frame (within noise).
 - **Boat:** procedural hull lofted from a few cross-sections using class dimensions,
@@ -329,21 +330,16 @@ fraction of a second and holds its position. Same idea for the sheet.
   clear foredeck instead of crossing the raised cockpit rim. End heights are measured once against
   the actual triangulated shell, not the ideal sheer curve; no arbitrary lift or per-frame raycasts.
   The regression checks rope clearance against the rendered deck/coaming on both control tails.
-- **Cockpit water exclusion** (render-only, `render/waterExclusion.ts`): water fragments inside
-  the moving cockpit footprint, between its floor and highest coaming rim, are discarded.
-  The polygon comes from the same outline helper as the rendered hull; inverse heel-group matrices
-  follow steering-frame heading, pitch, heel, heave and floating-origin placement. Both split cameras
-  prepare their own screen-tile candidates before their water pass. Tiles restrict fragment work
-  to relevant boats; reusable textures grow with joins/resizes without a fixed boat-count cutoff.
-  Remote registration/removal is tied to boat lifetime. No extra water draws or wave-vertex work.
-  This is not a hull/sea collision system: side clipping and water outside/above the cockpit stay alone.
-  Screen tiling/storage settings in `data/water-exclusion.json` are TUNING GUESS; waves and TS/Go forces
-  remain unchanged. GPU probes covered heel/pitch, rounded corners, near/far passes, eye-plane crossing,
-  large render positions, 40 overlapping boats and removal; real remote joins/removal and logical
-  rebasing were also exercised. In a paired fixed-pose cockpit view at 1800x1250 in Chrome/SwiftShader,
-  enabling the mask was about 0.8 ms/frame cheaper than bypassing it, with identical draw counts.
-  This view-specific software-renderer result is not a general speedup or hardware-GPU prediction.
-- **Sail:** cloth-like visual (small Verlet grid, around 20x12 points, pinned along luff / foot).
+- **Cockpit water mask** (render-only, `render/hull.ts` `cockpitCap`): every boat's hull carries a
+  depth-only cap over the cockpit opening at the coaming rim (renderOrder 0.5: after the opaque boats,
+  before the water at 1), so water behind the opening fails the depth test. It replaces the earlier
+  per-fragment cockpit-volume exclusion (screen tiles, inverse boat matrices and a `discard` in the
+  water shader). It masks by projected depth, not by the 3D cockpit volume: transparent surfaces
+  behind the cap would be hidden too (none sits inside the well), and water between the camera and
+  the opening still draws. Browser checks at 2000x1106 on an M1: cockpit dry heeled at 24 kn and with
+  2x waves, outside views, the camera at 0.3 m beside the hull; the near pass was about 1 ms cheaper
+  on the GPU than with the exclusion. Remote boats in server mode were not checked.
+- **Sail:** cloth-like visual (small XPBD grid, around 20x12 points, pinned along luff / foot).
   **It is visual only.** Sail forces come from the foil model in `sim/`. The sim exposes a
   `luffAmount` value (0 = trimmed, 1 = fully luffing) and the cloth reads it to flutter.
   The cloth never feeds back into forces.
@@ -396,6 +392,9 @@ fraction of a second and holds its position. Same idea for the sheet.
   choices are TUNING GUESS (`data/waves.json` sources); both sims and wave parameters are unchanged.
   Browser smoke checked the live sail's vertices inside the close pass and nearby cockpit water.
   Paired split-pass rendering at 1800x1125 measured about +0.15 ms with the same scene and pose.
+  Later the split moved to 15 m, so the whole boat, rig and sail also stay in the close pass from the
+  9 m outside orbit camera, and the close-water patch grew to 70 m across (128 segments, the same
+  0.2 m cells in the central 8 m) to cover the 15.3 m reach at the cockpit's wide field of view.
 - **Trees and the forest belt** (`render/land/trees.ts`, `forest.ts`): trees cover all the land, from a
   jittered 15 m lattice over the mainland and islands within 2.2 km of the water (about 83k trees, 81 %
   conifers). Density is about half on open ground, up to full in woods and the belt, with meadow clearings,
@@ -640,11 +639,14 @@ capsize, planing and stronger wind, third-person camera, cruising / management l
   Tune by feel for now; measured response would be needed for calibration.
 - Bay: grounding feel (push/damping are TUNING GUESS), chart framing (buoys plus landmarks in use,
   others pointed at from the edge) and landmark visibility (the spire is small from mid-bay) await
-  player feedback. Depth is split in two passes (`render/scene.ts`): everything beyond 8 m is drawn with the near
-  plane at 8 m, then depth is cleared and everything within 8 m (hands, compass, chart, whole rig, hull and a
+  player feedback. Depth is split in two passes (`render/scene.ts`): everything beyond 15 m is drawn with the near
+  plane at 15 m, then depth is cleared and everything within 15 m (hands, compass, chart, whole boat and rig, and a
   water patch under the camera) is drawn again with the near plane at 5 cm, without the sky dome or the colour
-  background (three clears colour whenever the background is a colour). One depth range from 5 cm to 30 km
+  background (three clears colour whenever the background is a colour). One depth range from 5 cm to 9.5 km
   cannot be precise far away in a fixed-point depth buffer (reversed depth needs a float one and
   EXT_clip_control, which Firefox lacks; a float-depth render target fixed it in Chrome but was slow): window
   panes 3 cm proud of their walls z-fought into jagged shapes and far houses and trees flickered against the
-  hillside. The renderer uses the standard depth mapping everywhere.
+  hillside. The renderer uses the standard depth mapping everywhere. A later single-pass prototype (reversed
+  float depth into a 4x MSAA target, then a copy to the canvas) rendered correctly on an M1 in Chrome but cost
+  more GPU time than the two passes (about 12.6 against 7.1 ms per frame, the copy alone about 5 ms), so it
+  was removed again.

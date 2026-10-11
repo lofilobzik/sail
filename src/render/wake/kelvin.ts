@@ -237,18 +237,34 @@ float wakeFoamAmount(
 `;
 }
 
+/**
+ * How far beyond the trail points' bounding box the wake can reach, m: the Kelvin arms (half-angle
+ * spread over the longest arc, plus 4 sigma of the widest arm, plus the end fade) or the stern foam
+ * (at its oldest), whichever is wider. Beyond it the 4-sigma Gaussian leaves under 3.4e-4 of the arm
+ * amplitude.
+ */
+export function wakeBoundsMargin(maxArc: number, maxSpeed: number, beam: number): number {
+  return Math.max(
+    maxArc * TAN_ALPHA + 4 * (wake.armWidthFracWavelength * (2 * Math.PI * maxSpeed ** 2 / G) + wake.armWidthGrowth * maxArc) + wake.tailFade,
+    wake.foamWidthFracBeam * beam + wake.foamSpreadRate * wake.maxAge,
+  );
+}
+
 export function wakeFrameGLSL(): string {
   const N = wake.trailPoints;
   return `
 uniform vec4 wakeA[${N}];
 uniform vec4 wakeB[${N}];
 uniform int wakeCount;
+// Render-local (minX, minZ, maxX, maxZ) the wake can reach (wakeBoundsMargin); empty when no trail.
+uniform vec4 wakeBounds;
 
 // Nearest trail segment: sn = (s, n, tangent x, tangent z), props = (speed, amplitude, age, fade).
 void wakeFrame(vec2 p, out vec4 sn, out vec4 props) {
   float best = 1e9;
   sn = vec4(0.0, 1e4, 1.0, 0.0);
   props = vec4(0.0);
+  if (p.x < wakeBounds.x || p.y < wakeBounds.y || p.x > wakeBounds.z || p.y > wakeBounds.w) return;
   for (int i = 0; i < ${N - 1}; i++) {
     if (i + 1 >= wakeCount) break;
     vec2 a = wakeA[i].xy;

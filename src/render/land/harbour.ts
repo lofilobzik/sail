@@ -203,7 +203,7 @@ function sign(b: Building, quayTop: number): THREE.Mesh {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 4;
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), new THREE.MeshStandardMaterial({ map: texture, roughness: 0.7 }));
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), new THREE.MeshLambertMaterial({ map: texture }));
   mesh.name = `sign:${b.name}`;
   mesh.rotation.y = Math.PI / 2; // plane normal +z -> +x (east)
   mesh.position.set(b.x + b.width / 2 + 0.12, quayTop + b.wall * 0.86, b.z);

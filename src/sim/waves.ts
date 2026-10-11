@@ -231,16 +231,11 @@ export function wavePhaseAt(w: WaveComponent, x: number, z: number, t: number): 
  * Footprint is the x/z sampling interval (mesh cell or pixel). Zero footprint
  * gives the unfiltered physical model. Nonzero footprints band-limit rendering,
  * not CPU physics; normals ignore derivatives of the slowly changing LOD weight.
+ * Components from `bigCount` on (the ripples) are skipped together when the footprint is at least
+ * the `waveRippleCutoff` uniform (see rippleCutoff): each of them would have weight exactly 0.
  */
-export function gerstnerGLSL(waves: readonly WaveComponent[]): string {
-  return `
-uniform vec4 waveShape[${waves.length}];
-uniform vec2 waveMotion[${waves.length}];
-void gerstnerWave(vec2 label, float scale, vec2 footprint, out vec3 position, out vec3 normal) {
-  position = vec3(label.x, 0.0, label.y);
-  vec3 tx = vec3(1.0, 0.0, 0.0);
-  vec3 tz = vec3(0.0, 0.0, 1.0);
-  ${waves.map((_, i) => `{
+export function gerstnerGLSL(waves: readonly WaveComponent[], bigCount: number): string {
+  const block = (i: number) => `{
     vec2 d = waveShape[${i}].xy;
     float k = waveShape[${i}].z;
     float phaseStep = k * max(abs(d.x) * footprint.x, abs(d.y) * footprint.y);
@@ -256,8 +251,32 @@ void gerstnerWave(vec2 label, float scale, vec2 footprint, out vec3 position, ou
       tx += vec3(-qa*k*d.x*d.x*s, a*k*d.x*c, -qa*k*d.x*d.y*s);
       tz += vec3(-qa*k*d.x*d.y*s, a*k*d.y*c, -qa*k*d.y*d.y*s);
     }
-  }`).join('\n')}
+  }`;
+  const indices = waves.map((_, i) => i);
+  return `
+uniform vec4 waveShape[${waves.length}];
+uniform vec2 waveMotion[${waves.length}];
+uniform float waveRippleCutoff;
+void gerstnerWave(vec2 label, float scale, vec2 footprint, out vec3 position, out vec3 normal) {
+  position = vec3(label.x, 0.0, label.y);
+  vec3 tx = vec3(1.0, 0.0, 0.0);
+  vec3 tz = vec3(0.0, 0.0, 1.0);
+  ${indices.slice(0, bigCount).map(block).join('\n')}
+  if (min(footprint.x, footprint.y) < waveRippleCutoff) {
+    ${indices.slice(bigCount).map(block).join('\n')}
+  }
   normal = normalize(cross(tz, tx));
 }
 `;
+}
+
+/**
+ * Smallest footprint at which every ripple (components from `bigCount` on) is filtered to weight 0:
+ * a ripple's weight is 0 once k * max(|dx| fx, |dz| fz) >= 2 pi / zeroSamples, and that is at least
+ * k * min(fx, fz) / sqrt(2) for a unit direction. 0 when there are no ripples.
+ */
+export function rippleCutoff(waves: readonly WaveComponent[], bigCount: number): number {
+  const ripples = waves.slice(bigCount);
+  if (ripples.length === 0) return 0;
+  return (2 * Math.PI / parameters.waterFilterZeroSamples) * Math.SQRT2 / Math.min(...ripples.map((w) => w.k));
 }

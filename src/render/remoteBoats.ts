@@ -13,7 +13,6 @@ import { DEG, type BoatModel, type Vec2 } from '../sim';
 import { createWaveSample, sampleWaves, waveAmplitude, type WaveConfig } from '../sim/waves';
 import type { RemotePose } from '../net/remote';
 import { createBoatMesh, type BoatMesh, type BoatPose } from './boatMesh';
-import type { WaterExclusion } from './waterExclusion';
 
 /** Remote sails simulated per frame, nearest first. */
 const CLOTH_BOATS = 4; // TUNING GUESS: about 0.6 ms of cloth each on a laptop
@@ -42,7 +41,7 @@ export class RemoteBoatsView {
     apparentU: 0, apparentV: 0, luffAmount: 0, stallAmount: 0, dt: 0,
   };
 
-  constructor(private readonly model: BoatModel, private readonly waterExclusion: WaterExclusion) {}
+  constructor(private readonly model: BoatModel) {}
 
   /** Boats drawn. */
   get count(): number {
@@ -55,15 +54,14 @@ export class RemoteBoatsView {
   }
 
   /**
-   * Draws `remotes` for one frame: render-local around `origin` (the own boat), on the water at
-   * time `t` (the time the water is drawn at), near sails advanced by `dt`. Boats missing from
-   * `remotes` are removed.
+   * Draws `remotes` for one frame: render-local around `origin` (the logical position of render-local
+   * zero), ranked by distance from the own boat at `own`, on the water at time `t` (the time the water
+   * is drawn at), near sails advanced by `dt`. Boats missing from `remotes` are removed.
    */
-  update(remotes: ReadonlyMap<number, RemotePose>, origin: Readonly<Vec2>, waves: WaveConfig, t: number, dt: number): void {
+  update(remotes: ReadonlyMap<number, RemotePose>, origin: Readonly<Vec2>, own: Readonly<Vec2>, waves: WaveConfig, t: number, dt: number): void {
     for (const [id, boat] of this.boats) {
       if (remotes.has(id)) continue;
       this.group.remove(boat.mesh.yaw);
-      this.waterExclusion.remove(boat.mesh);
       dispose(boat.mesh.yaw);
       this.boats.delete(id);
     }
@@ -74,14 +72,13 @@ export class RemoteBoatsView {
       let boat = this.boats.get(id);
       if (!boat) {
         const mesh = createBoatMesh(this.model);
-        this.waterExclusion.add(mesh);
         // The first-person forearms and hands have no body: from outside they would float.
         mesh.sailor.setArmsVisible(false);
         boat = { mesh, distanceSq: 0, cloth: false };
         this.boats.set(id, boat);
         this.group.add(mesh.yaw);
       }
-      boat.distanceSq = (r.x - origin.x) ** 2 + (r.z - origin.z) ** 2;
+      boat.distanceSq = (r.x - own.x) ** 2 + (r.z - own.z) ** 2;
       boat.cloth = false;
       nearest.push(boat);
     }

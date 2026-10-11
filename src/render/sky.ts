@@ -1,17 +1,21 @@
 /**
  * Analytic sky shared by the dome and the water. One GLSL function (`skyRadiance`) is the sky:
- * the dome shades with it, the water reflects it and fogs toward it, so horizon, sun and clouds
- * always agree. Adapted from three's examples Sky (Preetham daylight model with its procedural
- * clouds); see data/sky.json `sources`. Fixed sun, wind-driven cloud drift, no renderer tone mapping.
+ * the dome shades with it; the water reflects it through two small cubemaps (clear and cloudy,
+ * rendered from the same function, see updateReflections) and fogs toward its horizon colour, which
+ * a 256-texel ring (`skyHorizon`, filled on the CPU by clearSky, its twin) caches per bearing, as the
+ * land fog does; so horizon, sun and clouds always agree. Adapted from three's examples Sky (Preetham
+ * daylight model with its procedural clouds); see data/sky.json `sources`. Fixed sun, wind-driven
+ * cloud drift, no renderer tone mapping.
  */
 import * as THREE from 'three';
 import type { Vec2 } from '../sim';
+import type { GpuTimer } from '../debug/gpuTimer';
 import {
   SKY, atmosphere, clearSky, dayFactor, hemisphereIntensity, sunDirection, sunLight,
   type Atmosphere, type Vec3,
 } from './skyModel';
 
-const SKY_RADIUS = 25000; // m: beyond the farthest land and water edge (20 km), inside the 30 km far plane
+const SKY_RADIUS = 25000; // m: any size works, the vertex shader puts the dome on the far plane
 const DOME_SEGMENTS: [number, number] = [32, 16]; // smooth horizon silhouette; shading is per pixel
 const SUN_LIGHT_DISTANCE = 100; // m: only the direction matters
 // Sky.js: evolve = time * cloudSpeed * 300 with cloudSpeed 0.00002, per second of sim time.
@@ -24,6 +28,9 @@ const CLOUD_OFFSET_PERIOD = 2.56;
 // Standard deviation of Sky.js's gradient noise (x1.6) over that of smoothed value noise in [-1, 1],
 // both measured on 40000 random samples (0.282 / 0.449), so cloud coverage thresholds behave alike.
 const NOISE_GAIN = 0.63;
+const HORIZON_TEXELS = 256; // bearings in the horizon ring
+const REFLECTION_SIZE = 128; // texels per cube face: the reflection is a soft, low-detail sky
+const REFLECTION_INTERVAL = 10; // frames between cloudy-reflection updates: clouds drift slowly
 
 const f = (x: number): string => (Number.isInteger(x) ? x.toFixed(1) : String(x));
 
@@ -52,6 +59,13 @@ uniform float skySunE;
 uniform vec4 skyCloud; // coverage, density, cloud-plane offset x, z
 uniform float skyEvolve;
 uniform sampler2D skyNoiseTexture;
+uniform sampler2D skyHorizon;
+
+// The clear sky's horizon colour toward horizontal direction d (x, z), from the skyHorizon ring.
+vec3 skyHorizonColour(vec2 d) {
+  if (dot(d, d) < 1e-12) d = vec2(1.0, 0.0);
+  return texture2D(skyHorizon, vec2(fract(atan(d.y, d.x) / 6.2831853), 0.5)).rgb;
+}
 
 // Smoothed value noise in about [-1, 1]: the quintic fade moves the sample between two texel
 // centres so hardware bilinear filtering does the interpolation, one fetch per call.
@@ -142,7 +156,23 @@ export interface SkyUniforms {
   skyCloud: { value: THREE.Vector4 };
   skyEvolve: { value: number };
   skyNoiseTexture: { value: THREE.DataTexture };
+  /** HORIZON_TEXELS x 1 clear-sky horizon colours, texel i toward bearing angle 2 pi (i + 0.5) / N from +x toward +z. */
+  skyHorizon: { value: THREE.DataTexture };
 }
+
+/** A horizon ring texture, filled by setSun. */
+function createHorizonTexture(): THREE.DataTexture {
+  const texture = new THREE.DataTexture(new Uint16Array(HORIZON_TEXELS * 4), HORIZON_TEXELS, 1, THREE.RGBAFormat, THREE.HalfFloatType);
+  texture.magFilter = texture.minFilter = THREE.LinearFilter;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.generateMipmaps = false;
+  return texture;
+}
+
+const reflectionTarget = (): THREE.WebGLCubeRenderTarget => new THREE.WebGLCubeRenderTarget(REFLECTION_SIZE, {
+  type: THREE.HalfFloatType, generateMipmaps: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+});
 
 export class SkyView {
   readonly mesh: THREE.Mesh;
@@ -154,7 +184,20 @@ export class SkyView {
     skyCloud: { value: new THREE.Vector4(SKY.cloudCoverage, SKY.cloudDensity, 0, 0) },
     skyEvolve: { value: 0 },
     skyNoiseTexture: { value: createNoiseTexture() },
+    skyHorizon: { value: createHorizonTexture() },
   };
+  /** The sky the water reflects, without clouds (blended in by Fresnel in the water shader). */
+  readonly reflectionClear = reflectionTarget();
+  /** The same with `SKY.waterCloudOctaves` of clouds. */
+  readonly reflectionCloudy = reflectionTarget();
+  private readonly reflectionScene = new THREE.Scene();
+  private readonly clearDome: THREE.Mesh;
+  private readonly cloudyDome: THREE.Mesh;
+  private readonly clearCamera = new THREE.CubeCamera(0.1, 100, this.reflectionClear);
+  private readonly cloudyCamera = new THREE.CubeCamera(0.1, 100, this.reflectionCloudy);
+  /** Sun or coverage changed: both reflections are stale. */
+  private reflectionsDirty = true;
+  private frame = 0;
   private atm: Atmosphere = atmosphere(1);
   private lastT = 0;
   // Cloud-plane offsets in doubles; the uniform carries them wrapped to one noise period.
@@ -193,6 +236,31 @@ export class SkyView {
     this.mesh = new THREE.Mesh(new THREE.SphereGeometry(SKY_RADIUS, ...DOME_SEGMENTS), material);
     this.mesh.renderOrder = 1000; // after all opaque objects
     this.mesh.frustumCulled = false;
+
+    // Reflection domes: the same sky function, display-range values stored as they are (no colour
+    // space conversion), as the water shader used them; no sun disc (the water adds its own glint).
+    const dome = (octaves: number) => new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), new THREE.ShaderMaterial({
+      uniforms: this.uniforms,
+      side: THREE.BackSide,
+      depthWrite: false,
+      vertexShader: `
+        varying vec3 skyDirection;
+        void main() {
+          skyDirection = position;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec3 skyDirection;
+        ${skyGLSL()}
+        void main() {
+          gl_FragColor = vec4(skyRadiance(normalize(skyDirection), ${octaves}, 0.0, 1.0), 1.0);
+        }
+      `,
+    }));
+    this.clearDome = dome(0);
+    this.cloudyDome = dome(SKY.waterCloudOctaves);
+    this.reflectionScene.add(this.clearDome, this.cloudyDome, this.clearCamera, this.cloudyCamera);
     this.setSun(SKY.sunElevationDeg, SKY.sunAzimuthDeg);
   }
 
@@ -218,10 +286,44 @@ export class SkyView {
     const horizon = clearSky(this.atm, dir, [across[0] / length, 0, across[2] / length]);
     if (this.scene.fog) this.scene.fog.color.setRGB(...horizon);
     this.scene.background = new THREE.Color().setRGB(...horizon);
+
+    // The clear-sky horizon ring the water and land fog toward (skyHorizonColour).
+    const ring = this.uniforms.skyHorizon.value;
+    const data = ring.image.data as Uint16Array;
+    for (let i = 0; i < HORIZON_TEXELS; i++) {
+      const a = (2 * Math.PI * (i + 0.5)) / HORIZON_TEXELS;
+      const c = clearSky(this.atm, dir, [Math.cos(a), 0, Math.sin(a)]);
+      for (let k = 0; k < 3; k++) data[i * 4 + k] = THREE.DataUtils.toHalfFloat(c[k]!);
+      data[i * 4 + 3] = THREE.DataUtils.toHalfFloat(1);
+    }
+    ring.needsUpdate = true;
+    this.reflectionsDirty = true;
+  }
+
+  /**
+   * Re-renders the water's sky reflections: both after a sun or coverage change, otherwise the
+   * cloudy one every REFLECTION_INTERVAL frames as the clouds drift.
+   */
+  updateReflections(renderer: THREE.WebGLRenderer, gpu: GpuTimer): void {
+    const dirty = this.reflectionsDirty;
+    const cloudy = dirty || ++this.frame % REFLECTION_INTERVAL === 0;
+    if (!dirty && !cloudy) return;
+    gpu.begin('reflection');
+    if (dirty) {
+      this.clearDome.visible = true;
+      this.cloudyDome.visible = false;
+      this.clearCamera.update(renderer, this.reflectionScene);
+      this.reflectionsDirty = false;
+    }
+    this.clearDome.visible = false;
+    this.cloudyDome.visible = true;
+    this.cloudyCamera.update(renderer, this.reflectionScene);
+    gpu.end();
   }
 
   setCloudCoverage(coverage: number): void {
     this.uniforms.skyCloud.value.x = Math.min(Math.max(coverage, 0), 1);
+    this.reflectionsDirty = true;
   }
 
   get cloudCoverage(): number {

@@ -1,15 +1,17 @@
 /**
  * Boat wake and emitted bow fronts for the water shader (visual only, reads sim state).
- * Keeps a world-anchored Kelvin trail and scalar bow field for render/wake/kelvin.ts.
+ * Keeps a world-anchored Kelvin trail and a bow field for render/wake/kelvin.ts; the bow field is
+ * rendered on the GPU from the packed fronts (render/wake/bowField.ts) into a float target.
  * Kelvin source amplitude comes from the sim's Delft residuary resistance.
  */
 import * as THREE from 'three';
 import { delftUpright, type BoatModel, type EnvironmentConfig, type Vec2 } from '../sim';
 import type { WaveConfig } from '../sim/waves';
+import type { GpuTimer } from '../debug/gpuTimer';
 import type { BoatLayout } from './boatLayout';
-import { WAKE, bowWaveHeight, wakeSourceAmplitude } from './wake/kelvin';
+import { WAKE, bowWaveHeight, wakeBoundsMargin, wakeSourceAmplitude } from './wake/kelvin';
 import { BowContact, type ContactPose } from './wake/contact';
-import { BowWaveField, type BowEmitter } from './wake/bowField';
+import { BowWaveField, bowFieldGLSL, type BowEmitter } from './wake/bowField';
 import { WakeTrail } from './wake/trail';
 
 export interface WakePose extends ContactPose {
@@ -18,6 +20,7 @@ export interface WakePose extends ContactPose {
 }
 
 const TWO_PI = 2 * Math.PI;
+const BOW_FIELD_INTERVAL = 1 / 30; // s of sim time between field renders
 const mod = (v: number, m: number) => ((v % m) + m) % m;
 
 /** Independent wake components, each a shader switch (components of the `wakeLayers` uniform). */
@@ -26,18 +29,35 @@ export type WakeLayer = keyof typeof WAKE_LAYERS;
 
 export class WakeView {
   enabled = true;
-  private readonly bowField = new BowWaveField(WAKE);
+  /** CPU side: emits, ages and packs the fronts. Read-only outside (checking aids). */
+  readonly bowField = new BowWaveField(WAKE);
   private readonly bowEmitter: BowEmitter = { x: 0, z: 0, time: 0, height: 0, speed: 0, foam: 0 };
-  private readonly bowTexture = new THREE.DataTexture(
-    this.bowField.data, this.bowField.resolution, this.bowField.resolution, THREE.RGBAFormat, THREE.FloatType,
+  private readonly packetTexture = new THREE.DataTexture(
+    this.bowField.packed, WAKE.bowFronts, 2, THREE.RGBAFormat, THREE.FloatType,
   );
+  /** The rendered field: one texel per node (RGBA: signed height, source height, foam, width). */
+  readonly fieldTarget = new THREE.WebGLRenderTarget(WAKE.bowFieldResolution, WAKE.bowFieldResolution, {
+    type: THREE.HalfFloatType, format: THREE.RGBAFormat, minFilter: THREE.NearestFilter,
+    magFilter: THREE.NearestFilter, depthBuffer: false, generateMipmaps: false,
+  });
+  private readonly fieldScene = new THREE.Scene();
+  private readonly fieldCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  /** False without float colour buffers: bow waves stay off. */
+  private readonly fieldSupported: boolean;
+  /** The field changed since the last render. */
+  private pending = true;
+  private renderedAt = NaN;
+  private renderedOriginX = 0;
+  private renderedOriginZ = 0;
   readonly uniforms = {
     wakeA: { value: new Float32Array(WAKE.trailPoints * 4) },
     wakeB: { value: new Float32Array(WAKE.trailPoints * 4) },
     wakeCount: { value: 0 },
+    /** Render-local box the wake can reach (kelvin.ts wakeBoundsMargin); empty while there is no trail. */
+    wakeBounds: { value: new THREE.Vector4(1, 1, -1, -1) },
     wakeStem: { value: new THREE.Vector4(0, 0, 0, -1) },
     wakeHull: { value: new THREE.Vector4() },
-    bowField: { value: this.bowTexture },
+    bowField: { value: this.fieldTarget.texture as THREE.Texture },
     bowFieldOrigin: { value: new THREE.Vector2() },
     bowFieldCell: { value: this.bowField.cellSize },
     bowFieldResolution: { value: this.bowField.resolution },
@@ -55,12 +75,31 @@ export class WakeView {
     private readonly model: BoatModel,
     layout: BoatLayout,
     private readonly env: EnvironmentConfig,
+    private readonly renderer: THREE.WebGLRenderer,
+    private readonly gpu: GpuTimer,
   ) {
     this.contact = new BowContact(layout, WAKE.contactSamples);
-    this.bowTexture.minFilter = THREE.NearestFilter;
-    this.bowTexture.magFilter = THREE.NearestFilter;
-    this.bowTexture.generateMipmaps = false;
-    this.bowTexture.needsUpdate = true;
+    this.packetTexture.minFilter = THREE.NearestFilter;
+    this.packetTexture.magFilter = THREE.NearestFilter;
+    this.packetTexture.generateMipmaps = false;
+    this.packetTexture.needsUpdate = true;
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+      vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: bowFieldGLSL(WAKE),
+      uniforms: { bowPackets: { value: this.packetTexture } },
+      depthTest: false,
+      depthWrite: false,
+    }));
+    quad.frustumCulled = false;
+    this.fieldScene.add(quad);
+    this.fieldSupported = renderer.extensions.has('EXT_color_buffer_float');
+    if (!this.fieldSupported) {
+      console.warn('bow waves off: EXT_color_buffer_float unavailable');
+      this.uniforms.wakeLayers.value.y = 0;
+      const empty = new THREE.DataTexture(new Uint16Array(4), 1, 1, THREE.RGBAFormat, THREE.HalfFloatType);
+      empty.needsUpdate = true;
+      this.uniforms.bowField.value = empty;
+    }
     // Waterline stem: first station from the bow whose keel is below the waterline.
     let stem = layout.bowX;
     const step = layout.loa / 400;
@@ -92,12 +131,31 @@ export class WakeView {
     const residuary = speed > 0 ? delftUpright(this.model, speed, this.env).residuary : 0;
     const amplitude = WAKE.visualGain * wakeSourceAmplitude(residuary, this.env.rhoWater, this.model.cfg.hull.beam);
 
+    const bounds = u.wakeBounds.value;
     if (this.enabled) {
       this.trail.update({ x: stemX, z: stemZ, speed, amplitude, time: pose.t });
-      u.wakeCount.value = this.trail.pack(origin, u.wakeA.value, u.wakeB.value);
+      const count = this.trail.pack(origin, u.wakeA.value, u.wakeB.value);
+      u.wakeCount.value = count;
+      if (count >= 2) {
+        const a = u.wakeA.value;
+        let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity, maxArc = 0, maxSpeed = 0;
+        for (let i = 0; i < count; i++) {
+          minX = Math.min(minX, a[4 * i]!);
+          maxX = Math.max(maxX, a[4 * i]!);
+          minZ = Math.min(minZ, a[4 * i + 1]!);
+          maxZ = Math.max(maxZ, a[4 * i + 1]!);
+          maxArc = Math.max(maxArc, a[4 * i + 2]!);
+          maxSpeed = Math.max(maxSpeed, a[4 * i + 3]!);
+        }
+        const margin = wakeBoundsMargin(maxArc, maxSpeed, this.model.cfg.hull.beam);
+        bounds.set(minX - margin, minZ - margin, maxX + margin, maxZ + margin);
+      } else {
+        bounds.set(1, 1, -1, -1);
+      }
     } else {
       this.trail.clear();
       u.wakeCount.value = 0;
+      bounds.set(1, 1, -1, -1);
     }
     u.wakeStem.value.set(stemX - origin.x, stemZ - origin.z, fx, fz);
 
@@ -113,13 +171,24 @@ export class WakeView {
     emitter.speed = speed;
     // Bow crest foam starts with bow emission; the higher stern-turbulence threshold stays separate.
     emitter.foam = Math.min(Math.max((speed - WAKE.minSpeed) / WAKE.foamSpeedRange, 0), 1);
-    if (this.enabled) {
-      if (this.bowField.update(emitter, pose)) this.bowTexture.needsUpdate = true;
-    } else {
-      this.bowField.clear();
-      this.bowTexture.needsUpdate = true;
+    // The CPU update always runs (fronts are born on time); the GPU render is throttled.
+    const changed = this.enabled ? this.bowField.update(emitter, pose) : (this.bowField.clear(), true);
+    this.pending = this.pending || changed;
+    if (this.fieldSupported && this.pending
+      && !(pose.t >= this.renderedAt && pose.t - this.renderedAt < BOW_FIELD_INTERVAL)) {
+      this.packetTexture.needsUpdate = true;
+      this.gpu.begin('bow');
+      const previous = this.renderer.getRenderTarget();
+      this.renderer.setRenderTarget(this.fieldTarget);
+      this.renderer.render(this.fieldScene, this.fieldCamera);
+      this.renderer.setRenderTarget(previous);
+      this.gpu.end();
+      this.renderedAt = pose.t;
+      this.renderedOriginX = this.bowField.originX;
+      this.renderedOriginZ = this.bowField.originZ;
+      this.pending = false;
     }
-    u.bowFieldOrigin.value.set(this.bowField.originX - origin.x, this.bowField.originZ - origin.z);
+    u.bowFieldOrigin.value.set(this.renderedOriginX - origin.x, this.renderedOriginZ - origin.z);
 
     // Foam noise stays world-anchored: reduce the origin modulo its period in doubles.
     const period = WAKE.foamNoisePeriod;

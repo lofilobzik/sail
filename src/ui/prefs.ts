@@ -4,6 +4,7 @@
  * leaves the defaults in place for the session.
  */
 import { normalizeSailorCode } from '../net/sailorCode';
+import type { Quality } from '../render/quality';
 
 const KEY = 'dinghy.prefs.v1';
 
@@ -11,6 +12,10 @@ export interface Prefs {
   /** Master volume 0..1. */
   volume: number;
   muted: boolean;
+  /** Mouse-look speed multiplier, LOOK_SENSITIVITY_MIN..MAX (1 = default). */
+  lookSensitivity: number;
+  /** Graphics preset: 'auto' picks from the GPU (render/quality.ts detectQuality); applies on the next load. */
+  graphics: 'auto' | Quality;
   /** Printed sail design id (data/sail-designs.json); null keeps the default. */
   sail: string | null;
   /** Look guides already completed (src/ui/lookGuide.ts target ids). */
@@ -19,7 +24,10 @@ export interface Prefs {
   player: string | null;
 }
 
-const DEFAULTS: Prefs = { volume: 0.7, muted: false, sail: null, guidesSeen: [], player: null };
+export const LOOK_SENSITIVITY_MIN = 0.25;
+export const LOOK_SENSITIVITY_MAX = 4;
+
+const DEFAULTS: Prefs = { volume: 0.7, muted: false, lookSensitivity: 1, graphics: 'auto', sail: null, guidesSeen: [], player: null };
 
 function loadPrefs(): Prefs {
   try {
@@ -29,6 +37,9 @@ function loadPrefs(): Prefs {
     return {
       volume: typeof p.volume === 'number' && Number.isFinite(p.volume) ? Math.min(Math.max(p.volume, 0), 1) : DEFAULTS.volume,
       muted: p.muted === true,
+      lookSensitivity: typeof p.lookSensitivity === 'number' && Number.isFinite(p.lookSensitivity)
+        ? Math.min(Math.max(p.lookSensitivity, LOOK_SENSITIVITY_MIN), LOOK_SENSITIVITY_MAX) : DEFAULTS.lookSensitivity,
+      graphics: p.graphics === 'low' || p.graphics === 'high' ? p.graphics : 'auto',
       sail: typeof p.sail === 'string' ? p.sail : null,
       guidesSeen: Array.isArray(p.guidesSeen) ? p.guidesSeen.filter((g): g is string => typeof g === 'string') : [],
       player: typeof p.player === 'string' ? normalizeSailorCode(p.player) : null,

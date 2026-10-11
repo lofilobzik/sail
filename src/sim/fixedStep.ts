@@ -8,8 +8,11 @@ export class FixedStep {
 
   constructor(
     readonly dt: number,
-    /** Frame-time cap so a stalled tab does not trigger a spiral of catch-up steps. */
-    readonly maxFrameTime = 0.25,
+    /**
+     * Frame-time cap, s: a slow or stalled frame runs at most this much sim time, so catch-up steps
+     * cannot pile up into a spiral where each frame's physics makes the next frame slower still.
+     */
+    readonly maxFrameTime = 0.1,
   ) {}
 
   /** Adds elapsed real time (s); returns the number of fixed steps to run now. */

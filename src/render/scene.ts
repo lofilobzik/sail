@@ -6,13 +6,13 @@ import * as THREE from 'three';
 import { BERTHS, berthIndexAt, meanWind, type BoatModel, type EnvironmentConfig, type Vec2, type WindConfig } from '../sim';
 import { createWaveSample, sampleWaves, waveAmplitude, type WaveConfig } from '../sim/waves';
 import { createBoatMesh, type BoatMesh, type BoatPose } from './boatMesh';
+import { QUALITY, type Quality } from './quality';
 import { createBuoys } from './environment';
 import { SkyView } from './sky';
 import { GustMap } from './gustMap';
 import { WakeView } from './wake';
 import { setDetailFade, setDetailScale } from './land/detailFade';
 import { createWater, type WaterView } from './water';
-import { WaterExclusion } from './waterExclusion';
 import { createLand, type LandView } from './land';
 import { Binoculars } from './binoculars';
 import type { Navigation } from '../nav/navigation';
@@ -20,22 +20,29 @@ import { NavigationView } from './navigation';
 import { RemoteBoatsView } from './remoteBoats';
 import type { RemotePose } from '../net/remote';
 import { MooringLines } from './mooringLines';
+import { GpuTimer } from '../debug/gpuTimer';
 
 const GRID_CELL = 5; // TUNING GUESS: grid cell size, m (grid snaps to multiples of this)
 const GRID_CELLS = 80; // TUNING GUESS: grid cells per side
+// m: the render origin snaps to this grid; render-local coordinates stay within +-500 m. A multiple
+// of every world-snapped grid in use (water 0.2, grid 5, gust 10, bow 0.25), so they stay world-fixed.
+const REBASE_GRID = 1000;
 const FOV_DEG = 85; // User-selected vertical cockpit field of view, degrees
 // Linear fog (smoothstep between these view depths), visual estimate: land at 2-5 km is hazy but
 // clear (about 15-55% fogged); the water is fully fogged well inside its 20 km half-extent, even
 // at the screen edges, so it meets the horizon without a seam.
 const FOG_NEAR = 0; // m
 const FOG_FAR = 9000; // m
-// Beyond the water mesh corners (20 km half-extent) and the sky dome (25 km). The split-depth passes in
-// render keep the far shore free of z-fighting at this range.
-const CAMERA_FAR = 30000; // m
+// m: fog is opaque beyond FOG_FAR (9000 m) view depth, so nothing farther can show; the sky dome is
+// drawn at the far plane whatever its radius. The split-depth passes in render keep the far shore free
+// of z-fighting at this range.
+const CAMERA_FAR = 9500;
 // Split depth (see render): the far pass's near plane, m, and how far the near pass reaches past it.
-const NEAR_SPLIT = 8; // TUNING GUESS: covers the whole 6.16 m mast and sail from the cockpit
+// TUNING GUESS: the outside orbit camera (OUTSIDE_DISTANCE 9 m from a point 1.8 m up) to the
+// masthead, heeled, is about 14 m, so the whole boat, rig and sail stay in the near pass in every view
+// and never cross the seam.
+const NEAR_SPLIT = 15;
 const SPLIT_OVERLAP = 1.02;
-const MAX_PIXEL_RATIO = 2; // quality cap for high-DPI laptop screens
 const OUTSIDE_FOV_DEG = FOV_DEG * 0.8; // the orbit camera sees a little narrower than the cockpit
 const OUTSIDE_DISTANCE = 9; // visual estimate: outside camera distance from the boat, m
 const OUTSIDE_TARGET_HEIGHT = 1.8; // visual estimate, m
@@ -61,6 +68,8 @@ export interface RenderPose extends BoatPose {
 
 export class SceneView {
   readonly renderer: THREE.WebGLRenderer;
+  /** Checking aid: GPU time per pass (?perf=1, HUD). */
+  readonly gpu: GpuTimer;
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
   readonly outsideCamera: THREE.PerspectiveCamera;
@@ -73,13 +82,14 @@ export class SceneView {
   readonly binoculars: Binoculars;
   /** Gust patches sampled from the sim's wind field. */
   readonly gusts = new GustMap();
-  /** Logical position of render-local zero, continuously following the interpolated boat. */
+  /** Logical position of render-local zero, snapped to REBASE_GRID near the boat. */
   readonly origin: Vec2 = { x: 0, z: 0 };
+  /** The origin has been placed at least once (the first frame always places static matrices). */
+  private placed = false;
   mode: CameraMode = 'cockpit';
   /** Debug free-fly camera position, logical world metres (y up); used in 'fly' mode, where the look yaw is absolute. */
   readonly fly = { x: 0, y: 3, z: 0 };
   private readonly water: WaterView;
-  private readonly waterExclusion: WaterExclusion;
   private readonly eye = new THREE.Vector3();
   private readonly grid: THREE.GridHelper;
   private readonly buoys = createBuoys();
@@ -104,11 +114,17 @@ export class SceneView {
   constructor(
     model: BoatModel, private readonly waves: WaveConfig, env: EnvironmentConfig,
     private readonly wind: WindConfig, navigation: Navigation,
+    /** Rendering preset (antialiasing, pixel-ratio cap). */
+    readonly quality: Quality,
   ) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    // The frame is drawn in two passes (see render): count both.
+    // One explicit matrix-world traversal per frame (render); renderer.render skips its own.
+    this.scene.matrixWorldAutoUpdate = false;
+    this.renderer = new THREE.WebGLRenderer({ antialias: QUALITY[quality].antialias });
+    this.gpu = new GpuTimer(this.renderer.getContext() as WebGL2RenderingContext);
+    // The frame is drawn in several renders (bow field, passes; see render): count them all, with
+    // one reset at the start of each frame.
     this.renderer.info.autoReset = false;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, QUALITY[quality].maxPixelRatio));
     document.body.appendChild(this.renderer.domElement);
     this.scene.fog = new THREE.Fog(0xffffff, FOG_NEAR, FOG_FAR); // colour set by the sky
 
@@ -122,10 +138,8 @@ export class SceneView {
     this.scene.add(this.sky.mesh);
 
     this.boat = createBoatMesh(model);
-    this.wake = new WakeView(model, this.boat.layout, env);
-    this.waterExclusion = new WaterExclusion(this.boat.layout);
-    this.waterExclusion.add(this.boat);
-    this.water = createWater(waves, this.sky, this.gusts, sun, hemisphere, this.wake, this.waterExclusion);
+    this.wake = new WakeView(model, this.boat.layout, env, this.renderer, this.gpu);
+    this.water = createWater(waves, this.sky, this.gusts, sun, hemisphere, this.wake);
     this.scene.add(this.water.mesh, this.water.nearMesh);
 
     this.grid = new THREE.GridHelper(GRID_CELL * GRID_CELLS, GRID_CELLS, 0x6f9fbf, 0x4a7a9a);
@@ -133,12 +147,14 @@ export class SceneView {
     this.scene.add(this.grid);
 
     this.scene.add(this.buoys);
+    // Buoys only move with a rebase (render): their matrices update then, never per frame.
+    this.buoys.traverse((o) => { o.updateMatrix(); o.matrixAutoUpdate = false; });
 
-    this.land = createLand(this.sky);
+    this.land = createLand(this.sky, QUALITY[quality].trees);
     this.scene.add(this.land.group);
 
     this.scene.add(this.boat.yaw);
-    this.remoteBoats = new RemoteBoatsView(model, this.waterExclusion);
+    this.remoteBoats = new RemoteBoatsView(model);
     this.scene.add(this.remoteBoats.group);
     this.scene.add(this.mooring.group);
 
@@ -179,22 +195,36 @@ export class SceneView {
 
   /** Draws one frame: the own boat at `pose`, the other players' boats at `remotes`. */
   render(pose: RenderPose, remotes: ReadonlyMap<number, RemotePose> = NO_REMOTES): void {
+    this.gpu.poll();
+    this.gpu.beginFrame();
+    this.renderer.info.reset();
     const b = this.boat;
-    // Rebase drawing only. Double-precision logical positions remain untouched.
-    this.origin.x = pose.x;
-    this.origin.z = pose.z;
+    // Rebase drawing only, in whole REBASE_GRID jumps: static land and buoy matrices change only
+    // then. Double-precision logical positions remain untouched.
+    const ox = Math.round(pose.x / REBASE_GRID) * REBASE_GRID;
+    const oz = Math.round(pose.z / REBASE_GRID) * REBASE_GRID;
+    const rebased = !this.placed || ox !== this.origin.x || oz !== this.origin.z;
+    this.origin.x = ox;
+    this.origin.z = oz;
+    this.placed = true;
+    // The boat in render-local coordinates.
+    const bx = pose.x - ox;
+    const bz = pose.z - oz;
     const wavesActive = waveAmplitude(this.waves) !== 0;
     sampleWaves(this.waves, pose.x, pose.z, pose.t, 0, this.surface);
-    b.yaw.position.set(0, this.surface.y, 0);
+    b.yaw.position.set(bx, this.surface.y, bz);
     b.yaw.rotation.y = -pose.heading;
     b.update(pose);
     // An immediate debug toggle can precede the next physics/interpolation frame.
     if (!wavesActive) b.pitch.rotation.x = 0;
 
     // Fixed buoy and land transforms compose in JS doubles before GPU matrix upload/culling.
-    this.buoys.position.set(-this.origin.x, 0, -this.origin.z);
+    if (rebased) {
+      this.buoys.position.set(-ox, 0, -oz);
+      this.buoys.updateMatrix();
+    }
     this.land.update(this.origin, this.waves, pose.t);
-    this.remoteBoats.update(remotes, this.origin, this.waves, pose.t, pose.dt);
+    this.remoteBoats.update(remotes, this.origin, pose, this.waves, pose.t, pose.dt);
     // After land and remote boats are placed: getWorldPosition refreshes each anchor's ancestors.
     this.mooring.begin();
     if (pose.moored) this.moor(b, pose.x, pose.z);
@@ -205,7 +235,8 @@ export class SceneView {
     this.mooring.end();
     this.wake.update(pose, this.origin, this.waves, this.surface.y, b.pitch.rotation.x);
     this.water.update(this.origin, pose.t);
-    this.gusts.update(this.wind, this.origin, pose.t);
+    this.water.placeFar(bx, bz);
+    this.gusts.update(this.wind, pose, this.origin, pose.t);
     this.grid.visible = this.water.mesh.visible && !wavesActive;
     this.grid.position.x = Math.round(pose.x / GRID_CELL) * GRID_CELL - this.origin.x;
     this.grid.position.z = Math.round(pose.z / GRID_CELL) * GRID_CELL - this.origin.z;
@@ -235,20 +266,20 @@ export class SceneView {
         c.updateProjectionMatrix();
       }
       c.position.set(
-        OUTSIDE_DISTANCE * Math.cos(el) * Math.sin(az),
+        bx + OUTSIDE_DISTANCE * Math.cos(el) * Math.sin(az),
         this.surface.y + OUTSIDE_TARGET_HEIGHT + OUTSIDE_DISTANCE * Math.sin(el),
-        -OUTSIDE_DISTANCE * Math.cos(el) * Math.cos(az),
+        bz - OUTSIDE_DISTANCE * Math.cos(el) * Math.cos(az),
       );
-      c.lookAt(0, this.surface.y + OUTSIDE_TARGET_HEIGHT, 0);
+      c.lookAt(bx, this.surface.y + OUTSIDE_TARGET_HEIGHT, bz);
       cam = c;
     }
     // Clouds drift with the mean wind, not each gust.
     this.sky.update(pose.t, meanWind(this.wind));
+    this.sky.updateReflections(this.renderer, this.gpu);
     this.sky.follow(cam);
     this.navigation.update(this.mode === 'cockpit');
-    this.renderer.info.reset();
     setDetailScale(this.bufferHeight, cam.fov);
-    // Split depth: one depth range from 5 cm to 30 km is not precise far away in the canvas's
+    // Split depth: one depth range from 5 cm to 9.5 km is not precise far away in the canvas's
     // fixed-point depth buffer. So the scene is
     // drawn beyond NEAR_SPLIT first, with the near plane pushed out there, which is precise enough that
     // far houses, trees and window panes stop z-fighting; then the depth is cleared and everything
@@ -258,9 +289,14 @@ export class SceneView {
     // Each pass has its own camera object: three re-uploads a projection only when the camera changes.
     this.scene.updateMatrixWorld();
     cam.updateMatrixWorld();
+    this.eye.setFromMatrixPosition(cam.matrixWorld);
+    const eyeX = this.eye.x + this.origin.x;
+    const eyeZ = this.eye.z + this.origin.z;
+    this.land.trees?.update(eyeX, eyeZ);
     const farCamera = this.passCamera(this.farPass, cam, NEAR_SPLIT, cam.far);
-    this.waterExclusion.prepare(this.renderer, farCamera);
+    this.gpu.begin('far');
     this.renderer.render(this.scene, farCamera);
+    this.gpu.end();
     // A colour background makes three clear the colour on every render, autoClear or not: drop it
     // for the near pass so the far pass's picture survives.
     const background = this.scene.background;
@@ -270,13 +306,17 @@ export class SceneView {
     const waterVisible = this.water.mesh.visible;
     this.water.mesh.visible = false;
     this.water.nearMesh.visible = waterVisible;
-    this.eye.setFromMatrixPosition(cam.matrixWorld);
     this.water.placeNear(this.eye.x, this.eye.z);
+    // Placed after the frame's single matrix update (the scene does not auto-update).
+    this.water.nearMesh.updateMatrixWorld();
     this.renderer.autoClear = false;
     this.renderer.clearDepth();
     const nearCamera = this.passCamera(this.nearPass, cam, cam.near, NEAR_SPLIT * SPLIT_OVERLAP);
-    this.waterExclusion.prepare(this.renderer, nearCamera);
+    this.gpu.begin('near');
+    this.land.trees?.beginNearPass(eyeX, eyeZ);
     this.renderer.render(this.scene, nearCamera);
+    this.land.trees?.endNearPass();
+    this.gpu.end();
     this.renderer.autoClear = true;
     this.sky.mesh.visible = true;
     this.water.mesh.visible = waterVisible;
