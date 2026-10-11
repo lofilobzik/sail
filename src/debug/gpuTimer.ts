@@ -5,7 +5,7 @@
  * switch, power change) invalidates every frame still waiting for a result.
  */
 
-export const GPU_LABELS = ['bow', 'reflection', 'far', 'near', 'scene', 'blit'] as const;
+export const GPU_LABELS = ['bow', 'reflection', 'far', 'near'] as const;
 export type GpuLabel = (typeof GPU_LABELS)[number];
 
 /** One frame's GPU time, ms per label (0 for a label not issued that frame) and in total. */
