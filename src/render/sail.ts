@@ -1,5 +1,5 @@
 /**
- * Sail view (milestone 4): Verlet cloth plus telltales, visual only. The cloth and
+ * Sail view (milestone 4): XPBD cloth plus telltales, visual only. The cloth and
  * telltale math lives in ./cloth (no Three.js, unit-tested); this file turns it into
  * meshes in the boom frame (x across, y up, z aft along the boom, origin at the tack).
  *
@@ -76,6 +76,8 @@ export function createSail(layout: BoatLayout): SailView {
   const position = new THREE.BufferAttribute(cloth.positions, 3);
   position.setUsage(THREE.DynamicDrawUsage);
   geom.setAttribute('position', position);
+  const normal = new THREE.BufferAttribute(cloth.normals, 3).setUsage(THREE.DynamicDrawUsage);
+  geom.setAttribute('normal', normal);
 
   // Texture coordinates in cloth metres, so a printed design keeps its proportions: u is the
   // distance aft of the luff line over the widest chord, v the height along the luff over its length.
@@ -191,9 +193,11 @@ export function createSail(layout: BoatLayout): SailView {
       windDir[1] = input.windDir.y;
       windDir[2] = input.windDir.z;
       const windScale = Math.min((input.apparentSpeed / cv.referenceAws) ** 2, cv.maxWindScale);
-      cloth.update({ dt: input.dt, leeward, fill: 1 - input.luffAmount, luff: input.luffAmount, windDir, windScale });
+      const stepped = cloth.update({ dt: input.dt, leeward, fill: 1 - input.luffAmount, luff: input.luffAmount, windDir, windScale });
+      // No time passed (paused or a repeated frame): the cloth, clew and telltales are unchanged.
+      if (!stepped) return;
       position.needsUpdate = true;
-      geom.computeVertexNormals();
+      normal.needsUpdate = true;
       cloth.sample(1, 0, clew);
       attachment.update(clew);
 

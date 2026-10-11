@@ -77,6 +77,59 @@ describe('cloth', () => {
     expect(motion(filled(1))).toBeLessThan(0.01);
     expect(motion(luffing)).toBeGreaterThan(0.05);
   });
+
+  it('keeps its shape independent of frame rate and survives a stall', () => {
+    const settle = (dts: number[], stallAt?: number) => {
+      const cloth = new Cloth(planform, params);
+      let stalled = stallAt === undefined;
+      for (let t = 0, i = 0; t < 4; i++) {
+        const dt = !stalled && t >= stallAt! ? ((stalled = true), 0.5) : dts[i % dts.length]!;
+        cloth.update({ ...filled(1), dt });
+        t += dt;
+      }
+      return cloth;
+    };
+    const reference = meanX(settle([1 / 60]));
+    for (const cloth of [settle([1 / 60]), settle([1 / 30]), settle([1 / 120]), settle([1 / 30, 1 / 120]), settle([1 / 60], 2)]) {
+      expect(Math.abs(meanX(cloth) / reference - 1)).toBeLessThan(0.05);
+      expect(cloth.maxStretch(0.1)).toBeLessThan(0.1);
+      expect(cloth.positions.every(Number.isFinite)).toBe(true);
+    }
+  });
+
+  it('keeps normals finite, unit length and facing the same side as the triangle normals', () => {
+    const { cols, rows } = planform;
+    const check = (cloth: Cloth) => {
+      const pos = cloth.positions;
+      const faces = new Float64Array(pos.length);
+      const corner = (v: number, d: number) => pos[v * 3 + d]!;
+      for (let k = 0; k < rows - 1; k++) {
+        for (let i = 0; i < cols - 1; i++) {
+          const a = k * cols + i;
+          const b = a + cols;
+          // Same triangles and winding as the sail mesh (sail.ts).
+          for (const [p, q, r] of [[a, a + 1, b], [a + 1, b + 1, b]] as const) {
+            const u = [0, 1, 2].map((d) => corner(q, d) - corner(p, d));
+            const v = [0, 1, 2].map((d) => corner(r, d) - corner(p, d));
+            // Unnormalised cross product: twice the area, so the sum is area-weighted.
+            const n = [u[1]! * v[2]! - u[2]! * v[1]!, u[2]! * v[0]! - u[0]! * v[2]!, u[0]! * v[1]! - u[1]! * v[0]!];
+            for (const vert of [p, q, r]) for (let d = 0; d < 3; d++) faces[vert * 3 + d]! += n[d]!;
+          }
+        }
+      }
+      for (let v = 0; v < cols * rows; v++) {
+        const n = [0, 1, 2].map((d) => cloth.normals[v * 3 + d]!);
+        expect(n.every(Number.isFinite)).toBe(true);
+        expect(Math.abs(Math.hypot(n[0]!, n[1]!, n[2]!) - 1)).toBeLessThan(1e-4);
+        expect(n[0]! * faces[v * 3]! + n[1]! * faces[v * 3 + 1]! + n[2]! * faces[v * 3 + 2]!).toBeGreaterThan(0);
+      }
+    };
+    const cloth = new Cloth(planform, params);
+    run(cloth, filled(1), 4);
+    check(cloth);
+    run(cloth, luffing, 1);
+    check(cloth);
+  });
 });
 
 describe('telltales', () => {
