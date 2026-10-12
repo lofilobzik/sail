@@ -227,14 +227,13 @@ if (server) {
   server.client.onChallenges = applyChallenges;
   if (server.client.challenges) applyChallenges(server.client.challenges);
 }
-// The menu, the debug panel and the M key all change preferences; the sound, the sail and both
-// panels follow from here.
+// The menu and the debug panel change preferences; the sound, the sail and both panels follow from
+// here.
 let savedSail = prefs.value.sail;
 prefs.subscribe((p) => {
   sound.setVolume(p.volume);
   sound.setMuted(p.muted);
   look.playerSensitivity = p.lookSensitivity;
-  menu.setMuted(p.muted);
   // Only a changed sail choice acts, so a ?sail= override survives unrelated changes.
   if (p.sail !== savedSail && knownSail(p.sail)) {
     savedSail = p.sail;
@@ -243,10 +242,10 @@ prefs.subscribe((p) => {
     menu.setSailDesign(p.sail);
   }
 });
-// M: mute or unmute.
+// M: show or hide the paper chart (hidden at every start; cockpit only, where it is drawn).
 window.addEventListener('keydown', (e) => {
-  if (e.code !== BINDINGS.mute.keys.toggle || e.repeat || isTypingTarget(e.target)) return;
-  prefs.set({ muted: !prefs.value.muted });
+  if (e.code !== BINDINGS.chart.keys.toggle || e.repeat || isTypingTarget(e.target) || menu.open) return;
+  if (view.mode === 'cockpit') view.navigation.setChartShown(!view.navigation.chartShown);
 });
 
 // G: free-fly debug camera (WASD, E up, Q down, Shift fast). The boat gets neutral controls and

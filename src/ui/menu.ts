@@ -174,11 +174,6 @@ export class Menu {
     return this.isOpen;
   }
 
-  /** Keeps the checkbox in step when M mutes from the keyboard. */
-  setMuted(muted: boolean): void {
-    this.muteBox.checked = muted;
-  }
-
   /** Keeps the sail picker in step when the debug panel changes the design. */
   setSailDesign(id: string): void {
     this.sailSelect.value = id;

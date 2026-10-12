@@ -221,7 +221,7 @@ Rules:
 | B (hold) | Raise the binoculars: the view glides to 10x through a two-lens mask, mouse look slows to match, and lowering them glides back. For checking landmarks from afar; bearings still come from the compass (F), and B is ignored during a reading and F while the glasses are up |
 | R | Reckon, with the chart in view: plot bearings taken since the last plot (a fix), otherwise the dead-reckoning leg |
 | H | Toggle test instruments (hidden by default) |
-| M | Mute / unmute |
+| M | Show / hide the paper chart (hidden at every start, cockpit only). Mute is in the Esc menu |
 | J | Challenge log: every challenge with its steps, progress and reward, in the menu's panel. Keeps the pointer lock and the sim running; J or Esc closes it |
 | G | Debug free-fly camera: WASD fly along the view, E up, Q down, Shift fast, mouse look turns it in world space. The boat sails on with neutral controls. B (hold) raises the binoculars here too. G or V returns to the cockpit. `?fly=x,z,height[,bearing[,pitch]]` opens already flying |
 | Esc | Menu: controls, volume, sail design (reward sails locked until earned, the rest shown but locked for now), challenges summary and sailor code, respawn, reset hints. The sim keeps running |

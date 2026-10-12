@@ -1,11 +1,11 @@
 /**
  * Hold F: take a reading. Where you look decides which: looking astern at the wake (no mark under
  * the crosshair) judges speed, anything else raises the hand-bearing compass for a bearing.
- * R: reckon, i.e. plot on the chart. The mouse is only for looking around and the debug panel.
+ * R: reckon, i.e. plot on the chart (M shows it). The mouse is only for looking around and the debug panel.
  */
 import type { Navigation, ReadingKind } from '../nav/navigation';
 import type { NavigationView } from '../render/navigation';
-import { BINDINGS } from './bindings';
+import { BINDINGS, keyLabels } from './bindings';
 import { isTypingTarget } from './controls';
 
 export class NavigationInput {
@@ -57,6 +57,7 @@ export class NavigationInput {
     navigation.setLooking(view.chartInView);
     if (this.takeReckon()) {
       if (view.chartInView) navigation.beginAutoPlot();
+      else if (!view.chartShown) navigation.message = `Show the chart with ${keyLabels(BINDINGS.chart.keys)} to reckon.`;
       else navigation.message = 'Look down at the chart to reckon.';
     }
   }

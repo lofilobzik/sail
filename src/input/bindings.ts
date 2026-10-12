@@ -10,7 +10,7 @@ export const BINDINGS = {
   binoculars: { keys: { hold: 'KeyB' }, action: 'Binoculars', developer: false },
   reckon: { keys: { press: 'KeyR' }, action: 'Plot on the chart', developer: false },
   castOff: { keys: { press: 'KeyE' }, action: 'Cast off from the berth', developer: false },
-  mute: { keys: { toggle: 'KeyM' }, action: 'Mute', developer: false },
+  chart: { keys: { toggle: 'KeyM' }, action: 'Show / hide the chart', developer: false },
   challenges: { keys: { toggle: 'KeyJ' }, action: 'Challenge log', developer: false },
   menu: { keys: { toggle: 'Escape' }, action: 'Menu', developer: false },
   instruments: { keys: { toggle: 'KeyH' }, action: 'Instruments', developer: true },

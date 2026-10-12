@@ -11,6 +11,8 @@ import { bodyToLocal } from './bodyFrame';
 export class NavigationView {
   readonly chart: LapChart;
   readonly compass: HandBearingCompass;
+  /** The paper chart is drawn (M toggles it; hidden at start). Hidden, it is neither painted nor in view. */
+  chartShown = false;
   sighting = false;
   /** Horizontal direction the camera looks, graduated; null when aimed too steeply to read. */
   bearing: number | null = null;
@@ -34,10 +36,16 @@ export class NavigationView {
     private readonly origin: Readonly<Vec2>,
   ) {
     this.chart = new LapChart(nav, boat.sailor.eye);
+    this.chart.object.visible = this.chartShown;
     this.compass = new HandBearingCompass(camera);
     // The bow tip, riding with the hull, is what the sailor sights along to read the boat's own course.
     bodyToLocal(boat.layout.bowX, 0, boat.layout.sheerAt(boat.layout.bowX), this.bow.position);
     boat.heel.add(this.bow);
+  }
+
+  setChartShown(shown: boolean): void {
+    this.chartShown = shown;
+    this.chart.object.visible = shown;
   }
 
   /** Camera world direction includes look, heading, heel, and pitch. No target position is consulted. */
@@ -47,12 +55,12 @@ export class NavigationView {
     this.chart.object.getWorldPosition(this.chartPosition);
     this.camera.getWorldPosition(this.eyePosition);
     const toChart = this.chartPosition.sub(this.eyePosition).normalize();
-    this.chartInView = cockpit && toChart.dot(this.direction) > Math.cos(NAVIGATION.visual.chartViewDeg * Math.PI / 180);
+    this.chartInView = cockpit && this.chartShown && toChart.dot(this.direction) > Math.cos(NAVIGATION.visual.chartViewDeg * Math.PI / 180);
     this.aimedMark = cockpit ? this.markUnderCrosshair() : null;
     this.aimedBow = cockpit && this.sightingAlongBow();
     this.lookingAstern = cockpit && this.facingAstern();
     this.compass.update(this.bearing, this.sighting && cockpit);
-    this.chart.update();
+    if (this.chartShown) this.chart.update();
   }
 
   /** Aimed down the deck (not at the horizon, where buoys are) and within `bowAimDeg` of the centreline. */
