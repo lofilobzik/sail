@@ -649,4 +649,6 @@ capsize, planing and stronger wind, third-person camera, cruising / management l
   hillside. The renderer uses the standard depth mapping everywhere. A later single-pass prototype (reversed
   float depth into a 4x MSAA target, then a copy to the canvas) rendered correctly on an M1 in Chrome but cost
   more GPU time than the two passes (about 12.6 against 7.1 ms per frame, the copy alone about 5 ms), so it
-  was removed again.
+  was removed again. The near pass skips static land in 500 m squares beyond its frustum's farthest corner
+  (`render/land/index.ts` beginNearPass); on an M1 that walk measured below run-to-run noise (about 0.2 ms
+  of near-pass CPU either way), so it is kept for slower CPUs, unmeasured there.

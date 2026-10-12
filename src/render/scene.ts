@@ -313,9 +313,9 @@ export class SceneView {
     this.renderer.clearDepth();
     const nearCamera = this.passCamera(this.nearPass, cam, cam.near, NEAR_SPLIT * SPLIT_OVERLAP);
     this.gpu.begin('near');
-    this.land.trees?.beginNearPass(eyeX, eyeZ);
+    this.land.beginNearPass(eyeX, eyeZ, frustumReach(nearCamera));
     this.renderer.render(this.scene, nearCamera);
-    this.land.trees?.endNearPass();
+    this.land.endNearPass();
     this.gpu.end();
     this.renderer.autoClear = true;
     this.sky.mesh.visible = true;
@@ -345,4 +345,11 @@ export class SceneView {
     pass.updateProjectionMatrix();
     return pass;
   }
+}
+
+/** Distance from the eye to the far corners of `cam`'s frustum, m: nothing it draws is farther. */
+function frustumReach(cam: THREE.PerspectiveCamera): number {
+  const tanY = Math.tan((cam.fov * Math.PI) / 360) / cam.zoom;
+  const tanX = tanY * cam.aspect;
+  return cam.far * Math.sqrt(1 + tanX * tanX + tanY * tanY);
 }

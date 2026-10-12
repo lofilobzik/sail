@@ -5,7 +5,8 @@
  * the harbour works. Conifers are narrow, dark, fir-like and dominate the hills and the belt; broadleaves
  * fill the lowlands. Drawn as InstancedMeshes per 500 m square (so off-screen forest is skipped), with
  * the full model near and a trunkless crown far, switched by TreeField from the eye position (no
- * per-frame LOD traversal); the split-depth near pass draws only the near squares within its reach.
+ * per-frame LOD traversal). Inside the split-depth near pass's reach (land/index.ts) a square is
+ * always on its near model: FAR_DISTANCE is far beyond a square's half-diagonal plus that reach.
  * Seeded from BAY.seed.
  */
 import * as THREE from 'three';
@@ -43,8 +44,6 @@ const CHUNK = 500; // m: trees are grouped per square of this size
 const FAR_DISTANCE = 1000; // m from a chunk's centre: the trunkless far models beyond
 const LOD_HYSTERESIS = 0.15; // fraction of the distance, so a square at the boundary never flickers
 const LOD_REFRESH_DISTANCE = 20; // m the eye moves before the near/far choice is refreshed
-// m: the near pass (15.3 m of view depth, scene.ts) plus a generous widest crown radius.
-const NEAR_TREE_REACH = 33;
 
 /** Colours (sRGB), VISUAL ESTIMATE. */
 const TRUNK = 0x5a4634;
@@ -136,9 +135,7 @@ export function placeTrees(grid: TerrainGrid, shore: Float32Array, houses: Footp
 }
 
 interface TreeChunk {
-  /** Logical-world corner (x0, z0) and centre of the CHUNK square. */
-  x0: number;
-  z0: number;
+  /** Logical-world centre of the CHUNK square. */
   centreX: number;
   centreZ: number;
   near: THREE.InstancedMesh;
@@ -193,7 +190,7 @@ export class TreeField {
         return mesh;
       }) as [THREE.InstancedMesh, THREE.InstancedMesh];
       near.visible = false;
-      this.chunks.push({ x0: ix * CHUNK, z0: iz * CHUNK, centreX, centreZ, near, far, isNear: false });
+      this.chunks.push({ centreX, centreZ, near, far, isNear: false });
     }
   }
 
@@ -205,24 +202,6 @@ export class TreeField {
     for (const c of this.chunks) {
       const d = Math.hypot(c.centreX - x, c.centreZ - z);
       c.isNear = d < FAR_DISTANCE * (c.isNear ? 1 + LOD_HYSTERESIS : 1);
-      c.near.visible = c.isNear;
-      c.far.visible = !c.isNear;
-    }
-  }
-
-  /** Near pass from the logical eye (x, z): only near models of squares within NEAR_TREE_REACH. */
-  beginNearPass(x: number, z: number): void {
-    for (const c of this.chunks) {
-      c.far.visible = false;
-      const dx = Math.max(c.x0 - x, 0, x - (c.x0 + CHUNK));
-      const dz = Math.max(c.z0 - z, 0, z - (c.z0 + CHUNK));
-      c.near.visible = dx * dx + dz * dz <= NEAR_TREE_REACH * NEAR_TREE_REACH;
-    }
-  }
-
-  /** Restores the near/far choice after the near pass. */
-  endNearPass(): void {
-    for (const c of this.chunks) {
       c.near.visible = c.isNear;
       c.far.visible = !c.isNear;
     }
