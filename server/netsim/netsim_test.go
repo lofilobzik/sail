@@ -483,8 +483,9 @@ func TestMooredSpawnAndCastOff(t *testing.T) {
 		t.Fatalf("after input 1: %+v, want held at berth 0", s1.State)
 	}
 	tr.write(a, `{"type":"input","seq":2,"controls":{"tiller":0,"sheet":0.25,"hike":0},"castOff":true}`)
-	if s2 := tr.snapshotWhere(a, func(s Snapshot) bool { return s.AckSeq == 2 }); s2.State.Moored {
-		t.Fatalf("after the cast-off input: %+v, want unmoored", s2.State)
+	// The shove (harbour.castOff) sends it forward and away from its pontoon, berth 0's port side.
+	if s2 := tr.snapshotWhere(a, func(s Snapshot) bool { return s.AckSeq == 2 }); s2.State.Moored || s2.State.U <= 0 || s2.State.V <= 0 || berths[0].Side != "port" {
+		t.Fatalf("after the cast-off input: %+v, want unmoored, moving forward and to starboard", s2.State)
 	}
 	// Boat 1 is still alongside berth 0, so a fifth boat goes to the next free spawn slot.
 	_, w5 := tr.join("")

@@ -27,7 +27,19 @@ export function mooredAt(berth: Berth, boat: BoatModel, cfg: SimConfig, t = 0): 
   return s;
 }
 
-/** Which berth a moored boat at (x, z) is held at (within 0.5 m), else -1. Only for drawing lines; never a source of state. */
+/** Which berth a moored boat at (x, z) is held at (within 0.5 m), else -1. */
 export function berthIndexAt(x: number, z: number): number {
   return BERTHS.findIndex((b) => Math.hypot(b.x - x, b.z - z) <= 0.5);
+}
+
+/**
+ * Releases a moored boat with a small shove (data/bay.json harbour.castOff): forward, and away from
+ * the pontoon when it lies at a berth. Server counterpart: CastOff in server/sim/mooring.go.
+ */
+export function castOff(s: BoatState): void {
+  const push = BAY.harbour.castOff;
+  const berth = BERTHS[berthIndexAt(s.x, s.z)];
+  s.moored = false;
+  s.u = push.forward;
+  s.v = berth ? (berth.side === 'port' ? push.away : -push.away) : 0;
 }

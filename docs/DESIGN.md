@@ -467,7 +467,10 @@ fraction of a second and holds its position. Same idea for the sheet.
   heading and velocities in `integrate` (TS and Go, golden trace `moored`); heel, pitch, boom and crew
   still move with the waves. The sheet starts fully eased and the boom already weathervaned, so the
   sail luffs. E (cockpit only; fly mode uses E for up) casts off on the next fixed step: the flag
-  rides on that step's input, so server and prediction release on the same step. Two cosmetic dock
+  rides on that step's input, so server and prediction release on the same step. Casting off gives a
+  small shove (`castOff` in TS and Go, `harbour.castOff` TUNING GUESS 0.5 m/s forward, 0.3 m/s away
+  from the berth's pontoon side), so the boat glides clear instead of lying beside the pontoon; once
+  under way the daggerboard soon damps the sideways part. Two cosmetic dock
   lines (`render/mooringLines.ts`, any boat anchor to any shore anchor) run from the bow eye and the
   pontoon-side traveller eye to cleats with two rubber fenders per berth, drawn for every moored
   boat, own and remote (`RemoteBoat.moored`). Three berths; later boats start on the spawn grid. A

@@ -67,6 +67,10 @@ type BayParameters struct {
 			Z          float64 `json:"z"`
 			HeadingDeg float64 `json:"headingDeg"`
 		} `json:"departure"`
+		CastOff struct {
+			Forward float64 `json:"forward"`
+			Away    float64 `json:"away"`
+		} `json:"castOff"`
 		Reclaimed []HarbourRect `json:"reclaimed"`
 		Dredged   []HarbourRect `json:"dredged"`
 		Berths    []Berth       `json:"berths"`

@@ -1,5 +1,7 @@
 package sim
 
+import "math"
+
 // Berth is one mooring of data/bay.json harbour.berths (world x east, z south, m).
 type Berth struct {
 	X          float64 `json:"x"`
@@ -28,5 +30,23 @@ func Moor(s BoatState, boat *BoatModel, cfg *SimConfig) BoatState {
 	s.U, s.V, s.R, s.Moored = 0, 0, 0, true
 	d := Evaluate(s, mooredControls, boat, cfg)
 	s.Boom, s.BoomSide = d.BoomTarget, d.BoomSide
+	return s
+}
+
+// CastOff releases a moored boat with a small shove (data/bay.json harbour.castOff; TS castOff):
+// forward, and away from the pontoon when it lies at a berth (within 0.5 m, TS berthIndexAt).
+func CastOff(s BoatState) BoatState {
+	push := Bay.Harbour.CastOff
+	s.Moored, s.U, s.V = false, push.Forward, 0
+	for _, b := range Bay.Harbour.Berths {
+		if math.Hypot(b.X-s.X, b.Z-s.Z) <= 0.5 {
+			if b.Side == "port" {
+				s.V = push.Away
+			} else {
+				s.V = -push.Away
+			}
+			break
+		}
+	}
 	return s
 }

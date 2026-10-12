@@ -299,7 +299,7 @@ func (r *Room) step() {
 			b.ackSeq = e.seq
 			b.queue.pop()
 			if e.castOff {
-				b.state.Moored = false
+				b.state = sim.CastOff(b.state)
 			}
 			res := sim.Step(b.state, b.controls, r.model, &r.cfg)
 			b.state = res.State

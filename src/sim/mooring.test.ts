@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { browserConfig } from './config';
 import { buildBoat } from './boat';
-import { BERTHS, mooredAt } from './mooring';
+import { BERTHS, castOff, mooredAt } from './mooring';
 import type { BoatState, Controls } from './state';
 import { step, type Diagnostics } from './step';
 
@@ -75,5 +75,25 @@ describe('moored at a berth', () => {
       expect(s.moored).toBe(false);
     }
     expect(Math.hypot(s.x - start.x, s.z - start.z)).toBeGreaterThan(5);
+  });
+
+  it('casts off forward and clear of the pontoon', () => {
+    // Sheet eased, flat water: compare the shove with a plain release over two seconds.
+    const drift = (shove: boolean) => {
+      let s: BoatState = { ...flat.states.at(-1)! };
+      if (shove) castOff(s);
+      else s.moored = false;
+      for (let t = 0; t < 2; t += flat.cfg.dt) s = step(s, EASED, boat, flat.cfg).state;
+      const h = berth.headingDeg * Math.PI / 180;
+      const dx = s.x - berth.x, dz = s.z - berth.z;
+      // Compass heading, x east, z south: forward (sin h, -cos h), starboard (cos h, sin h).
+      const away = berth.side === 'port' ? 1 : -1;
+      return { ahead: dx * Math.sin(h) - dz * Math.cos(h), clear: away * (dx * Math.cos(h) + dz * Math.sin(h)) };
+    };
+    const pushed = drift(true);
+    const released = drift(false);
+    expect(pushed.ahead).toBeGreaterThan(released.ahead + 0.3);
+    expect(pushed.clear).toBeGreaterThan(released.clear + 0.1);
+    expect(pushed.clear).toBeGreaterThan(0);
   });
 });

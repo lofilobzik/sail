@@ -12,7 +12,7 @@ import { Vector2 } from 'three';
 import { interpolatePose } from './render/pose';
 import { SceneView, type RenderPose } from './render/scene';
 import { ForceVectors } from './render/vectors';
-import { BERTHS, DEG, FixedStep, NEUTRAL_CONTROLS, WAVE_PARAMETERS, browserConfig, buildBoat, clamp, evaluate, initialState, mooredAt, setWaveParameters, step, type BoatState, type Diagnostics } from './sim';
+import { BERTHS, DEG, FixedStep, NEUTRAL_CONTROLS, WAVE_PARAMETERS, browserConfig, buildBoat, castOff, clamp, evaluate, initialState, mooredAt, setWaveParameters, step, type BoatState, type Diagnostics } from './sim';
 import { joinServer, serverChoice } from './net/link';
 import type { RemotePose } from './net/remote';
 import { SailSound } from './audio/sound';
@@ -329,16 +329,16 @@ function frame(now: number): void {
   for (let i = 0; i < steps; i++) {
     // Flying the camera borrows WASD: the boat sails on with neutral controls.
     const controls = view.mode === 'fly' ? (input.reset(), { ...NEUTRAL_CONTROLS }) : input.update(cfg.dt);
-    const castOff = castOffRequested && curr.moored;
-    if (castOff) {
-      curr.moored = false;
+    const castingOff = castOffRequested && curr.moored;
+    if (castingOff) {
+      castOff(curr);
       castOffRequested = false;
     }
     const result = step(curr, controls, boat, cfg);
     prev = curr;
     curr = result.state;
     diagnostics = result.diagnostics;
-    server?.afterStep(curr, controls, castOff);
+    server?.afterStep(curr, controls, castingOff);
     // Narrow instrument boundary: only the speed through the water; no true x/z, heading or sway.
     navigation.advance({ t: curr.t, speed: (prev.u + curr.u) / 2 }, cfg.dt);
   }
