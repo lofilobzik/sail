@@ -1,9 +1,13 @@
 {
-  "source": "Sandbox challenge, not a race mark rounding rule: a buoy counts once the boat comes within data/buoys.json proximityRadius of it; no rounding direction is required.",
-  "buoyTour": {
-    "id": "buoy-tour",
-    "title": "Buoy tour",
-    "description": "Sail within 30 m of every buoy in the bay, in any order.",
-    "reward": { "type": "sail", "id": "tide" }
-  }
+  "source": "Sandbox challenges, not race mark rounding rules. Each challenge has a `kind` that says how its steps are reached; the server detects them from its own boat state. Kinds: `visitBuoys`: one step per name in `buoys` (data/buoys.json), reached once the boat comes within proximityRadius of that buoy, any order, no rounding direction. A buoy may be a step of several challenges. `reward` is optional; the client unlocks it once the server reports the challenge complete.",
+  "challenges": [
+    {
+      "id": "buoy-tour",
+      "title": "Buoy tour",
+      "description": "Sail within 30 m of every buoy in the bay, in any order.",
+      "kind": "visitBuoys",
+      "buoys": ["N", "NE", "E", "SE", "S"],
+      "reward": { "type": "sail", "id": "tide" }
+    }
+  ]
 }

@@ -19,21 +19,20 @@ type Store interface {
 	SavePosition(ctx context.Context, code string, p store.Position, at time.Time) error
 }
 
-// unsavedStep is a visit the room has detected whose write the store has not yet confirmed.
+// unsavedStep is a step the room has detected whose write the store has not yet confirmed.
 type unsavedStep struct {
 	code     string
 	inflight bool
 	retryAt  time.Time
 }
 
-// saveJob is one queued write: a challenge step (entry is the exact unsavedStep it was queued for),
-// or, when pos is set, a player's last position.
+// saveJob is one queued write: a challenge step (index into sim.ChallengeSteps; entry is the exact
+// unsavedStep it was queued for), or, when pos is set, a player's last position.
 type saveJob struct {
 	boat  *roomBoat
 	index int
 	entry *unsavedStep
 	code  string
-	step  string
 	pos   *store.Position
 }
 
@@ -67,27 +66,34 @@ func (r *Room) resolve(ctx context.Context, code string) *playerInfo {
 	return info
 }
 
-// statuses is the buoy tour's status for the wire.
+// statuses is every challenge's status for the wire, in data order.
 func (r *Room) statuses(progress map[string]store.Challenge) []ChallengeStatus {
-	tour := sim.ChallengeParams.BuoyTour
-	c := progress[tour.ID]
-	st := ChallengeStatus{ID: tour.ID, Steps: c.Steps, Total: len(sim.BuoyData.Buoys)}
+	out := make([]ChallengeStatus, len(sim.ChallengeParams.Challenges))
+	for i, c := range sim.ChallengeParams.Challenges {
+		out[i] = status(c, progress[c.ID])
+	}
+	return out
+}
+
+// status is c's stored progress p for the wire.
+func status(c sim.Challenge, p store.Challenge) ChallengeStatus {
+	st := ChallengeStatus{ID: c.ID, Steps: p.Steps, Total: len(c.Buoys)}
 	if st.Steps == nil {
 		st.Steps = []string{}
 	}
-	if !c.CompletedAt.IsZero() {
-		st.CompletedAt = c.CompletedAt.UnixMilli()
+	if !p.CompletedAt.IsZero() {
+		st.CompletedAt = p.CompletedAt.UnixMilli()
 	}
-	return []ChallengeStatus{st}
+	return st
 }
 
-// seedProgress sets b's visited flags from stored progress and its pending visits (join).
+// seedProgress sets b's reached steps from stored progress and its pending ones (join).
 func (r *Room) seedProgress(b *roomBoat, p *playerInfo) {
 	if p == nil {
 		if len(b.unsaved) > 0 {
 			r.log.Printf("boat %d: dropped %d unsaved challenge steps (no player)", b.id, len(b.unsaved))
 		}
-		b.player, b.visited, b.unsaved = "", nil, nil
+		b.player, b.reached, b.unsaved = "", nil, nil
 		return
 	}
 	if p.code != b.player && len(b.unsaved) > 0 {
@@ -95,23 +101,24 @@ func (r *Room) seedProgress(b *roomBoat, p *playerInfo) {
 		b.unsaved = nil
 	}
 	b.player = p.code
-	stored := p.progress[sim.ChallengeParams.BuoyTour.ID].Steps
-	b.visited = make([]bool, len(sim.BuoyData.Buoys))
-	for i, buoy := range sim.BuoyData.Buoys {
-		b.visited[i] = slices.Contains(stored, buoy.Name) || b.unsaved[i] != nil
+	b.reached = make([]bool, len(sim.ChallengeSteps))
+	for i, s := range sim.ChallengeSteps {
+		stored := p.progress[sim.ChallengeParams.Challenges[s.Challenge].ID].Steps
+		b.reached[i] = slices.Contains(stored, s.Name) || b.unsaved[i] != nil
 	}
 }
 
-// observe marks every buoy b is near (proximity.go, b.near) as visited and queues its write.
+// observe marks every step b has just reached as reached and queues its write. A visitBuoys step is
+// reached near its buoy (proximity.go, b.near).
 func (r *Room) observe(b *roomBoat) {
 	if b.player == "" {
 		return
 	}
-	for i, near := range b.near {
-		if !near || b.visited[i] {
+	for i, s := range sim.ChallengeSteps {
+		if !b.near[s.Buoy] || b.reached[i] {
 			continue
 		}
-		b.visited[i] = true
+		b.reached[i] = true
 		if b.unsaved == nil {
 			b.unsaved = map[int]*unsavedStep{}
 		}
@@ -120,14 +127,14 @@ func (r *Room) observe(b *roomBoat) {
 	}
 }
 
-// save queues the write of b's unsaved visit i; a full queue counts as a failure the sweep retries.
+// save queues the write of b's unsaved step i; a full queue counts as a failure the sweep retries.
 func (r *Room) save(b *roomBoat, i int) {
 	u := b.unsaved[i]
 	if u == nil || u.inflight {
 		return
 	}
 	select {
-	case r.saves <- saveJob{boat: b, index: i, entry: u, code: u.code, step: sim.BuoyData.Buoys[i].Name}:
+	case r.saves <- saveJob{boat: b, index: i, entry: u, code: u.code}:
 		u.inflight = true
 	default:
 		u.retryAt = r.now().Add(saveRetryDelay)
@@ -139,7 +146,6 @@ func (r *Room) save(b *roomBoat, i int) {
 // effort: a failure is logged, not retried.
 func (r *Room) writeLoop() {
 	defer close(r.saveDone)
-	total := len(sim.BuoyData.Buoys)
 	for job := range r.saves {
 		if job.pos != nil {
 			if err := r.store.SavePosition(context.Background(), job.code, *job.pos, r.now()); err != nil {
@@ -147,7 +153,9 @@ func (r *Room) writeLoop() {
 			}
 			continue
 		}
-		ch, err := r.store.RecordStep(context.Background(), job.code, sim.ChallengeParams.BuoyTour.ID, job.step, total, r.now())
+		s := sim.ChallengeSteps[job.index]
+		c := sim.ChallengeParams.Challenges[s.Challenge]
+		ch, err := r.store.RecordStep(context.Background(), job.code, c.ID, s.Name, len(c.Buoys), r.now())
 		r.do(context.Background(), func() { r.saved(job, ch, err) })
 	}
 }
@@ -176,29 +184,28 @@ func (r *Room) saved(job saveJob, ch store.Challenge, err error) {
 	if u == nil || u != job.entry || u.code != job.code || job.boat.player != job.code {
 		return // the boat switched sailor code meanwhile; the write itself landed under job.code
 	}
+	s := sim.ChallengeSteps[job.index]
+	c := sim.ChallengeParams.Challenges[s.Challenge]
 	if err != nil {
 		u.inflight = false
 		u.retryAt = r.now().Add(saveRetryDelay)
-		r.log.Printf("save %s %s: %v", sim.ChallengeParams.BuoyTour.ID, job.step, err)
+		r.log.Printf("save %s %s: %v", c.ID, s.Name, err)
 		return
 	}
 	delete(job.boat.unsaved, job.index)
 	if m := job.boat.member; m != nil {
-		frame, err := json.Marshal(ChallengesMessage{
-			Type:       TypeChallenges,
-			Challenges: r.statuses(map[string]store.Challenge{sim.ChallengeParams.BuoyTour.ID: ch}),
-		})
+		frame, err := json.Marshal(ChallengesMessage{Type: TypeChallenges, Challenges: []ChallengeStatus{status(c, ch)}})
 		if err != nil {
 			panic(err)
 		}
 		select {
 		case m.news <- frame:
-		default: // at most one frame per buoy per connection fits by construction
+		default: // at most one frame per step per connection fits by construction
 		}
 	}
 }
 
-// retryUnsaved re-queues every unsaved visit whose retry time has come.
+// retryUnsaved re-queues every unsaved step whose retry time has come.
 func (r *Room) retryUnsaved() {
 	if r.store == nil {
 		return

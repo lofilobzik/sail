@@ -1,33 +1,33 @@
 /**
- * The challenge catalogue as the client shows it: titles and rewards from data/challenges.json,
- * steps from the data they refer to. The server verifies and stores progress; the client unlocks
- * rewards when the server reports a challenge complete.
+ * The challenge catalogue as the client shows it, from data/challenges.json `challenges` in data
+ * order. The server verifies and stores progress (and rejects data it cannot check at startup); the
+ * client unlocks rewards when the server reports a challenge complete.
  */
 import challengeData from '../../data/challenges.json';
-import buoyData from '../../data/buoys.json';
 import sailDesigns from '../../data/sail-designs.json';
 import type { ChallengeStatus } from '../net/protocol';
+
+/** How a challenge's steps are reached (data/challenges.json `source`). */
+export type ChallengeKind = 'visitBuoys';
 
 export interface ChallengeInfo {
   id: string;
   title: string;
   description: string;
-  /** Step names in display order. */
+  kind: ChallengeKind;
+  /** Step names in display order: buoy names for visitBuoys. */
   steps: string[];
   reward: { type: 'sail'; id: string } | null;
 }
 
-const tour = challengeData.buoyTour;
-
-export const CHALLENGES: readonly ChallengeInfo[] = [
-  {
-    id: tour.id,
-    title: tour.title,
-    description: tour.description,
-    steps: buoyData.buoys.map((b) => b.name),
-    reward: { type: 'sail', id: tour.reward.id },
-  },
-];
+export const CHALLENGES: readonly ChallengeInfo[] = challengeData.challenges.map((c) => ({
+  id: c.id,
+  title: c.title,
+  description: c.description,
+  kind: c.kind as ChallengeKind,
+  steps: c.buoys,
+  reward: 'reward' in c && c.reward ? { type: 'sail', id: c.reward.id } : null,
+}));
 
 /** Why a sail with no challenge that awards it cannot be picked. */
 export const NO_CHALLENGE = 'no challenge yet';

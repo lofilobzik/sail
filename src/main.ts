@@ -214,7 +214,9 @@ function announceChallenges(prev: readonly ChallengeStatus[], list: readonly Cha
     const before = prev.find((p) => p.id === c.id);
     const info = CHALLENGES.find((i) => i.id === c.id);
     for (const step of c.steps) {
-      if (!before?.steps.includes(step)) showToast(`Buoy ${step}: ${c.steps.indexOf(step) + 1} of ${c.total}`);
+      if (before?.steps.includes(step)) continue;
+      const what = info?.kind === 'visitBuoys' ? `Buoy ${step}` : step;
+      showToast(`${info?.title ?? c.id} · ${what}: ${c.steps.indexOf(step) + 1} of ${c.total}`);
     }
     if (c.completedAt !== undefined && before?.completedAt === undefined && info) {
       showToast(`${info.title} complete!${info.reward ? ` Unlocked sail: ${sailName(info.reward.id)}` : ''}`, 6000);

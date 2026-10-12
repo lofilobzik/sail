@@ -116,8 +116,8 @@ type roomBoat struct {
 
 	near    []bool               // per buoy: within its proximity radius after the last step (proximity.go)
 	player  string               // sailor code of the current connection, "" when none
-	visited []bool               // per buoy: reached (stored or detected)
-	unsaved map[int]*unsavedStep // buoy index -> visit detected but not yet confirmed stored
+	reached []bool               // per sim.ChallengeSteps entry: reached (stored or detected)
+	unsaved map[int]*unsavedStep // sim.ChallengeSteps index -> step detected but not yet confirmed stored
 }
 
 // queuedInput is one input (or a reset, in order with the inputs) waiting to be applied.
@@ -436,7 +436,7 @@ func (r *Room) join(resume, addr string, p *playerInfo) joinResult {
 	b.ackSeq, b.credit = 0, 0
 	b.queue.clear()
 	m := &member{
-		out: make(chan []byte, outboxSize), news: make(chan []byte, len(sim.BuoyData.Buoys)+1),
+		out: make(chan []byte, outboxSize), news: make(chan []byte, len(sim.ChallengeSteps)+1),
 		replaced: make(chan struct{}), boat: b,
 	}
 	r.seedProgress(b, p)

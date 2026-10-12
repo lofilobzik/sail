@@ -22,7 +22,33 @@ const (
 	codeB = "BBBBBBBBBBBBBBBBBBBB"
 )
 
-var tourID = sim.ChallengeParams.BuoyTour.ID
+var tour = sim.ChallengeParams.Challenges[0]
+
+var tourID = tour.ID
+
+// tourStatus is the tour's entry in list.
+func tourStatus(t *testing.T, list []ChallengeStatus) ChallengeStatus {
+	t.Helper()
+	for _, c := range list {
+		if c.ID == tourID {
+			return c
+		}
+	}
+	t.Fatalf("no %s in %+v", tourID, list)
+	return ChallengeStatus{}
+}
+
+// buoyIndex is the sim.BuoyData.Buoys index of the buoy called name.
+func buoyIndex(t *testing.T, name string) int {
+	t.Helper()
+	for i, b := range sim.BuoyData.Buoys {
+		if b.Name == name {
+			return i
+		}
+	}
+	t.Fatalf("no buoy %q", name)
+	return -1
+}
 
 func openStore(t *testing.T) *store.Store {
 	t.Helper()
@@ -125,27 +151,26 @@ func TestBuoyTourPersists(t *testing.T) {
 	tr := startRoom(t, RoomConfig{Store: st})
 	c := tr.dialAs("", codeA)
 	w := tr.welcome(c)
-	if len(w.Challenges) != 1 || w.Challenges[0].ID != "buoy-tour" || w.Challenges[0].Total != 5 || len(w.Challenges[0].Steps) != 0 {
+	if got := tourStatus(t, w.Challenges); len(w.Challenges) != len(sim.ChallengeParams.Challenges) || got.Total != len(tour.Buoys) || len(got.Steps) != 0 {
 		t.Fatalf("welcome challenges = %+v", w.Challenges)
 	}
-	buoys := sim.BuoyData.Buoys
 	var names []string
-	for i, b := range buoys {
-		tr.onBuoy(w.Resume, i)
-		names = append(names, b.Name)
+	for i, name := range tour.Buoys {
+		tr.onBuoy(w.Resume, buoyIndex(t, name))
+		names = append(names, name)
 		got := tr.challengesFrame(c)
-		if !slices.Equal(got.Steps, names) {
-			t.Fatalf("after %s: steps %v, want %v", b.Name, got.Steps, names)
+		if got.ID != tourID || !slices.Equal(got.Steps, names) {
+			t.Fatalf("after %s: %s steps %v, want %v", name, got.ID, got.Steps, names)
 		}
-		if done := got.CompletedAt > 0; done != (i == len(buoys)-1) {
-			t.Fatalf("after %s: completedAt %d", b.Name, got.CompletedAt)
+		if done := got.CompletedAt > 0; done != (i == len(tour.Buoys)-1) {
+			t.Fatalf("after %s: completedAt %d", name, got.CompletedAt)
 		}
 		tr.clock.Advance(time.Second)
 		// A new connection with the same code (another tab) takes the boat over and sees the stored progress.
 		c = tr.dialAs("", codeA)
 		w2 := tr.welcome(c)
-		if w2.ID != w.ID || !slices.Equal(w2.Challenges[0].Steps, names) {
-			t.Fatalf("takeover: boat %d (want %d), steps %v, want %v", w2.ID, w.ID, w2.Challenges[0].Steps, names)
+		if steps := tourStatus(t, w2.Challenges).Steps; w2.ID != w.ID || !slices.Equal(steps, names) {
+			t.Fatalf("takeover: boat %d (want %d), steps %v, want %v", w2.ID, w.ID, steps, names)
 		}
 	}
 }

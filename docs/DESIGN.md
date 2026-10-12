@@ -186,9 +186,15 @@ Rules:
   `proximityRadius` of (30 m, TUNING GUESS), from its own boat state. Buoys are shared world marks:
   every player sees and is tracked against all of them. Challenges read this instead of measuring
   distances themselves.
-- **Challenges** (`server/store`, `server/netsim/challenges.go`, `data/challenges.json`): the first
-  is the **Buoy tour**, near each of the 5 buoys (buoy proximity above), any order, across
-  sessions; it unlocks the "Tide lines" sail. Players are anonymous: the browser generates a
+- **Challenges** (`server/store`, `server/netsim/challenges.go`, `data/challenges.json`): a list,
+  each with an id, title, description, optional sail reward and a `kind` that says how its steps are
+  reached. The only kind so far is `visitBuoys`: one step per listed buoy, reached near it (buoy
+  proximity above), any order, across sessions; a buoy may count for several challenges at once.
+  `server/sim/challenges.go` flattens every challenge into steps at startup and panics on data it
+  cannot verify (unknown kind or buoy, duplicate id or step). A new kind needs a case there, a
+  detector in `observe` and a member of `ChallengeKind` (`src/ui/challengeInfo.ts`). The first
+  challenge is the **Buoy tour** (the 5 bay buoys), which unlocks the "Tide lines" sail. Players are
+  anonymous: the browser generates a
   20-character base32 **sailor code** (kept in prefs, sent as `/ws?player=…`), shown in the Esc menu
   so progress can be restored on another browser. The server checks visits against its own boat
   state, never the client's, and stores them in SQLite (`-db <file>`; without it challenges are
