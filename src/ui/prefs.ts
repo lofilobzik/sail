@@ -20,6 +20,8 @@ export interface Prefs {
   sail: string | null;
   /** Look guides already completed (src/ui/lookGuide.ts target ids). */
   guidesSeen: string[];
+  /** Hints retired for good (src/ui/hints.ts ids). */
+  hintsDone: string[];
   /** Sailor code (src/net/sailorCode.ts) that keeps challenge progress on the server; null until generated. */
   player: string | null;
 }
@@ -27,12 +29,14 @@ export interface Prefs {
 export const LOOK_SENSITIVITY_MIN = 0.25;
 export const LOOK_SENSITIVITY_MAX = 4;
 
-const DEFAULTS: Prefs = { volume: 0.7, muted: false, lookSensitivity: 1, graphics: 'auto', sail: null, guidesSeen: [], player: null };
+const DEFAULTS: Prefs = { volume: 0.7, muted: false, lookSensitivity: 1, graphics: 'auto', sail: null, guidesSeen: [], hintsDone: [], player: null };
+
+const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((g): g is string => typeof g === 'string') : []);
 
 function loadPrefs(): Prefs {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return { ...DEFAULTS, guidesSeen: [] };
+    if (!raw) return { ...DEFAULTS, guidesSeen: [], hintsDone: [] };
     const p = JSON.parse(raw) as Partial<Prefs>;
     return {
       volume: typeof p.volume === 'number' && Number.isFinite(p.volume) ? Math.min(Math.max(p.volume, 0), 1) : DEFAULTS.volume,
@@ -41,11 +45,12 @@ function loadPrefs(): Prefs {
         ? Math.min(Math.max(p.lookSensitivity, LOOK_SENSITIVITY_MIN), LOOK_SENSITIVITY_MAX) : DEFAULTS.lookSensitivity,
       graphics: p.graphics === 'low' || p.graphics === 'high' ? p.graphics : 'auto',
       sail: typeof p.sail === 'string' ? p.sail : null,
-      guidesSeen: Array.isArray(p.guidesSeen) ? p.guidesSeen.filter((g): g is string => typeof g === 'string') : [],
+      guidesSeen: strings(p.guidesSeen),
+      hintsDone: strings(p.hintsDone),
       player: typeof p.player === 'string' ? normalizeSailorCode(p.player) : null,
     };
   } catch {
-    return { ...DEFAULTS, guidesSeen: [] };
+    return { ...DEFAULTS, guidesSeen: [], hintsDone: [] };
   }
 }
 

@@ -13,6 +13,11 @@ export function createBuoys(): THREE.Group {
     const buoy = new THREE.Group();
     buoy.name = b.name;
     buoy.position.set(b.x, 0, b.z);
+    // Where the look guide circles the buoy: halfway up, where the eye sights it (nav/navigation.ts).
+    const sight = new THREE.Object3D();
+    sight.name = 'sight';
+    sight.position.y = height / 2;
+    buoy.add(sight);
     const mat = new THREE.MeshStandardMaterial({ color: b.color, roughness: 0.6 });
     const base = new THREE.Mesh(body, mat);
     base.position.y = height * 0.3;

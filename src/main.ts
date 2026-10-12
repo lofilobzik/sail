@@ -17,6 +17,7 @@ import { joinServer, serverChoice } from './net/link';
 import type { RemotePose } from './net/remote';
 import { SailSound } from './audio/sound';
 import { LookGuide } from './ui/lookGuide';
+import { Hints } from './ui/hints';
 import { FlyCamera } from './input/flyCamera';
 import { Menu } from './ui/menu';
 import { Preferences } from './ui/prefs';
@@ -27,7 +28,7 @@ import { newSailorCode } from './net/sailorCode';
 import type { ChallengeStatus } from './net/protocol';
 import { SKY } from './render/skyModel';
 import { BAY } from './sim/terrain';
-import { BINDINGS, keyLabels } from './input/bindings';
+import { BINDINGS } from './input/bindings';
 import { GPU_LABELS } from './debug/gpuTimer';
 import { QUALITY, detectQuality } from './render/quality';
 
@@ -157,6 +158,7 @@ const hud = new TestHud(boat);
 
 const sound = new SailSound(prefs.value.volume, prefs.value.muted);
 const guide = new LookGuide(view.boat.lookTargets, prefs);
+const hints = new Hints(prefs);
 const menu = new Menu({
   canvas: view.renderer.domElement,
   sailDesigns: sail.designs,
@@ -175,7 +177,10 @@ const menu = new Menu({
     location.reload();
   },
   onRespawn: respawn,
-  onShowGuidance: () => guide.reset(),
+  onShowGuidance: () => {
+    guide.reset();
+    hints.reset();
+  },
   sailor: server
     ? {
         code: player,
@@ -187,8 +192,8 @@ const menu = new Menu({
     : undefined,
 });
 look.playerSensitivity = prefs.value.lookSensitivity;
-// E: cast off from the berth on the next fixed step (fly mode uses E for up, so cockpit only).
-const CAST_OFF_PROMPT = `${keyLabels(BINDINGS.castOff.keys)} — Cast off`;
+// E: cast off from the berth on the next fixed step (fly mode uses E for up, so cockpit only). Its
+// hint is in ui/hints.ts.
 window.addEventListener('keydown', (e) => {
   if (e.code !== BINDINGS.castOff.keys.press || e.repeat || isTypingTarget(e.target)) return;
   if (view.mode === 'cockpit' && !menu.open && curr.moored) castOffRequested = true;
@@ -356,6 +361,8 @@ function frame(now: number): void {
   lastRemotes = server?.client.remote.sample(now / 1000);
   view.render(lastPose, lastRemotes);
   const luffAmount = diagnostics.sail?.luffAmount ?? 0;
+  const pointBuoy = hints.update({ state: curr, diagnostics, mode: view.mode }, menu.open);
+  const pointSight = pointBuoy === null ? undefined : view.buoySights.get(pointBuoy);
   guide.update(
     {
       dt: frameSeconds,
@@ -366,7 +373,7 @@ function frame(now: number): void {
       speed: diagnostics.speed,
       luffAmount,
       trimTravel: input.trimTravel,
-      prompt: curr.moored && view.mode === 'cockpit' ? CAST_OFF_PROMPT : null,
+      pointAt: pointSight ? { object: pointSight, label: pointBuoy! } : null,
     },
     menu.open,
   );

@@ -183,7 +183,7 @@ Rules:
   Deferred: remote wakes, extrapolation, names, rooms, collisions, rewind/replay reconciliation.
 - **Buoy proximity** (`server/netsim/proximity.go`): after every sim step the server marks, for every
   boat (with or without a sailor code), which buoys of `data/buoys.json` it is within
-  `proximityRadius` of (30 m, TUNING GUESS), from its own boat state. Buoys are shared world marks:
+  `proximityRadius` of (15 m, TUNING GUESS), from its own boat state. Buoys are shared world marks:
   every player sees and is tracked against all of them. Challenges read this instead of measuring
   distances themselves.
 - **Challenges** (`server/store`, `server/netsim/challenges.go`, `data/challenges.json`): a list,
@@ -503,7 +503,7 @@ The debug overlay is a developer tool, not a player aid, and is toggled off by d
 
 - **Sound** (`src/audio/sound.ts`): procedural, no samples. Water rush rises with boat speed, wind
   with apparent wind, and the sail flogs as loud as `luffAmount`, so a luffing sail is heard before
-  it is seen. Starts on the first click or key press (browser autoplay rules); `M` or the menu mutes.
+  it is seen. Starts on the first click or key press (browser autoplay rules); the Esc menu mutes.
 - **First-time guidance** (`src/ui/lookGuide.ts`) shows where to look, never what to think: a
   "click to look" mouse glyph while the pointer is free, then one guide at a time, a chevron at the
   screen edge or a steady ring when on screen, each with one plain word naming what the part is for
@@ -516,6 +516,19 @@ The debug overlay is a developer tool, not a player aid, and is toggled off by d
   streaks or arrows in the world. A guide completes once its ring has been on screen for two seconds,
   is remembered in localStorage, and can be reset from the Esc menu. A guide ignored for 30 s steps
   back for a minute rather than nagging. Chevrons stay above the lap chart.
+- **Hints** (`src/ui/hints.ts`): keycaps with a short action, on a small dark panel styled like the
+  Esc menu below the middle of the view, and/or a buoy the look guide circles (its ring, or a chevron
+  at the edge, labelled with the buoy's name). Each hint is shown while its `when(ctx)` holds
+  (`HintContext`: boat state, diagnostics, camera mode), never with the menu open; `done(ctx)`
+  retires it for good (kept in localStorage, Esc menu "Reset hints" brings it back) and `after`
+  waits for other hints to retire. Keys come from the bindings, so a hint always names the real key;
+  key hints true at once stack in list order. The first sail out: *E Cast off* at a berth; *W S Trim
+  the sail* under way while `luffAmount` is above 0.5 (the H instruments' "luffing"), retired the
+  first time the sail draws; then *A D Steer to buoy H1* with the guide on H1, retired halfway there
+  (from where it first showed); once H1 is reached (within `proximityRadius`, as challenges count) the
+  guide points at H2 alone, retired halfway there too, so the player finishes each leg alone.
+  The buoy pointer outranks the first-time look guides, which wait their turn. A hint that ends holds
+  the next one back for 5 s (TUNING GUESS), so they arrive one at a time; the menu only covers them.
 - **Esc menu** (`src/ui/menu.ts`) generates its controls from `src/input/bindings.ts`, the same
   key definitions used by the input handlers. Each binding marks whether it is a developer tool:
   instruments, outside view, debug panel and G free-fly stay under Developer. Existing labels and

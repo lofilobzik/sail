@@ -4,7 +4,7 @@
     {
       "id": "buoy-tour",
       "title": "Buoy tour",
-      "description": "Sail within 30 m of every buoy in the bay, in any order.",
+      "description": "Sail within 15 m of every buoy in the bay, in any order.",
       "kind": "visitBuoys",
       "buoys": ["N", "NE", "E", "SE", "S"],
       "reward": { "type": "sail", "id": "tide" }

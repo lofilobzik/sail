@@ -25,8 +25,8 @@ export const BINDINGS = {
   },
 } as const;
 
-/** Browser key codes to the existing menu labels; either Shift key shares one label. */
-export function keyLabels(keys: Readonly<Record<string, string>>): string {
+/** Browser key codes to the existing menu labels, one per key; either Shift key shares one label. */
+export function keyLabelList(keys: Readonly<Record<string, string>>): string[] {
   const labels = Object.values(keys).map((code) => {
     if (code.startsWith('Key')) return code.slice(3);
     if (code.startsWith('Shift')) return 'Shift';
@@ -34,5 +34,10 @@ export function keyLabels(keys: Readonly<Record<string, string>>): string {
     if (code === 'Escape') return 'Esc';
     return code;
   });
-  return labels.filter((label, index) => labels.indexOf(label) === index).join('  ');
+  return labels.filter((label, index) => labels.indexOf(label) === index);
+}
+
+/** keyLabelList as one string, for the menu and messages. */
+export function keyLabels(keys: Readonly<Record<string, string>>): string {
+  return keyLabelList(keys).join('  ');
 }
