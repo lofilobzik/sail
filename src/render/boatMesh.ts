@@ -45,8 +45,6 @@ export interface LookTargets {
   windex: THREE.Object3D;
   /** Middle luff telltale on the sail, following the cloth. */
   telltales: THREE.Object3D;
-  /** Tiller end, where the extension joins it. */
-  tiller: THREE.Object3D;
 }
 
 export interface BoatMesh {
@@ -95,8 +93,6 @@ export function createBoatMesh(model: BoatModel): BoatMesh {
   const bridle = createRope(bridlePoints.length, details.colours.traveller, details.rope.travellerRadius);
   bridle.mesh.name = 'traveller-bridle';
   heel.add(travellerBlock, ratchetMesh, mainsheet.mesh, bridle.mesh);
-  const tillerEnd = new THREE.Object3D();
-  heel.add(tillerEnd);
 
   const travellerX = layout.transomX + details.deck.travellerForwardOfTransom;
   const travellerDeck = layout.sheerAt(travellerX);
@@ -148,14 +144,12 @@ export function createBoatMesh(model: BoatModel): BoatMesh {
     sail,
     layout,
     mooringPoints,
-    lookTargets: { windex: rig.indicator, telltales: sail.telltaleMark, tiller: tillerEnd },
+    lookTargets: { windex: rig.indicator, telltales: sail.telltaleMark },
     update(pose) {
       pitch.rotation.x = pose.pitch;
       heel.rotation.z = -pose.heel;
       rig.update(pose.boom);
       rudder.pivot.rotation.y = -pose.rudderAngle;
-      const tEnd = layout.tillerEnd(pose.rudderAngle);
-      bodyToLocal(tEnd.x, tEnd.y, tEnd.z, tillerEnd.position);
 
       bodyToLocal(pose.apparentU, pose.apparentV, 0, tmp.flow);
       const aws = tmp.flow.length();

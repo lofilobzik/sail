@@ -349,7 +349,6 @@ function frame(now: number): void {
     navigation.advance({ t: curr.t, speed: (prev.u + curr.u) / 2 }, cfg.dt);
   }
 
-  const c = diagnostics.controls;
   lastPose = interpolatePose(prev, curr, fixed.alpha, diagnostics, boat, frameSeconds, look);
   if (view.mode === 'fly') {
     fly.update(frameSeconds, look.yaw, look.pitch);
@@ -369,7 +368,6 @@ function frame(now: number): void {
       camera: view.camera,
       looking: document.pointerLockElement === view.renderer.domElement,
       busy: view.mode !== 'cockpit' || glassesUp || navigationInput.reading !== null,
-      tiller: c.tiller,
       speed: diagnostics.speed,
       luffAmount,
       trimTravel: input.trimTravel,

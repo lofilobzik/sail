@@ -8,10 +8,11 @@
  * Reads the context only; it never changes the sim.
  */
 import buoyData from '../../data/buoys.json';
+import laser from '../../data/laser.json';
 import { BINDINGS, keyLabelList } from '../input/bindings';
 import type { CameraMode } from '../render/scene';
 import type { BoatState, Diagnostics } from '../sim';
-import type { Vec2 } from '../sim/frames';
+import { DEG, type Vec2 } from '../sim/frames';
 import type { Preferences } from './prefs';
 
 /** What a hint's conditions can read each frame. */
@@ -34,6 +35,11 @@ export interface Hint {
   /** Shown while this is true. */
   when(ctx: HintContext): boolean;
   /**
+   * s that `when` (and the hint's eligibility) must hold without a break before the hint shows, so a
+   * passing gust or a deliberate manoeuvre does not flash it; 0 when omitted.
+   */
+  holdFor?: number;
+  /**
    * Retires the hint for good once true; checked every frame, shown or not. `start` is where the
    * boat was when the hint first showed this session (null if it has not), for "part of the way" rules.
    */
@@ -42,6 +48,9 @@ export interface Hint {
 
 // luffAmount above this is "luffing", as in the H instruments (debug/hud.ts).
 const LUFFING = 0.5;
+// deg: with the apparent wind closer to the bow than this the sail luffs even sheeted hard in (the
+// rig's luffStartBetaEffDeg), so the answer is steering, not trimming.
+const NO_GO_DEG = laser.rig.luffStartBetaEffDeg;
 // ms between one hint ending and the next appearing, so they arrive one at a time; TUNING GUESS.
 const HINT_GAP_MS = 5000;
 
@@ -57,16 +66,16 @@ function distanceTo(p: Readonly<Vec2>, name: string): number {
 /** The boat is within data/buoys.json proximityRadius of buoy `name` (as the server's challenges count it). */
 const near = (state: Readonly<BoatState>, name: string): boolean => distanceTo(state, name) <= buoyData.proximityRadius;
 
-/** done rule: the boat has covered half the distance to buoy `name` from where the hint first showed. */
-const halfwayTo = (name: string) => (c: HintContext, start: Readonly<Vec2> | null): boolean =>
-  start !== null && distanceTo(c.state, name) <= distanceTo(start, name) / 2;
+/** done rule: the boat has covered a third of the distance to buoy `name` from where the hint first showed. */
+const thirdOfWayTo = (name: string) => (c: HintContext, start: Readonly<Vec2> | null): boolean =>
+  start !== null && distanceTo(c.state, name) <= (distanceTo(start, name) * 2) / 3;
 
 const underWay = (c: HintContext): boolean => c.mode === 'cockpit' && !c.state.moored;
 const luff = (c: HintContext): number => c.diagnostics.sail?.luffAmount ?? 0;
 
 /**
  * The first sail out of the harbour: cast off, trim, then sail to H1 and on to H2. The H1 and H2
- * pointers let go halfway there, so the player finishes each leg alone.
+ * pointers let go a third of the way there, so the player finishes each leg alone.
  */
 export const HINTS: readonly Hint[] = [
   // Matches the cast-off handler in main.ts: E acts only in the cockpit at a berth.
@@ -75,11 +84,13 @@ export const HINTS: readonly Hint[] = [
     keys: { keys: BINDINGS.castOff.keys, label: 'Cast off' },
     when: (c) => c.mode === 'cockpit' && c.state.moored,
   },
-  // W eases, S sheets in; retired the first time the sail draws under way.
+  // W eases, S sheets in; retired the first time the sail draws under way. Only where sheeting can
+  // fill the sail (not head to wind), and only once it has luffed for a moment.
   {
     id: 'trim',
     keys: { keys: BINDINGS.sheet.keys, label: 'Trim the sail' },
-    when: (c) => underWay(c) && luff(c) > LUFFING,
+    holdFor: 1.5,
+    when: (c) => underWay(c) && luff(c) > LUFFING && Math.abs(c.diagnostics.apparent.angle) > NO_GO_DEG * DEG,
     done: (c) => !c.state.moored && c.diagnostics.sail !== null && luff(c) <= LUFFING,
   },
   {
@@ -88,11 +99,11 @@ export const HINTS: readonly Hint[] = [
     buoy: 'H1',
     after: ['trim'],
     when: underWay,
-    done: halfwayTo('H1'),
+    done: thirdOfWayTo('H1'),
   },
-  // Never shown: marks reaching H1, so the pointer to H2 waits for it rather than for the halfway point.
+  // Never shown: marks reaching H1, so the pointer to H2 waits for it rather than for the steer hint's end.
   { id: 'atH1', when: () => false, done: (c) => near(c.state, 'H1') },
-  { id: 'toH2', buoy: 'H2', after: ['steer', 'atH1'], when: underWay, done: halfwayTo('H2') },
+  { id: 'toH2', buoy: 'H2', after: ['steer', 'atH1'], when: underWay, done: thirdOfWayTo('H2') },
 ];
 
 const STYLE = `
@@ -117,6 +128,8 @@ export class Hints {
   private readonly done: Set<string>;
   /** Where the boat was when each hint first showed this session (Hint.done's `start`). */
   private readonly start: (Vec2 | null)[];
+  /** performance.now() since each hint's condition has held without a break; NaN while it does not. */
+  private readonly trueSince: number[];
   /** performance.now() when a hint last stopped showing: no new hint appears for HINT_GAP_MS after. */
   private lastOff = -Infinity;
   private menuWasOpen = false;
@@ -148,15 +161,18 @@ export class Hints {
     });
     this.on = hints.map(() => false);
     this.start = hints.map(() => null);
+    this.trueSince = hints.map(() => NaN);
     document.body.appendChild(stack);
   }
 
   /**
    * Once per frame: retires hints whose `done` holds, shows the rest; returns the buoy to point at, if
-   * any. A hint that ends (retired or no longer true) holds every new hint back for HINT_GAP_MS; one
-   * already showing stays. The menu only covers hints, so closing it brings them back at once.
+   * any. A hint shows once its condition has held for its `holdFor`. A hint that ends (retired or no
+   * longer true) holds every new hint back for HINT_GAP_MS; one already showing stays. The menu only
+   * covers hints, so closing it brings them back at once.
    */
   update(ctx: HintContext, menuOpen: boolean): string | null {
+    const now = performance.now();
     let retired = false;
     for (let i = 0; i < this.hints.length; i++) {
       const hint = this.hints[i]!;
@@ -166,11 +182,13 @@ export class Hints {
       }
     }
     if (retired) this.prefs.set({ hintsDone: [...this.done] });
-    const now = performance.now();
     let buoy: string | null = null;
     for (let i = 0; i < this.hints.length; i++) {
       const hint = this.hints[i]!;
-      const wanted = !this.done.has(hint.id) && (hint.after ?? []).every((id) => this.done.has(id)) && hint.when(ctx);
+      const holds = !this.done.has(hint.id) && (hint.after ?? []).every((id) => this.done.has(id)) && hint.when(ctx);
+      if (!holds) this.trueSince[i] = NaN;
+      else if (Number.isNaN(this.trueSince[i])) this.trueSince[i] = now;
+      const wanted = holds && now - this.trueSince[i]! >= (hint.holdFor ?? 0) * 1000;
       const was = this.on[i]!;
       const on = wanted && (was || now - this.lastOff >= HINT_GAP_MS);
       if (was && !on) this.lastOff = now;
@@ -187,6 +205,7 @@ export class Hints {
   reset(): void {
     this.done.clear();
     this.start.fill(null);
+    this.trueSince.fill(NaN);
     this.lastOff = -Infinity;
     this.prefs.set({ hintsDone: [] });
   }

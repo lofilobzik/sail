@@ -5,7 +5,6 @@
  * around it, with one word naming what the part is for. A guide completes for good once its ring has
  * been on screen for a moment (remembered in Prefs). Guides appear when they become relevant, and when
  * several are waiting the earlier in this list goes first:
- *   tiller     after the tiller is first moved well off centre (what A/D move)
  *   windex     shortly after the first look around (wind direction)
  *   telltales  when the boat is moving and the sail goes soft (the luff starts to flutter, the HUD's
  *              "soft") for a moment, or the player first trims the sail (W/S or wheel), so they see
@@ -20,18 +19,16 @@ import type { LookTargets } from '../render/boatMesh';
 import type { Preferences } from './prefs';
 
 type GuideId = keyof LookTargets;
-// Steering comes first: it answers "why did it turn that way?" while the boat is still turning, and
-// it may interrupt a waiting wind guide. The wind comes before the trim.
-const PRIORITY: readonly GuideId[] = ['tiller', 'windex', 'telltales'];
+// The wind comes before the trim.
+const PRIORITY: readonly GuideId[] = ['windex', 'telltales'];
 /** One plain word under the ring or chevron: what the part is for, never what it currently says. */
-const LABELS: Record<GuideId, string> = { tiller: 'tiller', windex: 'wind', telltales: 'sail trim' };
+const LABELS: Record<GuideId, string> = { windex: 'wind', telltales: 'sail trim' };
 
 const WINDEX_DELAY = 6; // s of looking around before the first guide, so the player explores first; TUNING GUESS
 const SOFT_SECONDS = 2; // s of a soft sail before the telltales guide, so a passing gust does not trigger it; TUNING GUESS
 const SOFT_LEVEL = 0.05; // luffAmount at which the luff starts to flutter (the HUD's "soft")
 const SHEET_MOVED = 0.08; // trim travel counted as a deliberate trim (about 0.2 s of W/S, or 3 wheel notches); TUNING GUESS
 const MOVING_SPEED = 0.8; // m/s (about 1.5 kn): slower than this the sail is not a trim question
-const TILLER_MOVED = 0.3; // tiller fraction counted as deliberate steering (the spawn helm is -0.06); TUNING GUESS
 // s with the ring on screen to complete a guide; long enough that a ring which merely flashed past the
 // edge of attention is not marked seen. TUNING GUESS
 const HOLD_SECONDS = 2;
@@ -83,7 +80,6 @@ export interface GuideInput {
   looking: boolean;
   /** Guides wait while the menu, another view, the binoculars or a reading has the player's attention. */
   busy: boolean;
-  tiller: number;
   /** Boat speed through the water, m/s. */
   speed: number;
   luffAmount: number;
@@ -165,7 +161,6 @@ export class LookGuide {
       this.lookedAround += input.dt;
       if (this.lookedAround >= WINDEX_DELAY) this.want('windex');
     }
-    if (Math.abs(input.tiller) >= TILLER_MOVED) this.want('tiller');
     // Only the player's own W/S or wheel trimming counts (ControlInput.trimTravel); a respawn putting
     // the sheet back is not a trim.
     const trimmed = this.lastTrimTravel === null ? 0 : input.trimTravel - this.lastTrimTravel;

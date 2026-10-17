@@ -507,9 +507,8 @@ The debug overlay is a developer tool, not a player aid, and is toggled off by d
 - **First-time guidance** (`src/ui/lookGuide.ts`) shows where to look, never what to think: a
   "click to look" mouse glyph while the pointer is free, then one guide at a time, a chevron at the
   screen edge or a steady ring when on screen, each with one plain word naming what the part is for
-  (*tiller*, *wind*, *sail trim*). Triggers: the tiller after it is first pushed well over (it goes
-  first and may interrupt a waiting wind guide, so the answer to "why did it turn that way?" arrives
-  while the boat is still turning); the Windex after a few seconds of looking around; the telltales
+  (*wind*, *sail trim*). Steering is taught by the *A D* key hint instead. Triggers: the Windex after
+  a few seconds of looking around; the telltales
   when the sail goes soft (the luff starts to flutter) for a couple of seconds, or after the player's
   first trim (W/S or the wheel; respawns never count), only while the boat is moving (stopped head to
   wind the Windex is the answer, and a stall looks normal, so it never triggers one). No text tips, no wind
@@ -523,12 +522,17 @@ The debug overlay is a developer tool, not a player aid, and is toggled off by d
   retires it for good (kept in localStorage, Esc menu "Reset hints" brings it back) and `after`
   waits for other hints to retire. Keys come from the bindings, so a hint always names the real key;
   key hints true at once stack in list order. The first sail out: *E Cast off* at a berth; *W S Trim
-  the sail* under way while `luffAmount` is above 0.5 (the H instruments' "luffing"), retired the
-  first time the sail draws; then *A D Steer to buoy H1* with the guide on H1, retired halfway there
-  (from where it first showed); once H1 is reached (within `proximityRadius`, as challenges count) the
-  guide points at H2 alone, retired halfway there too, so the player finishes each leg alone.
+  the sail* under way while `luffAmount` is above 0.5 (the H instruments' "luffing") for 1.5 s and
+  the apparent wind is wider than the rig's `luffStartBetaEffDeg` off the bow (closer, the sail luffs
+  even sheeted in: a steering problem, not a trim one), retired the
+  first time the sail draws; then *A D Steer to buoy H1* with the guide on H1, retired a third of the
+  way there (from where it first showed); once H1 is reached (within `proximityRadius`, as challenges
+  count) the guide points at H2 alone, retired a third of the way there too, so the player finishes
+  each leg alone.
   The buoy pointer outranks the first-time look guides, which wait their turn. A hint that ends holds
   the next one back for 5 s (TUNING GUESS), so they arrive one at a time; the menu only covers them.
+  `holdFor` (s) makes a hint wait until its condition has held that long without a break, so gusts
+  and deliberate manoeuvres do not flash it.
 - **Esc menu** (`src/ui/menu.ts`) generates its controls from `src/input/bindings.ts`, the same
   key definitions used by the input handlers. Each binding marks whether it is a developer tool:
   instruments, outside view, debug panel and G free-fly stay under Developer. Existing labels and
