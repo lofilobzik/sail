@@ -108,14 +108,14 @@ func (r *Room) seedProgress(b *roomBoat, p *playerInfo) {
 	}
 }
 
-// observe marks every step b has just reached as reached and queues its write. A visitBuoys step is
-// reached near its buoy (proximity.go, b.near).
+// observe marks every step b has just reached as reached and queues its write. A step is reached
+// near its buoy (proximity.go, b.near), and for a course only once the step before it is.
 func (r *Room) observe(b *roomBoat) {
 	if b.player == "" {
 		return
 	}
 	for i, s := range sim.ChallengeSteps {
-		if !b.near[s.Buoy] || b.reached[i] {
+		if !b.near[s.Buoy] || b.reached[i] || (s.Prev >= 0 && !b.reached[s.Prev]) {
 			continue
 		}
 		b.reached[i] = true

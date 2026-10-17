@@ -93,9 +93,9 @@ export class SceneView {
   private readonly eye = new THREE.Vector3();
   private readonly grid: THREE.GridHelper;
   private readonly buoys = createBuoys();
-  /** Each buoy's sight point (environment.ts), by data/buoys.json name: what the look guide points at. */
-  readonly buoySights: ReadonlyMap<string, THREE.Object3D> = new Map(
-    this.buoys.children.map((b) => [b.name, b.getObjectByName('sight')!]),
+  /** Each buoy's marker point (environment.ts), by data/buoys.json name: where an objective's arrow sits. */
+  readonly buoyMarkers: ReadonlyMap<string, THREE.Object3D> = new Map(
+    this.buoys.children.map((b) => [b.name, b.getObjectByName('marker')!]),
   );
   private readonly surface = createWaveSample();
   private readonly land: LandView;

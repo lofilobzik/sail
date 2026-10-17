@@ -2,7 +2,6 @@
   "start": { "x": -1740, "z": 760 },
   "timing": {
     "bearingRead": 2.5,
-    "speedRead": 2,
     "plotLeg": 5,
     "plotLine": 4
   },
@@ -21,7 +20,6 @@
   "minFixAngleDeg": 15,
   "maxBearingAge": 180,
   "noteCarryGrace": 1,
-  "speedStaleSeconds": 120,
   "maxTrack": 40,
   "maxObservations": 5,
   "visual": {
@@ -38,7 +36,6 @@
     "minChartSpan": 600,
     "chartFitPadding": 1.25,
     "courseTickMinutes": [1, 2, 5],
-    "wakeLookDeg": 50,
     "handCompassRadius": 0.05,
     "handCompassDepth": 0.034,
     "handCompassTiltDeg": 28,
@@ -58,19 +55,19 @@
   },
   "sources": {
     "start": "DESIGN.md: known departure position, the harbour departure in data/bay.json (a test keeps the two equal). Resetting navigation uses this known point, never the live boat position.",
-    "timing": "TUNING GUESS: seconds of simulated time. Holding a hand-bearing compass steady on a mark, glancing at the wake for speed, and pencilling a DR leg or a bearing line each take time while the boat keeps sailing.",
+    "timing": "TUNING GUESS: seconds of simulated time. Holding a hand-bearing compass steady on a mark and pencilling a DR leg or a bearing line each take time while the boat keeps sailing. Speed over ground needs no reading: the sailor's GPS watch shows it all the time.",
     "aimToleranceDeg/aimAverageSeconds": "TUNING GUESS: a reading restarts if the aim strays this far from its own mean over the last 1.5 s. Waves rock the boat and swing the aim a few degrees either way (measured about +-5 degrees at a 1.5 s period), which averages out; a slow track on a mark moves the mean with it. The recorded bearing is that mean.",
     "markAimDeg/landmarkSightFraction": "VISUAL ESTIMATE: a mark (buoy or landmark ashore) counts as under the crosshair within this angle of the line of sight, generous because the boat rocks the crosshair around. A buoy is sighted at half its height; a landmark at landmarkSightFraction of its height above its foot. The mark named is the one under the crosshair for the largest share of the hold, at least markHoldFraction (30%) of it, so a moment off the mark is forgiven. The sailor reads a buoy's painted ID or recognises a landmark's shape by eye; the bearing still comes from the compass and no true boat position is used.",
     "binocularZoom/binocularSeconds": "VISUAL ESTIMATE: 10x glasses (the usual 10x42 marine binoculars), raised while B is held. The zoom eases exponentially in log-magnification with this time constant in seconds, about 1 s to settle, so it glides rather than snaps. Mouse look slows by the same factor so the magnified view does not sweep past the mark. Only the camera projection changes: bearings come from the line of sight, not the field of view, and the glasses cannot be raised during a reading.",
     "chartDepthContours/chartHeightContours": "VISUAL ESTIMATE: printed depth contours in metres below mean sea level (the first also bounds the shallow tint, which a Laser's board touches at about 0.8 m) and faint height contours ashore, in metres.",
     "bowAimDeg/bowMinPitchDeg": "VISUAL ESTIMATE: lining the compass up with the boat's centreline, within bowAimDeg in heading and tilted down at least bowMinPitchDeg (down the deck toward the bow, where no buoy is), takes a bow bearing, which is remembered as the course. Sighting at the bow tip itself from an off-centre seat would read a parallax error, so the centreline is what counts.",
-    "speedStaleSeconds/maxTrack": "TUNING GUESS: a remembered speed older than two minutes is flagged OLD on the chart (speed by eye drifts as gusts and lulls pass); the pencil track keeps the last 40 plotted positions.",
-    "courseTickMinutes/wakeLookDeg": "VISUAL ESTIMATE: the course line ahead of the marker is ticked at 1, 2 and 5 minutes at the remembered speed. The wake can only be judged looking back: the line of sight must be within wakeLookDeg of straight astern.",
+    "maxTrack": "TUNING GUESS: the pencil track keeps the last 40 plotted positions.",
+    "courseTickMinutes": "VISUAL ESTIMATE: the course line ahead of the marker is ticked at 1, 2 and 5 minutes at the watch's speed over ground.",
     "chartSpan/minChartSpan/chartFitPadding": "VISUAL ESTIMATE: the chart frames the marker, track, course line, all buoys and any landmark the next plot will use automatically with a 25% margin and never zooms in tighter than minChartSpan metres across the paper; chartSpan is the departure framing. Framing the whole bay (about 6 km) would crowd the buoy labels, so other landmarks get a pointer at the paper edge.",
     "chartViewDeg": "VISUAL ESTIMATE: the chart counts as in view when the line of sight is within this angle of the paper centre; plotting pauses while it is not.",
-    "accuracy": "TUNING GUESS: radius of the sailor's doubt in metres. Known departure 5 m; a single line leaves along-line error (25 m); two good bearings 10 m. A plotted leg adds doubt in proportion to its length from a 10% speed-by-feel error combined with a 3 degree course error. Readings themselves are exact for now.",
+    "accuracy": "TUNING GUESS: radius of the sailor's doubt in metres. Known departure 5 m; a single line leaves along-line error (25 m); two good bearings 10 m. A plotted leg adds doubt in proportion to its length from a 10% speed error (the leg assumes the watch's speed when it is pencilled held all along, while gusts and turns changed it) combined with a 3 degree course error. Readings themselves are exact for now.",
     "bearingStepDeg/minSightHorizontal": "TUNING GUESS: half-degree compass graduation; reject nearly vertical aiming where horizontal bearing is undefined/unusable. Bearing uses actual camera world direction, including boat heel and pitch.",
-    "minFixAngleDeg/maxBearingAge/noteCarryGrace/maxObservations": "TUNING GUESS: reject crossings within 15 degrees of parallel/antiparallel, expire observations after 180 seconds, allow one second of carry-forward without a remembered course and speed, retain five notes. Lines are advanced by the remembered course and speed to account for sailing between observations.",
+    "minFixAngleDeg/maxBearingAge/noteCarryGrace/maxObservations": "TUNING GUESS: reject crossings within 15 degrees of parallel/antiparallel, expire observations after 180 seconds, allow one second of carry-forward without a remembered course, retain five notes. Lines are advanced by the remembered course at the watch's speed to account for sailing between observations.",
     "visual": "VISUAL ESTIMATE: physical lap chart follows the sailor's eye anchor, below and ahead of the eye, never camera look or screen coordinates. It is hidden at every start; M shows or hides it. Chart size, texture resolution, update interval, zoom limits and the yellow hand-bearing compass (modelled on a Plastimo Iris 50) are visual/readability tuning. No full-body animation is added."
   }
 }

@@ -18,8 +18,6 @@ export class NavigationView {
   bearing: number | null = null;
   /** The line of sight is near the lap chart, so pencil work can go on. */
   chartInView = false;
-  /** The line of sight is back along the wake, where speed through the water can be judged. */
-  lookingAstern = false;
   /** The mark under the crosshair, by name: the eye reads a buoy's painted ID or knows a landmark's shape; the compass gives the bearing. */
   aimedMark: string | null = null;
   /** Sighting down the boat toward its bow: the compass is lined up with the centreline, tilted down. */
@@ -58,7 +56,6 @@ export class NavigationView {
     this.chartInView = cockpit && this.chartShown && toChart.dot(this.direction) > Math.cos(NAVIGATION.visual.chartViewDeg * Math.PI / 180);
     this.aimedMark = cockpit ? this.markUnderCrosshair() : null;
     this.aimedBow = cockpit && this.sightingAlongBow();
-    this.lookingAstern = cockpit && this.facingAstern();
     this.compass.update(this.bearing, this.sighting && cockpit);
     if (this.chartShown) this.chart.update();
   }
@@ -87,12 +84,5 @@ export class NavigationView {
       }
     }
     return best;
-  }
-
-  /** The heading of the line of sight is within `wakeLookDeg` of straight astern. */
-  private facingAstern(): boolean {
-    this.bow.getWorldDirection(this.forward).negate(); // local -z is the boat's forward
-    const offset = Math.atan2(this.direction.x, -this.direction.z) - Math.atan2(this.forward.x, -this.forward.z);
-    return Math.PI - Math.abs(Math.atan2(Math.sin(offset), Math.cos(offset))) < NAVIGATION.visual.wakeLookDeg * Math.PI / 180;
   }
 }

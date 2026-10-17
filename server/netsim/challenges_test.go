@@ -22,9 +22,17 @@ const (
 	codeB = "BBBBBBBBBBBBBBBBBBBB"
 )
 
-var tour = sim.ChallengeParams.Challenges[0]
+var tourID = "buoy-tour"
 
-var tourID = tour.ID
+// tour is the Buoy tour, found by id (it is not the first challenge).
+var tour = func() sim.Challenge {
+	for _, c := range sim.ChallengeParams.Challenges {
+		if c.ID == tourID {
+			return c
+		}
+	}
+	panic("no buoy-tour challenge")
+}()
 
 // tourStatus is the tour's entry in list.
 func tourStatus(t *testing.T, list []ChallengeStatus) ChallengeStatus {
@@ -144,6 +152,28 @@ func stepsOf(t *testing.T, st Store, code string) []string {
 		t.Fatal(err)
 	}
 	return p[tourID].Steps
+}
+
+// TestFirstSailCountsOnlyInOrder: the course steps H1, H2, H1 (2nd) count only in that order; H2
+// first is ignored, and the return to H1 completes it.
+func TestFirstSailCountsOnlyInOrder(t *testing.T) {
+	st := openStore(t)
+	tr := startRoom(t, RoomConfig{Store: st})
+	c := tr.dialAs("", codeA)
+	w := tr.welcome(c)
+	tr.onBuoy(w.Resume, buoyIndex(t, "H2"))
+	tr.noChallengesFrame(c, 5)
+	for i, want := range [][]string{{"H1"}, {"H1", "H2"}, {"H1", "H2", "H1 (2nd)"}} {
+		tr.clock.Advance(time.Second)
+		tr.onBuoy(w.Resume, buoyIndex(t, []string{"H1", "H2", "H1"}[i]))
+		got := tr.challengesFrame(c)
+		if got.ID != "first-sail" || !slices.Equal(got.Steps, want) || got.Total != 3 {
+			t.Fatalf("step %d: %+v, want first-sail %v of 3", i, got, want)
+		}
+		if done := got.CompletedAt > 0; done != (i == 2) {
+			t.Fatalf("step %d: completedAt %d", i, got.CompletedAt)
+		}
+	}
 }
 
 func TestBuoyTourPersists(t *testing.T) {
@@ -292,7 +322,7 @@ func TestRetrySurvivesReconnect(t *testing.T) {
 
 	c := tr.dialAs(w.Resume, codeA)
 	w2 := tr.welcome(c)
-	if !w2.Resumed || len(w2.Challenges[0].Steps) != 0 {
+	if !w2.Resumed || len(tourStatus(t, w2.Challenges).Steps) != 0 {
 		t.Fatalf("resumed %v, challenges %+v", w2.Resumed, w2.Challenges)
 	}
 	failing.Store(false)
@@ -327,9 +357,21 @@ func TestUnsavedVisitExpiresWithBoat(t *testing.T) {
 	if got := stepsOf(t, st, codeA); len(got) != 0 {
 		t.Fatalf("stored %v", got)
 	}
-	if w := tr.welcomeAs("", codeA); len(w.Challenges[0].Steps) != 0 {
-		t.Fatalf("steps %v", w.Challenges[0].Steps)
+	if w := tr.welcomeAs("", codeA); len(tourStatus(t, w.Challenges).Steps) != 0 {
+		t.Fatalf("steps %v", tourStatus(t, w.Challenges).Steps)
 	}
+}
+
+// stepIndex is the sim.ChallengeSteps index of challenge id's step called name.
+func stepIndex(t *testing.T, id, name string) int {
+	t.Helper()
+	for i, s := range sim.ChallengeSteps {
+		if sim.ChallengeParams.Challenges[s.Challenge].ID == id && s.Name == name {
+			return i
+		}
+	}
+	t.Fatalf("no step %s of %s", name, id)
+	return -1
 }
 
 func TestStaleSaveCallbackIgnored(t *testing.T) {
@@ -356,7 +398,7 @@ func TestStaleSaveCallbackIgnored(t *testing.T) {
 
 	c := tr.dialAs(w.Resume, codeB)
 	w2 := tr.welcome(c)
-	if !w2.Resumed || len(w2.Challenges[0].Steps) != 0 {
+	if !w2.Resumed || len(tourStatus(t, w2.Challenges).Steps) != 0 {
 		t.Fatalf("resumed %v, challenges %+v", w2.Resumed, w2.Challenges)
 	}
 	tr.visit(w.Resume, sim.BuoyData.Buoys[0].X, sim.BuoyData.Buoys[0].Z) // B's own visit, queued behind A's
@@ -368,7 +410,7 @@ func TestStaleSaveCallbackIgnored(t *testing.T) {
 	var inflight bool
 	done := make(chan struct{})
 	tr.room.do(tr.ctx, func() {
-		u := tr.room.byToken[w.Resume].unsaved[0]
+		u := tr.room.byToken[w.Resume].unsaved[stepIndex(t, tourID, "N")]
 		code, inflight = u.code, u.inflight
 		close(done)
 	})

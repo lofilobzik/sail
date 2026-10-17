@@ -24,7 +24,7 @@ function run(nav: Navigation, seconds: number, speed = 2, dt = 0.1): void {
 /** Take a complete bearing reading while aiming steadily. */
 function sight(nav: Navigation, bearing: number): void {
   nav.setAim(bearing);
-  nav.beginReading('bearing');
+  nav.beginReading();
   run(nav, NAVIGATION.timing.bearingRead + 0.2);
   nav.setAim(null);
 }
@@ -39,50 +39,22 @@ function track(nav: Navigation, start: number, rate: number, seconds: number, dt
 }
 
 describe('timed readings', () => {
-  it('shows no motion estimate until course and speed have been read', () => {
+  it('shows no motion estimate until a course has been read', () => {
     const nav = fromOrigin();
     run(nav, 30);
     expect(nav.velocity).toBeNull();
     expect(nav.plotted).toMatchObject({ x: 0, z: 0, t: 0 });
   });
 
-  it('takes the wake reading only after it has been watched long enough, and remembers its time', () => {
+  it('moves on the remembered course at the speed the watch shows now', () => {
     const nav = fromOrigin();
-    nav.setAstern(true);
-    nav.beginReading('speed');
-    run(nav, NAVIGATION.timing.speedRead - 0.5, 2.5);
-    expect(nav.speed).toBeNull();
-    expect(nav.progress).toBeGreaterThan(0.5);
+    sight(nav, 90 * DEG);
+    nav.assignCourse(1);
     run(nav, 1, 2.5);
-    expect(nav.speed?.value).toBe(2.5);
-    expect(nav.speed?.t).toBeGreaterThan(NAVIGATION.timing.speedRead - 0.5);
-    expect(nav.task).toBeNull();
-  });
-
-  it('only judges the wake while looking astern, and the ring starts over when the sailor turns away', () => {
-    const nav = fromOrigin();
-    nav.beginReading('speed');
-    run(nav, 5, 2);
-    expect(nav.speed).toBeNull();
-    expect(nav.task!.elapsed).toBe(0);
-    nav.setAstern(true);
-    run(nav, 1, 2);
-    nav.setAstern(false);
-    run(nav, 1, 2);
-    expect(nav.task!.elapsed).toBe(0);
-    nav.setAstern(true);
-    run(nav, NAVIGATION.timing.speedRead + 0.2, 2);
-    expect(nav.speed?.value).toBe(2);
-  });
-
-  it('calls a remembered speed old after a couple of minutes', () => {
-    const nav = fromOrigin();
-    nav.setAstern(true);
-    nav.beginReading('speed');
-    run(nav, NAVIGATION.timing.speedRead + 0.2, 2);
-    expect(nav.speedStale).toBe(false);
-    run(nav, NAVIGATION.speedStaleSeconds + 1, 2);
-    expect(nav.speedStale).toBe(true);
+    expect(nav.velocity!.x).toBeCloseTo(2.5, 9);
+    expect(nav.velocity!.z).toBeCloseTo(0, 9);
+    run(nav, 1, 1);
+    expect(nav.velocity!.x).toBeCloseTo(1, 9);
   });
 
   it('records the bearing in view at the end of a steady hold', () => {
@@ -94,7 +66,7 @@ describe('timed readings', () => {
 
   it('restarts when the compass sweeps off the mark or points at nothing, and a released hold records nothing', () => {
     const nav = fromOrigin();
-    nav.beginReading('bearing');
+    nav.beginReading();
     track(nav, 10 * DEG, 0, 2);
     track(nav, 10 * DEG + 12 * DEG, 0, 0.1); // 12 degrees in one step: a sweep, not a hold
     expect(nav.task!.elapsed).toBeLessThan(0.5);
@@ -109,7 +81,7 @@ describe('timed readings', () => {
   it('lets a slow track on a mark finish and records its recent mean direction', () => {
     const nav = fromOrigin();
     const rate = 3 * DEG; // the boat is swinging and the eye follows the buoy: the mean moves with it
-    nav.beginReading('bearing');
+    nav.beginReading();
     track(nav, 100 * DEG, rate, NAVIGATION.timing.bearingRead + 0.1);
     expect(nav.observations).toHaveLength(1);
     const finished = NAVIGATION.timing.bearingRead;
@@ -119,7 +91,7 @@ describe('timed readings', () => {
 
   it('averages out the rocking of the boat in waves', () => {
     const nav = fromOrigin();
-    nav.beginReading('bearing');
+    nav.beginReading();
     const steps = Math.round((NAVIGATION.timing.bearingRead + 0.1) / 0.1);
     for (let i = 1; i <= steps; i++) {
       nav.setAim((60 + 5 * Math.sin(2 * Math.PI * i * 0.1 / 1.5)) * DEG);
@@ -131,7 +103,7 @@ describe('timed readings', () => {
 
   it('tracks smoothly across north', () => {
     const nav = fromOrigin();
-    nav.beginReading('bearing');
+    nav.beginReading();
     track(nav, 358 * DEG, 2 * DEG, NAVIGATION.timing.bearingRead + 0.1);
     expect(nav.observations).toHaveLength(1);
     const bearing = nav.observations[0]!.bearing / DEG;
@@ -140,7 +112,7 @@ describe('timed readings', () => {
 
   /** One hold on a steady 50 degree bearing, with the crosshair on `markAt(step)` and the bow on `bowAt(step)`. */
   function holdWith(nav: Navigation, markAt: (i: number) => string | null, bowAt: (i: number) => boolean = () => false): void {
-    nav.beginReading('bearing');
+    nav.beginReading();
     const steps = Math.round((NAVIGATION.timing.bearingRead + 0.1) / 0.1);
     for (let i = 1; i <= steps; i++) {
       nav.setAim(50 * DEG);
@@ -194,7 +166,6 @@ describe('timed readings', () => {
     nav.record(2);
     expect(nav.candidateNotes().map((n) => n.id)).toEqual([2, 3]);
     nav.course = { value: 0, t: 0 };
-    nav.speed = { value: 0, t: 0 };
     expect(nav.beginAutoPlot()).toBe(true);
     expect(nav.plotting).toBe('fix');
     run(nav, 2 * NAVIGATION.timing.plotLine + 0.2, 0);
@@ -211,7 +182,6 @@ describe('timed readings', () => {
   it('keeps a pencil track of every plotted position and caps its length', () => {
     const nav = fromOrigin();
     nav.course = { value: Math.PI / 2, t: 0 };
-    nav.speed = { value: 2, t: 0 };
     expect(nav.track).toEqual([{ x: 0, z: 0, t: 0, radius: NAVIGATION.accuracy.departure }]);
     for (let i = 0; i < NAVIGATION.maxTrack + 5; i++) {
       nav.beginPlot('leg');
@@ -227,7 +197,6 @@ describe('timed readings', () => {
   it('pauses pencil work while the chart is out of view and resumes where it left off', () => {
     const nav = fromOrigin();
     nav.course = { value: 0, t: 0 };
-    nav.speed = { value: 1, t: 0 };
     nav.beginPlot('leg');
     run(nav, 2);
     nav.setLooking(false);
@@ -237,15 +206,6 @@ describe('timed readings', () => {
     run(nav, NAVIGATION.timing.plotLeg - 2 + 0.2);
     expect(nav.task).toBeNull();
     expect(nav.plotted.t).toBeGreaterThan(12);
-  });
-
-  it('keeps timed wake readings running while the chart is out of view', () => {
-    const nav = fromOrigin();
-    nav.setLooking(false);
-    nav.setAstern(true);
-    nav.beginReading('speed');
-    run(nav, NAVIGATION.timing.speedRead + 0.2, 2);
-    expect(nav.speed?.value).toBe(2);
   });
 
   it('turns a note taken along the bow into the remembered course', () => {
@@ -262,40 +222,38 @@ describe('plotting the dead-reckoning leg', () => {
     const nav = fromOrigin();
     sight(nav, 90 * DEG);
     nav.assignCourse(1);
-    nav.setAstern(true);
-    nav.beginReading('speed');
-    run(nav, NAVIGATION.timing.speedRead + 0.2, 3);
     return nav;
   }
 
-  it('refuses until a course and a speed are remembered', () => {
+  it('refuses until a course is remembered', () => {
     const nav = fromOrigin();
     expect(nav.beginPlot('leg')).toBe(false);
+    expect(nav.task).toBeNull();
     sight(nav, 90 * DEG);
     nav.assignCourse(1);
-    expect(nav.beginPlot('leg')).toBe(false);
-    expect(nav.task).toBeNull();
+    expect(nav.beginPlot('leg')).toBe(true);
   });
 
   it('leaves the marker where it was until the plotting time has passed', () => {
     const nav = sailingEast();
     run(nav, 20, 3);
     expect(nav.plotted.x).toBe(0);
+    const started = nav.t;
     expect(nav.beginPlot('leg')).toBe(true);
     run(nav, NAVIGATION.timing.plotLeg - 1, 3);
     expect(nav.plotted.x).toBe(0);
     run(nav, 1.2, 3);
-    expect(nav.plotted.t).toBeGreaterThan(30);
+    expect(nav.plotted.t).toBeGreaterThanOrEqual(started + NAVIGATION.timing.plotLeg);
     expect(nav.plotted.x).toBeCloseTo(3 * nav.plotted.t, 6);
     expect(nav.plotted.z).toBeCloseTo(0, 6);
   });
 
-  it('carries on from the remembered values, even after the boat changes course', () => {
+  it('carries the remembered course at the watch\'s speed when the leg is pencilled, even after a change', () => {
     const nav = sailingEast();
-    run(nav, 60, 1); // the real boat slowed down; the sailor still remembers 3 m/s
+    run(nav, 60, 1); // the boat slowed down: the watch now shows 1 m/s, and the leg is drawn at that
     nav.beginPlot('leg');
     run(nav, NAVIGATION.timing.plotLeg + 0.2, 1);
-    expect(nav.plotted.x).toBeCloseTo(3 * nav.plotted.t, 6);
+    expect(nav.plotted.x).toBeCloseTo(1 * nav.plotted.t, 6);
   });
 
   it('adds doubt in proportion to the distance sailed on memory, and abandoned plotting changes nothing', () => {
@@ -319,7 +277,7 @@ describe('plotting the dead-reckoning leg', () => {
     nav.reset();
     expect(nav.plotted).toEqual({ ...NAVIGATION.start, t: 0, radius: NAVIGATION.accuracy.departure });
     expect(nav.course).toBeNull();
-    expect(nav.speed).toBeNull();
+    expect(nav.speed).toBe(0);
     expect(nav.t).toBe(0);
   });
 
@@ -413,14 +371,13 @@ describe('bearing lines and fixes', () => {
     expect(solveFix([{ ...a, markId: null }], at()).ok).toBe(false);
     expect(solveFix([a], at(0, 0, NAVIGATION.maxBearingAge + 1, { x: 0, z: 0 })).ok).toBe(false);
     expect(solveFix([{ ...a, bearing: Math.PI }], at())).toMatchObject({ ok: false, reason: expect.stringMatching(/away/) });
-    expect(solveFix([a], at(0, 0, 30))).toMatchObject({ ok: false, reason: expect.stringMatching(/course and speed/) });
+    expect(solveFix([a], at(0, 0, 30))).toMatchObject({ ok: false, reason: expect.stringMatching(/course/) });
     expect(solveFix([], at()).ok).toBe(false);
   });
 
   it('plots a fix only after the pencil time, moves the marker there and tightens the doubt', () => {
     const nav = fromOrigin();
     nav.course = { value: 0, t: 0 };
-    nav.speed = { value: 0, t: 0 };
     const mark = NAV_MARKS.find((m) => m.name === 'N')!;
     run(nav, 1, 0);
     nav.record(worldToBearing(mark.x - 0, mark.z - 0));
@@ -436,7 +393,6 @@ describe('bearing lines and fixes', () => {
   it('requires a named note before a fix, keeps readings, and bounds notes', () => {
     const nav = fromOrigin();
     nav.course = { value: 0, t: 0 };
-    nav.speed = { value: 1, t: 0 };
     run(nav, 1, 0);
     nav.record(0);
     expect(nav.beginPlot('fix')).toBe(false);
@@ -446,6 +402,5 @@ describe('bearing lines and fixes', () => {
     for (let i = 0; i < NAVIGATION.maxObservations + 3; i++) nav.record(i);
     expect(nav.observations).toHaveLength(NAVIGATION.maxObservations);
     expect(nav.course).not.toBeNull();
-    expect(nav.speed).not.toBeNull();
   });
 });

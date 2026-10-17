@@ -1,9 +1,9 @@
 /**
  * The sailor's navigation. Pure math: no true-position input, DOM or Three.js.
  *
- * There is no live position. The sailor takes timed readings (a hand-bearing compass for course and
- * bearings, a look at the wake for speed), remembers them, and later spends time plotting them on
- * the chart. The only position ever shown is the last one drawn in pencil.
+ * There is no live position. The sailor takes timed readings with a hand-bearing compass (course and
+ * bearings), remembers them, and later spends time plotting them on the chart; speed over ground
+ * comes from a GPS watch. The only position ever shown is the last one drawn in pencil.
  */
 import parameters from '../../data/navigation.json';
 import buoyData from '../../data/buoys.json';
@@ -26,7 +26,7 @@ export const NAV_MARKS: readonly Mark[] = [
 
 export interface InstrumentReading {
   t: number;
-  /** Signed forward speed through the water, m/s. Read only when the sailor looks at the wake. */
+  /** Speed over ground, m/s: the GPS watch, always in view. */
   speed: number;
 }
 
@@ -58,14 +58,13 @@ export interface PositionLine {
   offset: number;
 }
 
-/** How a sighting is carried forward to now: the remembered course and speed, if there are any. */
+/** How a sighting is carried forward to now: the remembered course at the watch's speed, if a course is known. */
 export interface Carry { t: number; velocity: Vec2 | null }
 export interface FixContext extends Carry { position: Vec2 }
 
 export type FixResult = { ok: true; position: Vec2 } | { ok: false; reason: string };
-export type ReadingKind = 'bearing' | 'speed';
 export type PlotKind = 'leg' | 'fix';
-export interface Task { kind: ReadingKind | PlotKind; elapsed: number; duration: number }
+export interface Task { kind: 'bearing' | PlotKind; elapsed: number; duration: number }
 
 /**
  * A steady-aim hold: offsets from the first aim, so a slow track on a mark averages out, and what the
@@ -131,7 +130,7 @@ export function solveFix(observations: readonly Observation[], context: FixConte
     return { ok: false, reason: 'Note expired. Take a new bearing.' };
   }
   if (!context.velocity && observations.some((o) => context.t - o.t > NAVIGATION.noteCarryGrace)) {
-    return { ok: false, reason: 'Read your course and speed to carry the bearing forward.' };
+    return { ok: false, reason: 'Read your course (F, compass along the bow) to carry the bearing forward.' };
   }
   const lines = observations.map((o) => positionLine(o, context));
   const a = lines[0];
@@ -160,14 +159,12 @@ export class Navigation {
   /** Every position pencilled on the chart, oldest first, ending with `plotted`. */
   readonly track: PlottedFix[] = [{ ...this.plotted }];
   course: Remembered | null = null;
-  speed: Remembered | null = null;
+  /** Speed over ground from the GPS watch, m/s, as of the latest instrument step. */
+  speed = 0;
   readonly observations: Observation[] = [];
-  /** The sailor is looking back along the wake, the only way to judge speed through the water. */
-  astern = false;
   task: Task | null = null;
-  message = 'Hold F on a buoy, a landmark or the bow for a bearing, or looking astern at the wake for speed.';
+  message = 'Hold F on a buoy, a landmark or the bow for a bearing.';
   private nextId = 1;
-  private instrumentSpeed = 0;
   private aimT = 0;
   private aim: number | null = null;
   private hold: Hold | null = null;
@@ -181,23 +178,22 @@ export class Navigation {
     this.t = departure.t;
     this.plotted = { x: departure.x, z: departure.z, t: departure.t, radius: NAVIGATION.accuracy.departure };
     this.course = null;
-    this.speed = null;
+    this.speed = 0;
     this.observations.length = 0;
     this.track.length = 0;
     this.track.push({ ...this.plotted });
     this.task = null;
     this.aim = null;
     this.hold = null;
-    this.instrumentSpeed = 0;
     this.nextId = 1;
     this.message = 'Known departure. Dead reckoning restarted.';
   }
 
-  /** Remembered motion: course and speed read some time ago, assumed to be still true. */
+  /** Remembered course at the watch's speed, assumed to hold; null until a course has been read. */
   get velocity(): Vec2 | null {
-    if (!this.course || !this.speed) return null;
+    if (!this.course) return null;
     const direction = bearingToWorld(this.course.value);
-    return { x: direction.x * this.speed.value, z: direction.z * this.speed.value };
+    return { x: direction.x * this.speed, z: direction.z * this.speed };
   }
 
   /** Where the remembered motion says the boat is now. Used for corrections; never drawn. */
@@ -211,14 +207,9 @@ export class Navigation {
     return { t: this.t, velocity: this.velocity };
   }
 
-  /** The remembered speed is old enough that the sailor would want to look at the wake again. */
-  get speedStale(): boolean {
-    return this.speed !== null && this.t - this.speed.t > NAVIGATION.speedStaleSeconds;
-  }
-
-  get reading(): ReadingKind | null {
-    const kind = this.task?.kind;
-    return kind === 'bearing' || kind === 'speed' ? kind : null;
+  /** A bearing is being read. */
+  get reading(): boolean {
+    return this.task?.kind === 'bearing';
   }
 
   get plotting(): PlotKind | null {
@@ -235,14 +226,10 @@ export class Navigation {
   advance(reading: InstrumentReading, dt: number): void {
     if (!(dt > 0) || ![dt, reading.t, reading.speed].every(Number.isFinite)) return;
     this.t = reading.t;
-    this.instrumentSpeed = reading.speed;
+    this.speed = reading.speed;
     const task = this.task;
     if (!task) return;
     if (task.kind === 'bearing' && !this.steady(task)) return;
-    if (task.kind === 'speed' && !this.astern) {
-      task.elapsed = 0;
-      return;
-    }
     // Pencil work only progresses while the sailor is looking at the paper.
     if (this.plotting && !this.looking) return;
     task.elapsed += dt;
@@ -294,11 +281,6 @@ export class Navigation {
     this.looking = looking;
   }
 
-  /** Whether the sailor is looking back at the wake. */
-  setAstern(astern: boolean): void {
-    this.astern = astern;
-  }
-
   /** The mark under the crosshair, named by the eye (a buoy's painted ID, a landmark's shape). Bearings still come from the compass. */
   setAimedMark(name: string | null): void {
     this.aimedMark = name;
@@ -308,14 +290,11 @@ export class Navigation {
     this.aimedBow = aimed;
   }
 
-  beginReading(kind: ReadingKind): void {
+  beginReading(): void {
     if (this.task) return;
-    const timing = NAVIGATION.timing;
-    this.task = { kind, elapsed: 0, duration: kind === 'bearing' ? timing.bearingRead : timing.speedRead };
+    this.task = { kind: 'bearing', elapsed: 0, duration: NAVIGATION.timing.bearingRead };
     this.hold = null;
-    this.message = kind === 'bearing'
-      ? 'Hold steady on a buoy or landmark: the eye names it. Line the compass up with the bow, tilted down, for your course.'
-      : this.astern ? 'Watching the wake.' : 'Look astern at the wake.';
+    this.message = 'Hold steady on a buoy or landmark: the eye names it. Line the compass up with the bow, tilted down, for your course.';
   }
 
   cancelReading(): void {
@@ -370,7 +349,7 @@ export class Navigation {
     let duration: number;
     if (kind === 'leg') {
       if (!this.velocity) {
-        this.message = 'Read a course (F, compass along the bow) and a speed (F, looking astern at the wake) first.';
+        this.message = 'Read a course first (F, compass along the bow).';
         return false;
       }
       duration = timing.plotLeg;
@@ -403,10 +382,7 @@ export class Navigation {
 
   private complete(task: Task): void {
     this.task = null;
-    if (task.kind === 'speed') {
-      this.speed = { value: this.instrumentSpeed, t: this.t };
-      this.message = 'Speed noted.';
-    } else if (task.kind === 'bearing') {
+    if (task.kind === 'bearing') {
       const hold = this.hold;
       this.hold = null;
       if (this.aim === null) return;

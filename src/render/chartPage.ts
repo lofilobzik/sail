@@ -1,6 +1,6 @@
 /** Paper artwork. Pixel dimensions, colours and typography are VISUAL ESTIMATE. */
 import buoyData from '../../data/buoys.json';
-import { KNOT, bearingToWorld, worldToBearing, type Vec2 } from '../sim/frames';
+import { bearingToWorld, worldToBearing, type Vec2 } from '../sim/frames';
 import { BAY, LANDMARKS, type LandmarkKind } from '../sim/terrain';
 import { contains, type ChartProjection, type PaperRect } from '../nav/chart';
 import { NAVIGATION, NAV_MARKS, bearingLabel, lineIntersection, positionLine, type Navigation, type PositionLine } from '../nav/navigation';
@@ -136,7 +136,7 @@ export function drawChartPage(
   const map = projection.rect;
   const plotted = nav.plotted;
   const course = nav.course ? bearingToWorld(nav.course.value) : null;
-  const speed = nav.speed?.value ?? 0;
+  const speed = nav.speed;
   const ticks = NAVIGATION.visual.courseTickMinutes;
   // The course line runs to the last tick when the speed is known, otherwise a fixed fraction of the paper.
   const tipTicks = course && speed > 0 ? ticks : [];
@@ -284,11 +284,9 @@ export function drawChartPage(
   const dr = projection.toPaper(plotted);
   if (course) {
     // Course ahead of the marker: a pencil line with ticks at the minutes the sailor would reach them.
-    const stale = nav.speedStale;
     const dx = course.x, dy = course.z; // world +z is down the paper
     const length = tipTicks.length ? reach(Math.max(...ticks)) * map.width / projection.span : map.width * 0.2;
     ctx.strokeStyle = PENCIL; ctx.fillStyle = PENCIL; ctx.lineWidth = 2;
-    ctx.globalAlpha = stale ? 0.45 : 1;
     ctx.setLineDash([10, 7]);
     ctx.beginPath(); ctx.moveTo(dr.x, dr.y); ctx.lineTo(dr.x + dx * length, dr.y + dy * length); ctx.stroke();
     ctx.setLineDash([]);
@@ -299,7 +297,6 @@ export function drawChartPage(
       ctx.beginPath(); ctx.moveTo(tx - dy * 7, ty + dx * 7); ctx.lineTo(tx + dy * 7, ty - dx * 7); ctx.stroke();
       ctx.fillText(`${minutes}′`, tx + 8, ty + 18);
     }
-    ctx.globalAlpha = 1;
     // The little triangle: where the bow is taking us, from the last bow reading.
     const tipX = dr.x + dx * 40, tipY = dr.y + dy * 40;
     ctx.fillStyle = PENCIL;
@@ -411,11 +408,6 @@ export function drawChartPage(
   ctx.fillText('REMEMBERED', 678, 470);
   ctx.font = '20px Georgia, serif';
   ctx.fillText(nav.course ? `Course ${bearingLabel(nav.course.value)} ${age(nav.t - nav.course.t)}` : 'Course  --  (compass on bow)', 678, 500);
-  ctx.fillText(nav.speed ? `Speed ${(nav.speed.value / KNOT).toFixed(1)} kn ${age(nav.t - nav.speed.t)}${nav.speedStale ? ' OLD' : ''}` : 'Speed   --  (F, look astern)', 678, 528);
-  if (nav.speedStale) {
-    ctx.fillStyle = PENCIL; ctx.font = '19px Georgia, serif';
-    ctx.fillText('Speed is old: read the wake again.', 678, 556);
-  }
 
   if (nav.plotting) {
     const cx = 944, cy = 80, r = 24;

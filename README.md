@@ -11,10 +11,10 @@ A realistic-ish multiplayer dinghy sailing simulator based on scientific papers
     - <kbd>A</kbd> and <kbd>D</kbd> for rudder
     - <kbd>W</kbd> and <kbd>S</kbd> for sail
     - Check telltales (strips of yarn) for how well the sail is trimmed
-- How to check your position with no GPS
+- How to check your position with no chartplotter
     - Press <kbd>F</kbd> to take bearings (directions) on objects around yourself
     - Take a bearing on the bow (nose)
-    - Estimate the boat speed by pressing <kbd>F</kbd> on the wake (foam trail behind the boat)
+    - Your GPS watch (lower right) shows your speed over ground in knots
     - Press <kbd>R</kbd> on the map and keep looking to **r**eckon your position and direction since the last mark (this plots your course!)
 
 ## How was this built

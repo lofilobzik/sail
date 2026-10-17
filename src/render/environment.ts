@@ -13,11 +13,12 @@ export function createBuoys(): THREE.Group {
     const buoy = new THREE.Group();
     buoy.name = b.name;
     buoy.position.set(b.x, 0, b.z);
-    // Where the look guide circles the buoy: halfway up, where the eye sights it (nav/navigation.ts).
-    const sight = new THREE.Object3D();
-    sight.name = 'sight';
-    sight.position.y = height / 2;
-    buoy.add(sight);
+    // Where an objective's V arrow sits (ui/lookGuide.ts): just above the topmark, which tops out at
+    // about `height`, so the arrow floats over the buoy instead of covering it.
+    const marker = new THREE.Object3D();
+    marker.name = 'marker';
+    marker.position.y = height + 0.6;
+    buoy.add(marker);
     const mat = new THREE.MeshStandardMaterial({ color: b.color, roughness: 0.6 });
     const base = new THREE.Mesh(body, mat);
     base.position.y = height * 0.3;

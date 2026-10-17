@@ -13,6 +13,7 @@ import { VERSION_LABEL } from '../version';
 import { button, heading, installPanelStyle, row } from './panel';
 import { LOOK_SENSITIVITY_MAX, LOOK_SENSITIVITY_MIN } from './prefs';
 import type { Quality } from '../render/quality';
+import { WATCH_COLOURS, type WatchColour } from './gpsWatch';
 
 // Sailing controls and developer tools come from the same bindings used by their input handlers.
 
@@ -34,9 +35,14 @@ export interface MenuOptions {
   detectedGraphics: Quality;
   /** A new graphics choice; the renderer is built at load, so this reloads the page. */
   onGraphics(graphics: 'auto' | Quality): void;
+  /** Bezel colour of the GPS watch. */
+  watchColour: WatchColour;
+  onWatchColour(colour: WatchColour): void;
   /** Respawns the boat (on a server, in the shared room). */
   onRespawn(): void;
   onShowGuidance(): void;
+  /** True while the challenge log (J) is open: Esc is its to handle then. */
+  logOpen(): boolean;
   /** The player's sailor code, when connected to a server; shows the Challenges section once progress arrives. */
   sailor?: { code: string; onRestore(code: string): void };
 }
@@ -54,6 +60,7 @@ export class Menu {
   private isOpen = false;
   private wasLocked = false;
   private unlockedAt = -Infinity;
+  private releaseExpected = false;
 
   constructor(private readonly opts: MenuOptions) {
     installPanelStyle();
@@ -118,6 +125,12 @@ export class Menu {
     });
     panel.appendChild(row('Graphics', graphics));
 
+    const watch = document.createElement('select');
+    for (const [id, c] of Object.entries(WATCH_COLOURS)) watch.add(new Option(c.name, id));
+    watch.value = opts.watchColour;
+    watch.addEventListener('change', () => opts.onWatchColour(watch.value as WatchColour));
+    panel.appendChild(row('Watch', watch));
+
     const select = this.sailSelect;
     this.fillSails(opts.sailDesign);
     select.addEventListener('change', () => opts.onSailDesign(select.value));
@@ -155,23 +168,29 @@ export class Menu {
     document.addEventListener('pointerlockchange', () => {
       const locked = document.pointerLockElement === opts.canvas;
       if (locked) this.setOpen(false);
-      else if (this.wasLocked) {
+      else if (this.wasLocked && !this.releaseExpected) {
         this.setOpen(true);
         this.unlockedAt = performance.now();
       }
+      this.releaseExpected = false;
       this.wasLocked = locked;
     });
     // Esc with the pointer free (before the first click, or after a failed resume) toggles the menu.
     // Some browsers also deliver the Esc that released the lock: that one must not close the menu again.
     window.addEventListener('keydown', (e) => {
       if (e.code !== BINDINGS.menu.keys.toggle || e.repeat || isTypingTarget(e.target)) return;
-      if (performance.now() - this.unlockedAt < ESC_UNLOCK_MS) return;
+      if (performance.now() - this.unlockedAt < ESC_UNLOCK_MS || opts.logOpen()) return;
       if (document.pointerLockElement !== opts.canvas) this.setOpen(!this.open);
     });
   }
 
   get open(): boolean {
     return this.isOpen;
+  }
+
+  /** The next pointer-lock release is someone else's (the challenge log freeing the mouse): stay shut. */
+  expectRelease(): void {
+    this.releaseExpected = true;
   }
 
   /** Keeps the sail picker in step when the debug panel changes the design. */

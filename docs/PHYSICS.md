@@ -429,39 +429,38 @@ geometry: it is a soft stop for play, all **TUNING GUESS**.
 
 The DR position lives in `nav/`, separate from the true state. There is no live dead-reckoning
 position: the sailor reads values, remembers them and later plots them.
-- Receives only `{ t, speed }`: signed forward surge speed averaged over each fixed simulation step.
-  It cannot read true position, heading or sideways velocity. The known departure origin is the start
+- Receives only `{ t, speed }`: speed over ground from the GPS watch (the distance the boat moved in
+  each fixed simulation step over its length). It cannot read true position, heading or direction of travel. The known departure origin is the start
   the boat is given at a (re)spawn (offline the berth in `data/bay.json`, on a server the announced
   spawn), never the live boat state.
 - Course and bearings come from the hand-bearing compass: the actual camera world direction (so
   heel and pitch included), graduated to half a degree, taken after holding steady for
   `timing.bearingRead` s without straying more than `aimToleranceDeg` from its recent mean; the bearing
-  is that mean over `aimAverageSeconds`. Speed is the instrument speed at the end of a
-  `timing.speedRead` s look at the wake, which only runs while the sailor looks astern
-  (`visual.wakeLookDeg`); a speed older than `speedStaleSeconds` is flagged old. Readings are exact
-  for now.
-- A plotted leg is `plotted + remembered velocity x (t - plotted.t)`, completed after `timing.plotLeg`
-  s of simulated time. It **ignores leeway** and any change in course or speed since the readings.
+  is that mean over `aimAverageSeconds`. Speed needs no reading: it is the watch's speed over ground
+  at the latest step. Readings are exact for now.
+- A plotted leg is `plotted + remembered course x watch speed x (t - plotted.t)`, completed after
+  `timing.plotLeg` s of simulated time. It **ignores leeway**, any change in course since the reading
+  and any change in speed during the leg (the speed is the watch's when the leg is pencilled).
   Its doubt radius grows by `hypot(speedFraction, tan(courseSigmaDeg))` times the distance
   plotted **[tune]**; a fix resets it to `accuracy.oneLineFix` or `accuracy.twoLineFix`.
-- A bearing line's normal is perpendicular to its compass direction. The remembered velocity times
-  the note's age advances the mark before solving a running fix. One bearing projects the
+- A bearing line's normal is perpendicular to its compass direction. The remembered course at the
+  watch's speed times the note's age advances the mark before solving a running fix. One bearing projects the
   remembered position onto that line; two bearings intersect their advanced lines (after
   `timing.plotLine` s per line). One plot key: candidate notes are the named notes newer than the
   last plot and younger than `maxBearingAge`, newest per mark, at most two; with candidates the plot
   is a fix, otherwise the leg. Each plot appends to a capped pencil track (`maxTrack`). The chart
   lists the bearing and distance from the last plotted position to every mark and a course line
-  with minute ticks at the remembered speed. Reject unnamed/expired notes, near-parallel geometry,
+  with minute ticks at the watch's speed. Reject unnamed/expired notes, near-parallel geometry,
   solutions looking away from the chosen mark, and notes older than `noteCarryGrace` s with no
-  remembered course and speed. These limits are **[tune]**, not empirical compass accuracy.
+  remembered course. These limits are **[tune]**, not empirical compass accuracy.
 - Marks are the buoys (`data/buoys.json`) and the landmarks ashore (`data/bay.json`), both at known
   chart positions (`NAV_MARKS`). The eye names the mark nearest the line of sight within
   `visual.markAimDeg`; the bearing is still the compass's.
 - A physical lap chart, the hand-bearing compass model and the faint memory text in `render/` read
   this independent navigation state. Only the explicit chart debug marker receives true position;
   render-side origin changes never alter navigation or the chart's logical landmark coordinates.
-- Navigation regressions cover timed and interrupted readings, the astern-only wake and stale speed,
-  remembered course and speed, leg plotting, the track, candidate notes and the single plot key,
+- Navigation regressions cover timed and interrupted readings, motion on the remembered course at
+  the watch's speed, leg plotting, the track, candidate notes and the single plot key,
   doubt growth, reset, north-wrap graduation, one/two-bearing fixes, line crossings, running
   observations, bad geometry/identification, landmark fixes, bounded notes, and chart projection and auto-fit.
 

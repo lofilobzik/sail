@@ -1,9 +1,8 @@
 /**
- * Hold F: take a reading. Where you look decides which: looking astern at the wake (no mark under
- * the crosshair) judges speed, anything else raises the hand-bearing compass for a bearing.
+ * Hold F: raise the hand-bearing compass for a bearing (on the bow, it reads the course).
  * R: reckon, i.e. plot on the chart (M shows it). The mouse is only for looking around and the debug panel.
  */
-import type { Navigation, ReadingKind } from '../nav/navigation';
+import type { Navigation } from '../nav/navigation';
 import type { NavigationView } from '../render/navigation';
 import { BINDINGS, keyLabels } from './bindings';
 import { isTypingTarget } from './controls';
@@ -11,7 +10,7 @@ import { isTypingTarget } from './controls';
 export class NavigationInput {
   private readHeld = false;
   private reckonKey = false;
-  private current: ReadingKind | null = null;
+  private current = false;
 
   constructor(private readonly cockpit: () => boolean) {
     window.addEventListener('keydown', (e) => {
@@ -31,29 +30,27 @@ export class NavigationInput {
     return this.readHeld && this.cockpit();
   }
 
-  /** The reading under way, fixed for the whole key press. */
-  get reading(): ReadingKind | null {
+  /** A bearing is being read, fixed for the whole key press. */
+  get reading(): boolean {
     return this.current;
   }
 
   /**
-   * Once per frame: F starts one reading when pressed, the wake if the sailor is looking astern with no
-   * mark under the crosshair, otherwise a compass bearing (a mark astern is still a bearing). It is not
-   * repeated until the key is released. R starts the auto-plot if the chart is in view.
+   * Once per frame: F starts one bearing when pressed, not repeated until the key is released. R
+   * starts the auto-plot if the chart is in view.
    */
   update(navigation: Navigation, view: NavigationView, glassesUp: boolean): void {
     if (!this.held || glassesUp) {
       if (this.current) navigation.cancelReading();
-      this.current = null;
+      this.current = false;
     } else if (!this.current) {
-      this.current = view.lookingAstern && !view.aimedMark ? 'speed' : 'bearing';
-      navigation.beginReading(this.current);
+      this.current = true;
+      navigation.beginReading();
     }
-    const bearing = this.current === 'bearing';
+    const bearing = this.current;
     navigation.setAim(bearing ? view.bearing : null);
     navigation.setAimedMark(bearing ? view.aimedMark : null);
     navigation.setAimedBow(bearing && view.aimedBow);
-    navigation.setAstern(view.lookingAstern);
     navigation.setLooking(view.chartInView);
     if (this.takeReckon()) {
       if (view.chartInView) navigation.beginAutoPlot();

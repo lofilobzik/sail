@@ -6,7 +6,7 @@ export const BINDINGS = {
   sheet: { keys: { ease: 'KeyW', in: 'KeyS' }, action: 'Ease / sheet in', developer: false },
   fineTrim: { keys: { wheel: 'Wheel' }, action: 'Fine trim', developer: false },
   hike: { keys: { left: 'ShiftLeft', right: 'ShiftRight' }, action: 'Hike out', developer: false },
-  reading: { keys: { hold: 'KeyF' }, action: 'Bearing, or wake speed', developer: false },
+  reading: { keys: { hold: 'KeyF' }, action: 'Bearing (on the bow: your course)', developer: false },
   binoculars: { keys: { hold: 'KeyB' }, action: 'Binoculars', developer: false },
   reckon: { keys: { press: 'KeyR' }, action: 'Plot on the chart', developer: false },
   castOff: { keys: { press: 'KeyE' }, action: 'Cast off from the berth', developer: false },

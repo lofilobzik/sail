@@ -1,13 +1,21 @@
 {
-  "source": "Sandbox challenges, not race mark rounding rules. Each challenge has a `kind` that says how its steps are reached; the server detects them from its own boat state. Kinds: `visitBuoys`: one step per name in `buoys` (data/buoys.json), reached once the boat comes within proximityRadius of that buoy, any order, no rounding direction. A buoy may be a step of several challenges. `reward` is optional; the client unlocks it once the server reports the challenge complete.",
+  "source": "Sandbox challenges, not race mark rounding rules. Each challenge has a `kind` that says how its steps are reached from `buoys` (data/buoys.json names); the server detects them from its own boat state, a buoy counting once the boat comes within proximityRadius of it, with no rounding direction. Kinds: `visitBuoys`: every listed buoy once, in any order. `course`: the listed buoys in order, each counting only after the one before it; a buoy may come back later in the list (not twice in a row) and its later steps are named `H1 (2nd)` and so on. A buoy may be a step of several challenges. `reward` is optional; the client unlocks it once the server reports the challenge complete. First sail is the harbour tutorial the hints (src/ui/hints.ts) lead into: out to H1, across to H2 and back to H1, which takes a tack or a gybe.",
   "challenges": [
+    {
+      "id": "first-sail",
+      "title": "First sail",
+      "description": "Sail to H1, then H2, then back to H1.",
+      "kind": "course",
+      "buoys": ["H1", "H2", "H1"],
+      "reward": { "type": "sail", "id": "tide" }
+    },
     {
       "id": "buoy-tour",
       "title": "Buoy tour",
       "description": "Sail within 15 m of every buoy in the bay, in any order.",
       "kind": "visitBuoys",
       "buoys": ["N", "NE", "E", "SE", "S"],
-      "reward": { "type": "sail", "id": "tide" }
+      "reward": { "type": "sail", "id": "sunburst" }
     }
   ]
 }

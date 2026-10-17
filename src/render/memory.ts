@@ -2,12 +2,10 @@
  * Faint on-screen text for what the sailor has read and still remembers (course, speed, bearings),
  * and a ring that fills while a reading is being taken. It reads only the navigation model.
  */
-import { KNOT } from '../sim/frames';
 import { bearingLabel, type Navigation } from '../nav/navigation';
 
 const RING_RADIUS = 30; // px, VISUAL ESTIMATE: around the sighting reticle
 const RING_WIDTH = 3;
-const LABELS = { bearing: 'COMPASS', speed: 'WAKE' } as const;
 const MESSAGE_SECONDS = 6; // how long the latest sailor's thought stays on screen
 
 function age(seconds: number): string {
@@ -33,8 +31,9 @@ export class MemoryReadout {
   private messageSince = -Infinity;
 
   constructor() {
+    // Above the GPS watch (ui/gpsWatch.ts, lower right), right-aligned with it.
     this.notes.style.cssText =
-      'position:fixed;right:28px;bottom:24px;white-space:pre;text-align:right;font:15px/1.5 ui-monospace,Menlo,Consolas,monospace;' +
+      'position:fixed;right:16px;bottom:182px;white-space:pre;text-align:right;font:15px/1.5 ui-monospace,Menlo,Consolas,monospace;' +
       'color:rgba(255,255,255,0.55);text-shadow:0 0 4px rgba(0,20,30,0.7);pointer-events:none;user-select:none;z-index:4;';
     this.ring.style.cssText =
       'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);display:none;pointer-events:none;z-index:4;text-align:center;';
@@ -66,21 +65,19 @@ export class MemoryReadout {
   }
 
   update(nav: Navigation, visible: boolean): void {
-    const task = visible ? nav.reading : null;
-    if ((task !== null) !== this.shown) {
-      this.shown = task !== null;
+    const reading = visible && nav.reading;
+    if (reading !== this.shown) {
+      this.shown = reading;
       this.ring.style.display = this.shown ? 'block' : 'none';
     }
-    if (task) {
+    if (reading) {
       // Quarter-pixel steps of the dash offset are finer than the eye can see on a 66 px ring.
       const offset = String(Math.round(this.circumference * (1 - nav.progress) * 4) / 4);
       if (offset !== this.lastOffset) {
         this.lastOffset = offset;
         this.arc.setAttribute('stroke-dashoffset', offset);
       }
-      const caption = task === 'bearing'
-        ? `${LABELS[task]} · ${nav.aimedBow ? 'BOW' : nav.aimedMark ?? 'no mark'}`
-        : nav.astern ? LABELS[task] : 'LOOK ASTERN';
+      const caption = `COMPASS · ${nav.aimedBow ? 'BOW' : nav.aimedMark ?? 'no mark'}`;
       if (caption !== this.lastCaption) {
         this.lastCaption = caption;
         this.caption.textContent = caption;
@@ -99,7 +96,6 @@ export class MemoryReadout {
 
     const lines: string[] = [];
     if (nav.course) lines.push(`course ${bearingLabel(nav.course.value)}  ${age(nav.t - nav.course.t)}`);
-    if (nav.speed) lines.push(`speed ${(nav.speed.value / KNOT).toFixed(1)} kn  ${age(nav.t - nav.speed.t)}`);
     for (const note of nav.observations) {
       lines.push(`${note.markId ?? '?'} ${bearingLabel(note.bearing)}  ${age(nav.t - note.t)}`);
     }

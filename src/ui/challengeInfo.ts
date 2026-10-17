@@ -8,16 +8,39 @@ import sailDesigns from '../../data/sail-designs.json';
 import type { ChallengeStatus } from '../net/protocol';
 
 /** How a challenge's steps are reached (data/challenges.json `source`). */
-export type ChallengeKind = 'visitBuoys';
+export type ChallengeKind = 'visitBuoys' | 'course';
 
 export interface ChallengeInfo {
   id: string;
   title: string;
   description: string;
   kind: ChallengeKind;
-  /** Step names in display order: buoy names for visitBuoys. */
+  /** Step names in display order (stepName of each listed buoy), exactly as the server stores them. */
   steps: string[];
+  /** The data/buoys.json name each step is reached at, by step index. */
+  buoys: string[];
   reward: { type: 'sail'; id: string } | null;
+}
+
+/**
+ * A step at buoy `buoy`, its `visit`th time in the list (1 for the first): the buoy name, then
+ * "H1 (2nd)", "H1 (3rd)"... Go twin: StepName in server/sim/challenges.go.
+ */
+export function stepName(buoy: string, visit: number): string {
+  if (visit <= 1) return buoy;
+  const teen = visit % 100 >= 11 && visit % 100 <= 13;
+  const suffix = teen ? 'th' : visit % 10 === 1 ? 'st' : visit % 10 === 2 ? 'nd' : visit % 10 === 3 ? 'rd' : 'th';
+  return `${buoy} (${visit}${suffix})`;
+}
+
+/** The step names of a challenge's buoy list, in order. */
+function stepNames(buoys: readonly string[]): string[] {
+  const visits = new Map<string, number>();
+  return buoys.map((b) => {
+    const n = (visits.get(b) ?? 0) + 1;
+    visits.set(b, n);
+    return stepName(b, n);
+  });
 }
 
 export const CHALLENGES: readonly ChallengeInfo[] = challengeData.challenges.map((c) => ({
@@ -25,7 +48,8 @@ export const CHALLENGES: readonly ChallengeInfo[] = challengeData.challenges.map
   title: c.title,
   description: c.description,
   kind: c.kind as ChallengeKind,
-  steps: c.buoys,
+  steps: stepNames(c.buoys),
+  buoys: c.buoys,
   reward: 'reward' in c && c.reward ? { type: 'sail', id: c.reward.id } : null,
 }));
 

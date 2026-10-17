@@ -30,7 +30,7 @@ export interface WelcomeMessage {
 /** One challenge's stored progress, as the server verified it. */
 export interface ChallengeStatus {
   id: string;
-  /** Steps reached (buoy names for a visitBuoys challenge), in the order recorded. */
+  /** Steps reached (data/challenges.json step names, e.g. "H1" or "H1 (2nd)"), in the order recorded. */
   steps: string[];
   total: number;
   /** Unix ms; absent until complete. */

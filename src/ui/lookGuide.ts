@@ -10,8 +10,9 @@
  *              "soft") for a moment, or the player first trims the sail (W/S or wheel), so they see
  *              what the trim did. Not when stopped head to wind: then everything flogs and the Windex
  *              is the answer.
- * The caller may also name a target to point at (GuideInput.pointAt, from ui/hints.ts: the next
- * buoy); it takes over the ring and chevron until dropped, and the guides wait.
+ * The caller may also name a target to point at (GuideInput.pointAt: the tracked quest's next
+ * buoy), shown as a small bobbing V over it rather than a ring, or the edge chevron when off screen.
+ * It shows whenever no guide is showing; a guide goes first.
  * Reads only the camera, the boat's look targets and that target; it never changes the sim.
  */
 import * as THREE from 'three';
@@ -58,8 +59,14 @@ const STYLE = `
 .lg-ring{width:${RING_PX}px;height:${RING_PX}px;border:2px solid rgba(255,255,255,0.9);border-radius:50%;box-sizing:border-box;
   transform:translate(-50%,-50%);box-shadow:0 0 0 1.5px rgba(0,20,30,0.45);}
 .lg-chevron{transform:translate(-50%,-50%);}
+/* Outlined like the arrows (a dark stroke under the white, painted behind the letters so it adds an
+   edge instead of thinning them), so labels read against sky, sail and water alike. */
 .lg-label{position:absolute;left:0;top:${RING_PX / 2 + 6}px;transform:translateX(-50%);white-space:nowrap;
-  color:rgba(255,255,255,0.9);font:500 12px system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:0.04em;}
+  color:rgba(255,255,255,0.95);font:600 12px system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:0.04em;
+  -webkit-text-stroke:2.5px rgba(0,20,30,0.5);paint-order:stroke fill;}
+@keyframes lg-bob{0%,100%{transform:translate(-50%,-100%)}50%{transform:translate(-50%,calc(-100% - 4px))}}
+.lg-v{position:absolute;left:0;top:0;transform:translate(-50%,-100%);animation:lg-bob 1.6s ease-in-out infinite;}
+.lg-v-label{top:auto;bottom:18px;}
 `;
 
 const MOUSE_SVG = `<svg width="34" height="50" viewBox="0 0 34 50" fill="none" stroke="currentColor" stroke-width="2">
@@ -70,6 +77,11 @@ const MOUSE_SVG = `<svg width="34" height="50" viewBox="0 0 34 50" fill="none" s
 const CHEVRON_SVG = `<svg width="${CHEVRON_PX}" height="${CHEVRON_PX}" viewBox="0 0 28 28" fill="none" stroke-linecap="round"
 stroke-linejoin="round"><polyline points="9,5 19,14 9,23" stroke="rgba(0,20,30,0.5)" stroke-width="5.5"/>
 <polyline points="9,5 19,14 9,23" stroke="rgba(255,255,255,0.95)" stroke-width="3"/></svg>`;
+
+// The small V over an objective, tip down on the target point.
+const V_SVG = `<svg width="18" height="12" viewBox="0 0 18 12" fill="none" stroke-linecap="round" stroke-linejoin="round"
+style="display:block"><polyline points="3,2 9,9 15,2" stroke="rgba(0,20,30,0.5)" stroke-width="4.5"/>
+<polyline points="3,2 9,9 15,2" stroke="rgba(255,255,255,0.95)" stroke-width="2.5"/></svg>`;
 
 export interface GuideInput {
   /** Real seconds since the last frame. */
@@ -86,8 +98,9 @@ export interface GuideInput {
   /** ControlInput.trimTravel: running total of the player's own sheet trimming. */
   trimTravel: number;
   /**
-   * A target the caller wants pointed at (ui/hints.ts, e.g. the next buoy), with its label; null for
-   * none. While set it takes over from the first-time guides and stays until the caller drops it.
+   * A target the caller wants pointed at (the tracked quest's next buoy, main.ts), with its label;
+   * null for none. It holds the ring and chevron whenever no first-time guide is showing: a guide is
+   * short (it completes after HOLD_SECONDS on screen), so it goes first and the target comes back.
    */
   pointAt: { object: THREE.Object3D; label: string } | null;
 }
@@ -114,10 +127,12 @@ export class LookGuide {
   private sheetTravel = 0;
   private lastTrimTravel: number | null = null;
   private gap = 0;
-  /** What is on screen for the current guide; the ring/chevron hysteresis depends on it. */
-  private mode: 'ring' | 'chevron' | null = null;
-  /** Text under the ring and chevron now. */
+  /** What is on screen; the on-screen/edge hysteresis depends on it. */
+  private mode: 'ring' | 'arrow' | 'chevron' | null = null;
+  /** Text by the ring, arrow and chevron now. */
   private label = '';
+  /** The small V over a caller's target (GuideInput.pointAt) when it is on screen. */
+  private readonly arrow = document.createElement('div');
   private readonly world = new THREE.Vector3();
   private readonly cam = new THREE.Vector3();
 
@@ -137,7 +152,9 @@ export class LookGuide {
     this.chevronArrow = this.chevron.firstElementChild as HTMLElement;
     this.ring.className = 'lg-mark';
     this.ring.innerHTML = '<div class="lg-ring"></div><div class="lg-label"></div>';
-    document.body.append(this.click, this.chevron, this.ring);
+    this.arrow.className = 'lg-mark';
+    this.arrow.innerHTML = `<div class="lg-label lg-v-label"></div><div class="lg-v">${V_SVG}</div>`;
+    document.body.append(this.click, this.chevron, this.ring, this.arrow);
   }
 
   /** Forgets every completed guide, so they appear again as they become relevant. */
@@ -181,24 +198,12 @@ export class LookGuide {
       this.current = null;
     }
     const active = input.looking && !input.busy;
-    if (input.pointAt) {
-      // The caller's target outranks the first-time guides; the one showing waits its turn again.
-      if (this.current) {
-        this.wanted.add(this.current);
-        this.current = null;
-      }
-      this.setLabel(input.pointAt.label);
-      if (active) this.aim(input.pointAt.object, input.camera);
-      else this.place(null, 0, 0, 0);
-      return;
-    }
     if (!this.current) {
       this.gap = Math.max(this.gap - input.dt, 0);
       if (active && this.gap === 0 && next) {
         this.wanted.delete(next);
         this.current = next;
         this.held = this.shown = 0;
-        this.setLabel(LABELS[next]);
       }
     } else if (active) {
       this.shown += input.dt;
@@ -208,8 +213,15 @@ export class LookGuide {
         this.current = null;
       }
     }
-    if (this.current && active) this.track(this.current, input);
-    else this.place(null, 0, 0, 0);
+    if (this.current && active) {
+      this.setLabel(LABELS[this.current]);
+      this.track(this.current, input);
+    } else if (input.pointAt && active) {
+      this.setLabel(input.pointAt.label);
+      this.aim(input.pointAt.object, input.camera, 'arrow');
+    } else {
+      this.place(null, 0, 0, 0);
+    }
   }
 
   private want(id: GuideId): void {
@@ -232,11 +244,14 @@ export class LookGuide {
       this.place(null, 0, 0, 0);
       return;
     }
-    this.aim(this.targets[id], input.camera);
+    this.aim(this.targets[id], input.camera, 'ring');
   }
 
-  /** A ring around `target` when it is on screen, else a chevron at the edge toward it. */
-  private aim(target: THREE.Object3D, camera: THREE.PerspectiveCamera): void {
+  /**
+   * On screen, `onScreen` at `target`: a ring around a part of the boat, or a small V over an
+   * objective. Off screen, a chevron at the edge toward it.
+   */
+  private aim(target: THREE.Object3D, camera: THREE.PerspectiveCamera, onScreen: 'ring' | 'arrow'): void {
     target.getWorldPosition(this.world);
     this.cam.copy(this.world).applyMatrix4(camera.matrixWorldInverse);
     const inFront = this.cam.z < 0;
@@ -244,9 +259,9 @@ export class LookGuide {
     const w = window.innerWidth;
     const h = window.innerHeight;
 
-    const edge = this.mode === 'ring' ? RING_EXIT_NDC : RING_ENTER_NDC;
+    const edge = this.mode === onScreen ? RING_EXIT_NDC : RING_ENTER_NDC;
     if (inFront && Math.abs(ndc.x) < edge && Math.abs(ndc.y) < edge) {
-      this.place('ring', ((ndc.x + 1) / 2) * w, ((1 - ndc.y) / 2) * h, 0);
+      this.place(onScreen, ((ndc.x + 1) / 2) * w, ((1 - ndc.y) / 2) * h, 0);
       return;
     }
     // Off screen or behind: point from the middle toward the target's direction in the view plane.
@@ -258,14 +273,15 @@ export class LookGuide {
     this.place('chevron', w / 2 + Math.cos(angle) * w * EDGE_FRAC_X, h / 2 + Math.sin(angle) * h * EDGE_FRAC_Y, angle);
   }
 
-  /** Shows the ring or the chevron, swapping instantly; hiding both fades them out. */
-  private place(which: 'ring' | 'chevron' | null, x: number, y: number, angle: number): void {
+  /** Shows one of the ring, the arrow or the chevron, swapping instantly; hiding them fades them out. */
+  private place(which: 'ring' | 'arrow' | 'chevron' | null, x: number, y: number, angle: number): void {
     this.mode = which;
-    for (const [el, kind] of [[this.ring, 'ring'], [this.chevron, 'chevron']] as const) {
+    for (const [el, kind] of [[this.ring, 'ring'], [this.arrow, 'arrow'], [this.chevron, 'chevron']] as const) {
       el.classList.toggle('lg-fade', which === null);
       el.style.opacity = which === kind ? '1' : '0';
     }
     if (which === 'ring') this.ring.style.transform = `translate(${x}px, ${y}px)`;
+    if (which === 'arrow') this.arrow.style.transform = `translate(${x}px, ${y}px)`;
     if (which === 'chevron') {
       this.chevron.style.transform = `translate(${x}px, ${y}px)`;
       this.chevronArrow.style.transform = `translate(-50%, -50%) rotate(${angle}rad)`;

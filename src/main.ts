@@ -23,6 +23,9 @@ import { Menu } from './ui/menu';
 import { Preferences } from './ui/prefs';
 import { ChallengeLog } from './ui/challengeLog';
 import { CHALLENGES, lockedSails } from './ui/challengeInfo';
+import { openGoals, trackedQuest } from './ui/quests';
+import { QuestTracker } from './ui/questTracker';
+import { GpsWatch } from './ui/gpsWatch';
 import { showToast } from './ui/toast';
 import { newSailorCode } from './net/sailorCode';
 import type { ChallengeStatus } from './net/protocol';
@@ -80,6 +83,7 @@ const fixed = new FixedStep(cfg.dt);
 
 const navigation = new Navigation();
 const memory = new MemoryReadout();
+const gpsWatch = new GpsWatch(prefs.value.watchColour);
 // Graphics: ?quality= for checking, else the player's menu choice, else detected from the GPU.
 const detectedQuality = detectQuality();
 const quality = opts.quality ?? (prefs.value.graphics === 'auto' ? detectedQuality : prefs.value.graphics);
@@ -159,6 +163,7 @@ const hud = new TestHud(boat);
 const sound = new SailSound(prefs.value.volume, prefs.value.muted);
 const guide = new LookGuide(view.boat.lookTargets, prefs);
 const hints = new Hints(prefs);
+const tracker = new QuestTracker();
 const menu = new Menu({
   canvas: view.renderer.domElement,
   sailDesigns: sail.designs,
@@ -176,11 +181,14 @@ const menu = new Menu({
     prefs.set({ graphics });
     location.reload();
   },
+  watchColour: prefs.value.watchColour,
+  onWatchColour: (watchColour) => prefs.set({ watchColour }),
   onRespawn: respawn,
   onShowGuidance: () => {
     guide.reset();
     hints.reset();
   },
+  logOpen: (): boolean => challengeLog.open,
   sailor: server
     ? {
         code: player,
@@ -203,8 +211,17 @@ menu.setLockedSails(lockedSails(null));
 const sailName = (id: string): string => sail.designs.find((d) => d.id === id)?.name ?? id;
 // J: the challenge log. Progress comes from the server (verified there), now or on any later
 // welcome, so every update goes through applyChallenges.
-const challengeLog = new ChallengeLog({ canOpen: () => !menu.open, sailName });
+const challengeLog: ChallengeLog = new ChallengeLog({
+  canvas: view.renderer.domElement,
+  canOpen: (): boolean => !menu.open,
+  beforeRelease: () => menu.expectRelease(),
+  sailName,
+  tracked: () => trackedNow()?.id ?? null,
+  onTrack: (id) => prefs.set({ questTracking: id === null ? { kind: 'none' } : { kind: 'quest', id } }),
+});
 let shownChallenges: ChallengeStatus[] | null = null;
+/** The quest followed in the tracker and by the ring; null offline (no progress) or when untracked. */
+const trackedNow = () => (shownChallenges ? trackedQuest(prefs.value.questTracking, shownChallenges) : null);
 const applyChallenges = (list: ChallengeStatus[]): void => {
   const prev = shownChallenges;
   shownChallenges = list;
@@ -213,18 +230,22 @@ const applyChallenges = (list: ChallengeStatus[]): void => {
   challengeLog.setChallenges(list);
   if (prev) announceChallenges(prev, list);
 };
-/** Toasts every step and completion in `list` that `prev` did not have. */
+/**
+ * Toasts every step and completion in `list` that `prev` did not have. The tracked quest's steps show
+ * in the tracker instead (its swoosh); its completion also plays the tracker's banner.
+ */
 function announceChallenges(prev: readonly ChallengeStatus[], list: readonly ChallengeStatus[]): void {
+  const trackedBefore = trackedQuest(prefs.value.questTracking, prev)?.id;
   for (const c of list) {
     const before = prev.find((p) => p.id === c.id);
     const info = CHALLENGES.find((i) => i.id === c.id);
     for (const step of c.steps) {
-      if (before?.steps.includes(step)) continue;
-      const what = info?.kind === 'visitBuoys' ? `Buoy ${step}` : step;
-      showToast(`${info?.title ?? c.id} · ${what}: ${c.steps.indexOf(step) + 1} of ${c.total}`);
+      if (before?.steps.includes(step) || c.id === trackedBefore) continue;
+      showToast(`${info?.title ?? c.id} · Buoy ${step}: ${c.steps.indexOf(step) + 1} of ${c.total}`);
     }
     if (c.completedAt !== undefined && before?.completedAt === undefined && info) {
       showToast(`${info.title} complete!${info.reward ? ` Unlocked sail: ${sailName(info.reward.id)}` : ''}`, 6000);
+      if (c.id === trackedBefore) tracker.complete(info.title);
     }
   }
 }
@@ -239,6 +260,7 @@ prefs.subscribe((p) => {
   sound.setVolume(p.volume);
   sound.setMuted(p.muted);
   look.playerSensitivity = p.lookSensitivity;
+  gpsWatch.setColour(p.watchColour);
   // Only a changed sail choice acts, so a ?sail= override survives unrelated changes.
   if (p.sail !== savedSail && knownSail(p.sail)) {
     savedSail = p.sail;
@@ -307,6 +329,7 @@ if (opts.fly) {
 let last = performance.now();
 let frameMs = 16.7;
 let cpuMs = 0;
+let speedOverGround = 0; // m/s, from the last fixed step (the GPS watch and dead reckoning read it)
 let lastPose: RenderPose | null = null;
 let lastRemotes: ReadonlyMap<number, RemotePose> | undefined;
 const hudBuffer = new Vector2(); // drawing buffer size for the H overlay, reused every frame
@@ -344,9 +367,11 @@ function frame(now: number): void {
     prev = curr;
     curr = result.state;
     diagnostics = result.diagnostics;
+    // GPS watch: speed over ground, from how far the boat moved this step.
+    speedOverGround = Math.hypot(curr.x - prev.x, curr.z - prev.z) / cfg.dt;
     server?.afterStep(curr, controls, castingOff);
-    // Narrow instrument boundary: only the speed through the water; no true x/z, heading or sway.
-    navigation.advance({ t: curr.t, speed: (prev.u + curr.u) / 2 }, cfg.dt);
+    // Narrow instrument boundary: only the watch's speed over ground; no true x/z, heading or sway.
+    navigation.advance({ t: curr.t, speed: speedOverGround }, cfg.dt);
   }
 
   lastPose = interpolatePose(prev, curr, fixed.alpha, diagnostics, boat, frameSeconds, look);
@@ -354,24 +379,35 @@ function frame(now: number): void {
     fly.update(frameSeconds, look.yaw, look.pitch);
     [view.fly.x, view.fly.y, view.fly.z] = [fly.x, fly.y, fly.z];
   }
-  view.navigation.sighting = navigationInput.reading === 'bearing';
+  view.navigation.sighting = navigationInput.reading;
+  gpsWatch.update(speedOverGround, frameSeconds);
   memory.update(navigation, view.mode === 'cockpit');
   view.navigation.chart.debugPosition = showNavigationTruth ? { x: curr.x, z: curr.z } : null;
   lastRemotes = server?.client.remote.sample(now / 1000);
   view.render(lastPose, lastRemotes);
   const luffAmount = diagnostics.sail?.luffAmount ?? 0;
-  const pointBuoy = hints.update({ state: curr, diagnostics, mode: view.mode }, menu.open);
-  const pointSight = pointBuoy === null ? undefined : view.buoySights.get(pointBuoy);
+  // The tracked quest: its open goals in the tracker (with distances), the first under the ring.
+  const quest = trackedNow();
+  const goals = quest ? openGoals(quest, shownChallenges?.find((s) => s.id === quest.id), curr) : [];
+  tracker.update(quest && {
+    questId: quest.id,
+    title: quest.title,
+    // A course reads as directions, an any-order list as the buoys still to visit.
+    goals: goals.map((g) => ({ step: g.step, text: quest.kind === 'course' ? `Sail to ${g.buoy}` : `Buoy ${g.buoy}`, distance: g.distance })),
+  }, menu.open);
+  hints.update({ state: curr, diagnostics, mode: view.mode, tracked: quest?.id ?? null }, menu.open);
+  const goal = goals[0];
+  const goalMarker = goal ? view.buoyMarkers.get(goal.buoy) : undefined;
   guide.update(
     {
       dt: frameSeconds,
       camera: view.camera,
       looking: document.pointerLockElement === view.renderer.domElement,
-      busy: view.mode !== 'cockpit' || glassesUp || navigationInput.reading !== null,
+      busy: view.mode !== 'cockpit' || glassesUp || navigationInput.reading,
       speed: diagnostics.speed,
       luffAmount,
       trimTravel: input.trimTravel,
-      pointAt: pointSight ? { object: pointSight, label: pointBuoy! } : null,
+      pointAt: goal && goalMarker ? { object: goalMarker, label: goal.buoy } : null,
     },
     menu.open,
   );

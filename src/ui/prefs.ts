@@ -5,6 +5,8 @@
  */
 import { normalizeSailorCode } from '../net/sailorCode';
 import type { Quality } from '../render/quality';
+import type { QuestTracking } from './quests';
+import { WATCH_COLOURS, type WatchColour } from './gpsWatch';
 
 const KEY = 'dinghy.prefs.v1';
 
@@ -22,6 +24,10 @@ export interface Prefs {
   guidesSeen: string[];
   /** Hints retired for good (src/ui/hints.ts ids). */
   hintsDone: string[];
+  /** The quest followed in the top-right tracker and by the world ring (src/ui/quests.ts). */
+  questTracking: QuestTracking;
+  /** Bezel colour of the GPS watch (src/ui/gpsWatch.ts WATCH_COLOURS). */
+  watchColour: WatchColour;
   /** Sailor code (src/net/sailorCode.ts) that keeps challenge progress on the server; null until generated. */
   player: string | null;
 }
@@ -29,7 +35,17 @@ export interface Prefs {
 export const LOOK_SENSITIVITY_MIN = 0.25;
 export const LOOK_SENSITIVITY_MAX = 4;
 
-const DEFAULTS: Prefs = { volume: 0.7, muted: false, lookSensitivity: 1, graphics: 'auto', sail: null, guidesSeen: [], hintsDone: [], player: null };
+const DEFAULTS: Prefs = {
+  volume: 0.7, muted: false, lookSensitivity: 1, graphics: 'auto', sail: null, guidesSeen: [], hintsDone: [],
+  questTracking: { kind: 'auto' }, watchColour: 'yellow', player: null,
+};
+
+function tracking(v: unknown): QuestTracking {
+  if (typeof v !== 'object' || v === null || !('kind' in v)) return { kind: 'auto' };
+  if (v.kind === 'none') return { kind: 'none' };
+  if (v.kind === 'quest' && 'id' in v && typeof v.id === 'string') return { kind: 'quest', id: v.id };
+  return { kind: 'auto' };
+}
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((g): g is string => typeof g === 'string') : []);
 
@@ -47,6 +63,8 @@ function loadPrefs(): Prefs {
       sail: typeof p.sail === 'string' ? p.sail : null,
       guidesSeen: strings(p.guidesSeen),
       hintsDone: strings(p.hintsDone),
+      questTracking: tracking(p.questTracking),
+      watchColour: typeof p.watchColour === 'string' && p.watchColour in WATCH_COLOURS ? p.watchColour : DEFAULTS.watchColour,
       player: typeof p.player === 'string' ? normalizeSailorCode(p.player) : null,
     };
   } catch {

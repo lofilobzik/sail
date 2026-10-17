@@ -188,12 +188,17 @@ Rules:
   distances themselves.
 - **Challenges** (`server/store`, `server/netsim/challenges.go`, `data/challenges.json`): a list,
   each with an id, title, description, optional sail reward and a `kind` that says how its steps are
-  reached. The only kind so far is `visitBuoys`: one step per listed buoy, reached near it (buoy
-  proximity above), any order, across sessions; a buoy may count for several challenges at once.
+  reached. Two kinds: `visitBuoys`, one step per listed buoy, reached near it (buoy proximity above),
+  any order; and `course`, the listed buoys in order, each step counting only after the one before
+  it, a buoy allowed again later in the list (not twice in a row) with its return named `H1 (2nd)`
+  (`StepName` in Go, `stepName` in TS, so stored names match). Steps persist across sessions, and a
+  buoy may count for several challenges at once.
   `server/sim/challenges.go` flattens every challenge into steps at startup and panics on data it
-  cannot verify (unknown kind or buoy, duplicate id or step). A new kind needs a case there, a
-  detector in `observe` and a member of `ChallengeKind` (`src/ui/challengeInfo.ts`). The first
-  challenge is the **Buoy tour** (the 5 bay buoys), which unlocks the "Tide lines" sail. Players are
+  cannot verify (unknown kind or buoy, duplicate id, a forbidden repeat). A new kind needs a case
+  there, a detector in `observe` and a member of `ChallengeKind` (`src/ui/challengeInfo.ts`). The
+  challenges, in J-log order: **First sail**, the harbour course H1 → H2 → H1 the hints lead into,
+  unlocking the "Tide lines" sail; and the **Buoy tour** (the 5 bay buoys, any order), unlocking
+  "Sunburst". Players are
   anonymous: the browser generates a
   20-character base32 **sailor code** (kept in prefs, sent as `/ws?player=…`), shown in the Esc menu
   so progress can be restored on another browser. The server checks visits against its own boat
@@ -217,12 +222,12 @@ Rules:
 | W / S | Ease mainsheet / sheet in, holds position |
 | Mouse wheel up / down | Sheet in / ease mainsheet in small steps, holds position |
 | Shift (hold) | Hike out (lean weight out), release to sit in |
-| F (hold) | Take a reading; where you look decides which. Looking astern at the wake (no mark under the crosshair) judges boat speed. Anything else raises the yellow hand-bearing compass for a bearing: the buoy or landmark under the crosshair names itself, and lined up with the bow, tilted down, the bearing is your course. A mark astern is still a bearing |
+| F (hold) | Raise the yellow hand-bearing compass for a bearing: the buoy or landmark under the crosshair names itself, and lined up with the bow, tilted down, the bearing is your course |
 | B (hold) | Raise the binoculars: the view glides to 10x through a two-lens mask, mouse look slows to match, and lowering them glides back. For checking landmarks from afar; bearings still come from the compass (F), and B is ignored during a reading and F while the glasses are up |
 | R | Reckon, with the chart in view: plot bearings taken since the last plot (a fix), otherwise the dead-reckoning leg |
 | H | Toggle test instruments (hidden by default) |
 | M | Show / hide the paper chart (hidden at every start, cockpit only). Mute is in the Esc menu |
-| J | Challenge log: every challenge with its steps, progress and reward, in the menu's panel. Keeps the pointer lock and the sim running; J or Esc closes it |
+| J | Challenge log: every challenge as a card (steps as chips, progress, reward) with Track / Untrack. Frees the mouse to click (the Esc menu is told, so it stays shut) while the keys keep steering and the sim runs; J, Esc or a click beside the panel closes it and captures the mouse again |
 | G | Debug free-fly camera: WASD fly along the view, E up, Q down, Shift fast, mouse look turns it in world space. The boat sails on with neutral controls. B (hold) raises the binoculars here too. G or V returns to the cockpit. `?fly=x,z,height[,bearing[,pitch]]` opens already flying |
 | Esc | Menu: controls, volume, sail design (reward sails locked until earned, the rest shown but locked for now), challenges summary and sailor code, respawn, reset hints. The sim keeps running |
 
@@ -516,23 +521,32 @@ The debug overlay is a developer tool, not a player aid, and is toggled off by d
   is remembered in localStorage, and can be reset from the Esc menu. A guide ignored for 30 s steps
   back for a minute rather than nagging. Chevrons stay above the lap chart.
 - **Hints** (`src/ui/hints.ts`): keycaps with a short action, on a small dark panel styled like the
-  Esc menu below the middle of the view, and/or a buoy the look guide circles (its ring, or a chevron
-  at the edge, labelled with the buoy's name). Each hint is shown while its `when(ctx)` holds
-  (`HintContext`: boat state, diagnostics, camera mode), never with the menu open; `done(ctx)`
-  retires it for good (kept in localStorage, Esc menu "Reset hints" brings it back) and `after`
-  waits for other hints to retire. Keys come from the bindings, so a hint always names the real key;
-  key hints true at once stack in list order. The first sail out: *E Cast off* at a berth; *W S Trim
-  the sail* under way while `luffAmount` is above 0.5 (the H instruments' "luffing") for 1.5 s and
-  the apparent wind is wider than the rig's `luffStartBetaEffDeg` off the bow (closer, the sail luffs
-  even sheeted in: a steering problem, not a trim one), retired the
-  first time the sail draws; then *A D Steer to buoy H1* with the guide on H1, retired a third of the
-  way there (from where it first showed); once H1 is reached (within `proximityRadius`, as challenges
-  count) the guide points at H2 alone, retired a third of the way there too, so the player finishes
-  each leg alone.
-  The buoy pointer outranks the first-time look guides, which wait their turn. A hint that ends holds
-  the next one back for 5 s (TUNING GUESS), so they arrive one at a time; the menu only covers them.
-  `holdFor` (s) makes a hint wait until its condition has held that long without a break, so gusts
-  and deliberate manoeuvres do not flash it.
+  Esc menu below the middle of the view. Each hint is shown while its `when(ctx)` holds
+  (`HintContext`: boat state, diagnostics, camera mode, tracked quest), never with the menu open;
+  `done(ctx)` retires it for good (kept in localStorage, Esc menu "Reset hints" brings it back) and
+  `after` waits for other hints to retire. Keys come from the bindings, so a hint always names the
+  real key; hints true at once stack in list order. The first sail out: *E Cast off* at a berth; *W S
+  Trim the sail* under way while `luffAmount` is above 0.5 (the H instruments' "luffing") for 1.5 s
+  and the apparent wind is wider than the rig's `luffStartBetaEffDeg` off the bow (closer, the sail
+  luffs even sheeted in: a steering problem, not a trim one), retired the first time the sail draws;
+  then, while First sail is tracked, *A D Steer to buoy H1*, retired a third of the way there (from
+  where it first showed). A hint that ends holds the next one back for 5 s (TUNING GUESS), so they
+  arrive one at a time; the menu only covers them. `holdFor` (s) makes a hint wait until its
+  condition has held that long without a break, so gusts and deliberate manoeuvres do not flash it.
+- **Quests** (`src/ui/quests.ts`, `src/ui/questTracker.ts`): one challenge is tracked at a time,
+  picked in J and kept in localStorage (`questTracking`: `auto` until the player chooses, follows the
+  first unfinished challenge; `none` after an untrack, never undone automatically; or one id). A
+  finished quest hands over to the next unfinished one. Its open goals show top right with their
+  distances: a course's single next step ("Sail to H2"), or every unreached buoy of an any-order
+  challenge, nearest first (no order is implied; the list re-sorts as the boat moves). The first
+  gets a small bobbing V arrow just above the buoy with its name over it (an edge chevron when off
+  screen); a first-time look guide takes the screen for its few seconds of ring, then hands it back.
+  A reached goal flares, Genshin-style (a white glow bursts
+  behind it, the text lights up white, the mark pops into a tick with a ring), then slides off to the
+  right as the next goal slides in; a finished quest shows a flaring "Complete!" banner with a shine
+  for 2.6 s. The tracked quest's steps
+  toast nowhere else; completions still toast with the unlocked sail. Like challenges, quests need a
+  server with `-db`: offline there is no tracker and no ring.
 - **Esc menu** (`src/ui/menu.ts`) generates its controls from `src/input/bindings.ts`, the same
   key definitions used by the input handlers. Each binding marks whether it is a developer tool:
   instruments, outside view, debug panel and G free-fly stay under Developer. Existing labels and
@@ -549,10 +563,21 @@ The debug overlay is a developer tool, not a player aid, and is toggled off by d
   them: buff land with a coastline, faint 50 and 100 m height contours, blue shallows inside the 2 m
   contour (where the board touches), 5 and 10 m depth contours, and the names of towns, islands and
   shoals. A landmark beyond the paper gets a pointer at the edge with its bearing and distance.
-- **No instrument tells you where you are.** The boat has no log, GPS or deck compass. The only
-  instruments are a yellow hand-bearing compass (modelled on a Plastimo Iris 50) and the sailor's
-  eyes. There is no live position: the chart shows only the last position pencilled onto it, how
-  long ago, and the sailor's doubt about it in metres (no circle is drawn).
+- **No instrument tells you where you are.** The boat has no log, chartplotter or deck compass. The
+  instruments are a yellow hand-bearing compass (modelled on a Plastimo Iris 50), the sailor's eyes
+  and a **GPS watch** (`src/ui/gpsWatch.ts`), always visible in the lower-right corner, which shows
+  only speed over ground. It is a dinghy racing watch drawn as one inline SVG, 140 x 168 px: a round
+  plastic bezel (colour in the Esc menu: yellow, blue, green, orange, pink or white, kept in
+  prefs), a black inner ring, decorative MODE / SET / RESET buttons, a black fabric strap peeking
+  out above and below, and a pale grey-green LCD with a thin blue outline and slanted 7-segment
+  digits (unlit segments faintly visible): big whole knots, a smaller tenth and "kn"; MAX with the
+  session's best in small digits on the top row, the trend mark in the corner. It ticks once a
+  second with a speed smoothed over about 1.5 s, so the decimal does not jitter; the trend compares
+  with 3 s ago (rising or falling by 0.15 kn, else steady); MAX blinks when a best that had stood
+  10 s or more is beaten (not on every tick while picking up speed). All TUNING GUESS. There is no
+  planing cue: the physics has no planing regime. There is no
+  live position: the chart shows only the last position pencilled onto it, how long ago, and the
+  sailor's doubt about it in metres (no circle is drawn).
 - **Readings take time.** Hold `F` to raise the compass and hold it on a mark (a ring fills; pointing
   at the sky, or straying more than 10 degrees from your own recent mean aim, restarts it) to record
   a bearing. The boat rocks in the waves, which swings the aim a few degrees either way; the
@@ -560,19 +585,17 @@ The debug overlay is a developer tool, not a player aid, and is toggled off by d
   was under the crosshair for most of the hold (at least 30% of it, so a rocking boat is forgiven)
   is named automatically. Lining the compass up with the boat's centreline, tilted down at least 8
   degrees toward the bow for most of the hold, takes a bow bearing, which is remembered as the
-  course. Speed comes from the wake: press `F` looking astern (within about 50 degrees of straight
-  back) with no mark under the crosshair; the kind of reading is fixed when the key goes down, and
-  turning away from the wake restarts the ring. A remembered speed older than two minutes is flagged
-  OLD on the chart, so the sailor knows to look at the wake again. A value is only taken when the
-  ring completes, is not repeated until the key is released, and is kept with its age.
-- **Remembered values are shown as faint text** in the lower-right corner (course, speed, and each
-  bearing with its mark), never as an instrument. They are exactly true for now; no instrument
+  course. A value is only taken when the ring completes, is not repeated until the key is released,
+  and is kept with its age. Speed needs no reading: dead reckoning and the chart's course ticks use
+  the watch's speed.
+- **Remembered values are shown as faint text** in the lower-right corner, above the watch (course and
+  each bearing with its mark). They are exactly true for now; no instrument
   error, magnetic variation or deviation is modelled.
 - **One reckoning key.** `R`, with the chart in view, plots the bearings taken since the last plot if
   there are any named ones (a fix, about 4 s per line), and otherwise the dead-reckoning leg
   (about 5 s). Pencil work only progresses while you look at the paper; looking away pauses it
-  where it was. A leg carries the last pencilled position forward by the remembered course and
-  speed over the time since the last plot, ignoring leeway and anything that changed since the
+  where it was. A leg carries the last pencilled position forward along the remembered course at the
+  watch's current speed over the time since the last plot, ignoring leeway and anything that changed since the
   readings. A fix takes the newest named note of each mark, up to two: one projects the marker onto
   its line, leaving along-line error; two adequately separated bearings give an intersection fix.
   The marker only moves when the pencil work finishes. The doubt figure in the header grows with the
@@ -633,7 +656,7 @@ One milestone per session. Commit after each working one.
    Wind-responsive broad waves/ripples, separate layer controls and seeded magnitude variation implemented.
    Render-side floating origin and precision-safe world-anchored wave phases implemented.
    Analytic sky (sun, clouds, water reflection, horizon fog) implemented.
-6. **Navigation:** yellow hand-bearing compass, wake speed reading, timed readings and plotting, faint
+6. **Navigation:** yellow hand-bearing compass, GPS watch for speed over ground, timed readings and plotting, faint
    remembered values, physical lap chart with doubt circle and bearing lines, identifiable buoys.
    Pure navigation tests cover timed holds, remembered values, leg plotting, bearing geometry, fixes and
    chart projection. Browser smoke checked pointer-locked readings, the memory text, plotting and lines.

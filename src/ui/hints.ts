@@ -1,11 +1,11 @@
 /**
- * Contextual hints: keycaps with a short action, low in the middle of the view, and/or a buoy the look
- * guide circles (ui/lookGuide.ts), shown while the hint's `when` holds. A hint with `done` retires for
- * good the first time `done` holds, remembered in Prefs (Esc menu "Reset hints" brings it back);
- * `after` holds a hint back until those hints have retired, so hints can form a sequence. Keys come
- * from input/bindings.ts, so they always match the real handlers. To add one, add it to HINTS. Several
- * key hints true at once stack in HINTS order; the first true hint with a buoy is the one pointed at.
- * Reads the context only; it never changes the sim.
+ * Contextual hints: keycaps with a short action, low in the middle of the view, shown while the
+ * hint's `when` holds. A hint with `done` retires for good the first time `done` holds, remembered in
+ * Prefs (Esc menu "Reset hints" brings it back); `after` holds a hint back until those hints have
+ * retired, so hints can form a sequence. Keys come from input/bindings.ts, so they always match the
+ * real handlers. To add one, add it to HINTS. Several true at once stack in HINTS order. Where to
+ * sail is the tracked quest's job (src/ui/quests.ts), not a hint's. Reads the context only; it never
+ * changes the sim.
  */
 import buoyData from '../../data/buoys.json';
 import laser from '../../data/laser.json';
@@ -21,15 +21,15 @@ export interface HintContext {
   state: Readonly<BoatState>;
   diagnostics: Readonly<Diagnostics>;
   mode: CameraMode;
+  /** Id of the tracked quest (src/ui/quests.ts), or null. */
+  tracked: string | null;
 }
 
 export interface Hint {
   /** Stable id: retired hints are remembered by it (Prefs.hintsDone). */
   id: string;
   /** Keycaps (one per key of a binding) and what they do, a few words. */
-  keys?: { keys: Readonly<Record<string, string>>; label: string };
-  /** data/buoys.json name the look guide points at while this hint shows. */
-  buoy?: string;
+  keys: { keys: Readonly<Record<string, string>>; label: string };
   /** Ids of hints that must have retired first. */
   after?: readonly string[];
   /** Shown while this is true. */
@@ -63,9 +63,6 @@ function distanceTo(p: Readonly<Vec2>, name: string): number {
   return Math.hypot(b.x - p.x, b.z - p.z);
 }
 
-/** The boat is within data/buoys.json proximityRadius of buoy `name` (as the server's challenges count it). */
-const near = (state: Readonly<BoatState>, name: string): boolean => distanceTo(state, name) <= buoyData.proximityRadius;
-
 /** done rule: the boat has covered a third of the distance to buoy `name` from where the hint first showed. */
 const thirdOfWayTo = (name: string) => (c: HintContext, start: Readonly<Vec2> | null): boolean =>
   start !== null && distanceTo(c.state, name) <= (distanceTo(start, name) * 2) / 3;
@@ -73,10 +70,7 @@ const thirdOfWayTo = (name: string) => (c: HintContext, start: Readonly<Vec2> | 
 const underWay = (c: HintContext): boolean => c.mode === 'cockpit' && !c.state.moored;
 const luff = (c: HintContext): number => c.diagnostics.sail?.luffAmount ?? 0;
 
-/**
- * The first sail out of the harbour: cast off, trim, then sail to H1 and on to H2. The H1 and H2
- * pointers let go a third of the way there, so the player finishes each leg alone.
- */
+/** The first sail out of the harbour: cast off, trim, then steer for First sail's first buoy. */
 export const HINTS: readonly Hint[] = [
   // Matches the cast-off handler in main.ts: E acts only in the cockpit at a berth.
   {
@@ -93,17 +87,14 @@ export const HINTS: readonly Hint[] = [
     when: (c) => underWay(c) && luff(c) > LUFFING && Math.abs(c.diagnostics.apparent.angle) > NO_GO_DEG * DEG,
     done: (c) => !c.state.moored && c.diagnostics.sail !== null && luff(c) <= LUFFING,
   },
+  // While First sail is tracked: the quest's ring shows H1; the keys go a third of the way there.
   {
     id: 'steer',
     keys: { keys: BINDINGS.tiller.keys, label: 'Steer to buoy H1' },
-    buoy: 'H1',
     after: ['trim'],
-    when: underWay,
+    when: (c) => underWay(c) && c.tracked === 'first-sail',
     done: thirdOfWayTo('H1'),
   },
-  // Never shown: marks reaching H1, so the pointer to H2 waits for it rather than for the steer hint's end.
-  { id: 'atH1', when: () => false, done: (c) => near(c.state, 'H1') },
-  { id: 'toH2', buoy: 'H2', after: ['steer', 'atH1'], when: underWay, done: thirdOfWayTo('H2') },
 ];
 
 const STYLE = `
@@ -121,8 +112,8 @@ const STYLE = `
 `;
 
 export class Hints {
-  /** Key hint rows, by HINTS index; null for a hint without keys. */
-  private readonly rows: (HTMLElement | null)[];
+  /** Key hint rows, by HINTS index. */
+  private readonly rows: HTMLElement[];
   /** Showing now, by HINTS index (held while the menu covers them). */
   private readonly on: boolean[];
   private readonly done: Set<string>;
@@ -142,7 +133,6 @@ export class Hints {
     const stack = document.createElement('div');
     stack.className = 'kh-stack';
     this.rows = hints.map((hint) => {
-      if (!hint.keys) return null;
       const row = document.createElement('div');
       row.className = 'kh-hint';
       const keys = document.createElement('div');
@@ -166,12 +156,12 @@ export class Hints {
   }
 
   /**
-   * Once per frame: retires hints whose `done` holds, shows the rest; returns the buoy to point at, if
-   * any. A hint shows once its condition has held for its `holdFor`. A hint that ends (retired or no
-   * longer true) holds every new hint back for HINT_GAP_MS; one already showing stays. The menu only
-   * covers hints, so closing it brings them back at once.
+   * Once per frame: retires hints whose `done` holds and shows the rest. A hint shows once its
+   * condition has held for its `holdFor`. A hint that ends (retired or no longer true) holds every
+   * new hint back for HINT_GAP_MS; one already showing stays. The menu only covers hints, so closing
+   * it brings them back at once.
    */
-  update(ctx: HintContext, menuOpen: boolean): string | null {
+  update(ctx: HintContext, menuOpen: boolean): void {
     const now = performance.now();
     let retired = false;
     for (let i = 0; i < this.hints.length; i++) {
@@ -182,7 +172,6 @@ export class Hints {
       }
     }
     if (retired) this.prefs.set({ hintsDone: [...this.done] });
-    let buoy: string | null = null;
     for (let i = 0; i < this.hints.length; i++) {
       const hint = this.hints[i]!;
       const holds = !this.done.has(hint.id) && (hint.after ?? []).every((id) => this.done.has(id)) && hint.when(ctx);
@@ -194,11 +183,9 @@ export class Hints {
       if (was && !on) this.lastOff = now;
       this.on[i] = on;
       if (on && !this.start[i]) this.start[i] = { x: ctx.state.x, z: ctx.state.z };
-      if (on && !menuOpen && hint.buoy && buoy === null) buoy = hint.buoy;
-      if (on !== was || menuOpen !== this.menuWasOpen) this.rows[i]?.classList.toggle('kh-on', on && !menuOpen);
+      if (on !== was || menuOpen !== this.menuWasOpen) this.rows[i]!.classList.toggle('kh-on', on && !menuOpen);
     }
     this.menuWasOpen = menuOpen;
-    return buoy;
   }
 
   /** Brings every retired hint back. */
