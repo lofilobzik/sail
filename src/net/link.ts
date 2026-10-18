@@ -1,11 +1,13 @@
 /**
  * Server mode: joins the Go server's room, which owns the seed, the config and the authoritative
- * boats. The page keeps predicting its own boat with the TS sim; each snapshot corrects the
+ * boats. The page keeps predicting its own boat with the Go wasm sim; each snapshot corrects the
  * prediction, and the other boats come with it (NetClient.remote). After a drop the client
  * reconnects with its resume token. Which server (or none) is decided by `serverChoice`: the built
  * site joins its own host, dev stays offline unless ?server.
  */
-import { DEG, type BoatState, type Controls, type SimConfig } from '../sim';
+import { DEG } from '../sim';
+import type { BoatState, Controls, SimConfig } from '../physics/types';
+import type { Physics } from '../physics/bridge';
 import { NetClient, adoptServerConfig, configFromWelcome, type NetStatus } from './client';
 import { Corrector } from './correction';
 import type { WelcomeMessage } from './protocol';
@@ -30,6 +32,7 @@ export class ServerLink {
     /** The newest welcome. */
     public welcome: WelcomeMessage,
     readonly cfg: SimConfig,
+    private readonly physics: Physics,
   ) {
     this.spawn = { ...welcome.state };
   }
@@ -48,7 +51,7 @@ export class ServerLink {
       this.corrector.forgetCastOff();
       if (!w.resumed) {
         // A new boat, maybe in a restarted server's new world: adopt its config too.
-        adoptServerConfig(this.cfg, w);
+        adoptServerConfig(this.cfg, w, this.physics);
         this.corrector.reset(c.nextSeq);
         this.spawn = { ...w.state };
         return 'respawned';
@@ -139,7 +142,7 @@ function serverSocketUrl(param: string): string {
  * disconnect. If the first join fails (refused, closed or no welcome within CONNECT_TIMEOUT_MS),
  * says so briefly and returns null: the page then sails offline.
  */
-export async function joinServer(url: string, player: string): Promise<ServerLink | null> {
+export async function joinServer(url: string, player: string, physics: Physics): Promise<ServerLink | null> {
   const banner = document.createElement('div');
   banner.style.cssText =
     'position:fixed;top:8px;left:50%;transform:translateX(-50%);padding:4px 10px;z-index:20;' +
@@ -161,7 +164,7 @@ export async function joinServer(url: string, player: string): Promise<ServerLin
   show(client.status);
   try {
     const welcome = await client.welcome;
-    return new ServerLink(client, welcome, configFromWelcome(welcome));
+    return new ServerLink(client, welcome, configFromWelcome(welcome, physics), physics);
   } catch (err) {
     console.warn(err);
     client.onStatus = () => {};

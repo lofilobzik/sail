@@ -232,15 +232,20 @@ type WaveSample struct {
 // surface.
 func SampleWaveParticle(cfg *WaveConfig, x, z, t, depth float64, out *WaveSample) {
 	scale := WaveAmplitude(cfg)
+	depth = min(depth, 0)
 	px, py, pz := x, 0.0, z
 	jxx, jxz, jzz, hx, hz := 1.0, 0.0, 1.0, 0.0, 0.0
 	vx, vy, vz := 0.0, 0.0, 0.0
 	if scale != 0 {
 		for i := range cfg.Components {
 			w := &cfg.Components[i]
-			a := scale * w.Amplitude * math.Exp(w.K*min(depth, 0))
+			a := scale * w.Amplitude
+			// Surface samples have unit attenuation; avoid exp(0) in this hot loop.
+			if depth != 0 {
+				a *= math.Exp(w.K * depth)
+			}
 			phase := w.K*(w.Dx*x+w.Dz*z) - w.Omega*t + w.Phase
-			s, c := math.Sin(phase), math.Cos(phase)
+			s, c := math.Sincos(phase)
 			qa := w.Choppiness * a
 			px += qa * w.Dx * c
 			py += a * s
@@ -269,6 +274,7 @@ func SampleWaveParticle(cfg *WaveConfig, x, z, t, depth float64, out *WaveSample
 func SampleWaves(cfg *WaveConfig, x, z, t, depth float64, out *WaveSample) {
 	qx, qz := x, z
 	scale := WaveAmplitude(cfg)
+	depth = min(depth, 0)
 	if scale != 0 {
 		// Covers the shortest allowed period at maximum amplitude; exits early for light chop.
 		for range 48 {
@@ -276,7 +282,10 @@ func SampleWaves(cfg *WaveConfig, x, z, t, depth float64, out *WaveSample) {
 			ex, ez := qx-x, qz-z
 			for i := range cfg.Components {
 				w := &cfg.Components[i]
-				qa := scale * w.Amplitude * w.Choppiness * math.Exp(w.K*min(depth, 0))
+				qa := scale * w.Amplitude * w.Choppiness
+				if depth != 0 {
+					qa *= math.Exp(w.K * depth)
+				}
 				c := math.Cos(w.K*(w.Dx*qx+w.Dz*qz) - w.Omega*t + w.Phase)
 				ex += qa * w.Dx * c
 				ez += qa * w.Dz * c

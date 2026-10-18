@@ -8,7 +8,8 @@ import * as THREE from 'three';
 import { DEG } from '../../sim/frames';
 import { BERTHS } from '../../sim/mooring';
 import { BAY } from '../../sim/terrain';
-import { createWaveSample, defaultWaves, sampleWaves, type WaveConfig } from '../../sim/waves';
+import { createWaveSample, sampleWaves } from '../../sim/waves';
+import type { WaveConfig } from '../../physics/types';
 import { faceted, merge, paint } from './parts';
 
 export interface FloatingHarbour {
@@ -242,11 +243,13 @@ export function createFloatingHarbour(material: THREE.Material): FloatingHarbour
   const centreSample = createWaveSample(), inboardSample = createWaveSample(), outboardSample = createWaveSample();
   const endpoint = new THREE.Vector3(), direction = new THREE.Vector3(), xAxis = new THREE.Vector3(1, 0, 0);
   const dockPoint = new THREE.Vector3(), boatPoint = new THREE.Vector3();
-  const update = (waves: WaveConfig, t: number): void => {
+  const update = (waves: WaveConfig | null, t: number): void => {
     for (const dock of docks) {
-      sampleWaves(waves, dock.x, dock.z, t, 0, centreSample);
-      sampleWaves(waves, dock.x0, dock.z, t, 0, inboardSample);
-      sampleWaves(waves, dock.x0 + dock.length, dock.z, t, 0, outboardSample);
+      if (waves) {
+        sampleWaves(waves, dock.x, dock.z, t, 0, centreSample);
+        sampleWaves(waves, dock.x0, dock.z, t, 0, inboardSample);
+        sampleWaves(waves, dock.x0 + dock.length, dock.z, t, 0, outboardSample);
+      }
       const heave = limit((centreSample.y + inboardSample.y + outboardSample.y) * DOCK_HEAVE / 3, DOCK_HEAVE_LIMIT);
       const pitch = limit((outboardSample.y - inboardSample.y) * DOCK_PITCH / dock.length, DOCK_TILT_LIMIT);
       dock.body.position.y = FREEBOARD + heave;
@@ -262,7 +265,7 @@ export function createFloatingHarbour(material: THREE.Material): FloatingHarbour
     let offset = 0;
     for (let i = 0; i < boats.length; i++) {
       const boat = boats[i]!;
-      sampleWaves(waves, boat.spec.x, boat.z, t, 0, centreSample);
+      if (waves) sampleWaves(waves, boat.spec.x, boat.z, t, 0, centreSample);
       boat.transform.position.y = limit(centreSample.y * BOAT_HEAVE, BOAT_HEAVE_LIMIT);
       const c = Math.cos(boat.spec.yaw), s = Math.sin(boat.spec.yaw);
       const along = c * centreSample.slopeX - s * centreSample.slopeZ;
@@ -286,7 +289,7 @@ export function createFloatingHarbour(material: THREE.Material): FloatingHarbour
     hulls.instanceMatrix.needsUpdate = true;
     ropeAttribute.needsUpdate = true;
   };
-  // Populate gangway attachment and ropes before the first frame, using shared flat-water defaults.
-  update(defaultWaves(), 0);
+  // Populate attachments and ropes at rest before the first frame; the samples start at zero.
+  update(null, 0);
   return { group, berthCleats, update };
 }

@@ -6,7 +6,8 @@
  *   Wheel        up sheets in, down eases
  *   Shift (hold) hike out, release to sit in
  */
-import { clamp, type Controls } from '../sim';
+import { clamp } from '../sim';
+import type { Controls } from '../physics/types';
 import { BINDINGS } from './bindings';
 import { rateLimit } from './rateLimit';
 

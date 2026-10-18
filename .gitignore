@@ -1,6 +1,8 @@
 node_modules/
 dist/
 polar-out/
+public/wasm/
+src/physics/wasm_exec.js
 .DS_Store
 WATCHDOG.yml
 *.swp

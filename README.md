@@ -43,7 +43,7 @@ The papers and class rules are copyrighted, so the PDFs are not in this repo. Yo
 
 ## Run it yourself
 
-You need Node (CI uses 24), and Go (version in `go.mod`) if you want the server
+You need Node (CI uses 24) and Go (version in `go.mod`). The dev, build and test commands compile the Go physics to WebAssembly.
 
 ```sh
 npm install
@@ -65,16 +65,30 @@ go run ./server/cmd/sailserver -static dist    # http://localhost:8080 joins the
 
 Press <kbd>F3</kbd> or <kbd>~</kbd> for the debug panel (wind, waves, forces, physics switches)
 
+Go owns the physics in both modes: native on the server and WebAssembly for browser prediction
+and offline sailing. The browser loads wasm before joining a server or starting play; a failed
+load stops initialization with a visible error instead of falling back to different physics.
+Offline debug-panel changes are normalized by Go; online config comes from the server.
+
+`npm run build:wasm` generates `public/wasm/sim.wasm` and its matching Go runtime in
+`src/physics/wasm_exec.js`; neither is committed. Vite rebuilds after Go source changes, debouncing
+saves and retaining the previous working wasm on compiler errors.
+Production builds serve `wasm/sim.wasm` and bundle `wasm_exec.js` into the site's JavaScript.
+
 Tests and tools:
 
 ```sh
-npm test                     # TypeScript tests
-go test ./server/...         # Go tests, including a check against the TypeScript physics
-npm run polar                # headless polar diagram of the boat
-npm run golden               # regenerate the reference traces the Go tests compare against; run after changing physics
+npm test                     # TypeScript tests plus the Go wasm boundary/golden checks
+go test ./server/...         # native Go tests, including frozen TS migration parity
+npm run polar                # native Go headless polar diagram of the boat
+npm run golden               # regenerate Go reference traces/samples after changing physics
 npm run chart                # browserless export of the actual paper chart to polar-out/chart.png
 npm run map                  # separate top-down terrain overview
 ```
+
+The original TS fixtures remain frozen in `server/sim/testdata/golden-ts/` until the migration
+gate is approved. Normal fixtures live in `golden/`; Go wasm and TS render-only wave, wind and
+terrain helpers are checked against Go output. Do not regenerate the frozen migration fixtures.
 
 The chart export uses a native canvas and the same renderer as the game. Map details use
 `Arial, sans-serif` to keep bearing labels compact; bold map labels and the legend remain

@@ -1,5 +1,6 @@
 /** Render-only intersection of the lofted hull with the undisturbed local sea. No Three.js. */
-import { createWaveSample, sampleWaves, type WaveConfig } from '../../sim/waves';
+import { createWaveSample, sampleWaves } from '../../sim/waves';
+import type { WaveConfig } from '../../physics/types';
 import type { BoatLayout } from '../boatLayout';
 
 export interface ContactPose {

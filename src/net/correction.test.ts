@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { BERTHS, NEUTRAL_CONTROLS, browserConfig, buildBoat, mooredAt, type BoatState } from '../sim';
+import { initialState, NEUTRAL_CONTROLS } from '../sim';
+import type { BoatState } from '../physics/types';
 import { Corrector } from './correction';
 import type { SnapshotMessage } from './protocol';
 
 const DT = 1 / 60;
-const boat = buildBoat();
-const cfg = browserConfig(1);
+const initial: BoatState = { ...initialState(), moored: true };
 
 function snapshot(ackSeq: number, state: BoatState): SnapshotMessage {
   return { type: 'snapshot', tick: ackSeq, ackSeq, state: { ...state }, controls: { ...NEUTRAL_CONTROLS }, boats: [] };
@@ -14,7 +14,7 @@ function snapshot(ackSeq: number, state: BoatState): SnapshotMessage {
 describe('Corrector cast-off', () => {
   it('keeps a pending cast-off against older moored snapshots, then follows the server again', () => {
     const c = new Corrector();
-    const s = mooredAt(BERTHS[0]!, boat, cfg);
+    const s = { ...initial };
     const recorded: BoatState[] = [];
     for (let seq = 1; seq <= 3; seq++) {
       c.afterStep(s, seq, DT);
@@ -43,14 +43,14 @@ describe('Corrector cast-off', () => {
 
   it('forgetCastOff lets the server re-moor a boat whose cast-off was never applied', () => {
     const c = new Corrector();
-    const s = mooredAt(BERTHS[0]!, boat, cfg);
+    const s = { ...initial };
     c.afterStep(s, 1, DT);
     s.moored = false;
     c.afterStep(s, 2, DT);
     c.noteCastOff(2);
     // A resumed connection drops the queued cast-off; the server boat is still moored.
     c.forgetCastOff();
-    c.resync(mooredAt(BERTHS[0]!, boat, cfg), s, 1);
+    c.resync({ ...initial }, s, 1);
     expect(s.moored).toBe(true);
   });
 });

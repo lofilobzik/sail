@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { WAKE, bowWaveHeight, kelvinWake, wakeSourceAmplitude, type WakeSample } from './kelvin';
+import { buildBoat } from '../../sim/boat';
+import { WAKE, bowWaveHeight, kelvinWake, wakeResiduary, wakeSourceAmplitude, type WakeSample } from './kelvin';
 import { WakeTrail, type TrailPoint } from './trail';
 
 const G = 9.81;
@@ -54,6 +55,19 @@ describe('wake trail', () => {
 });
 
 describe('wake source', () => {
+  it('preserves the drawing-only Delft source and its low-speed fade', () => {
+    const boat = buildBoat();
+    const rho = 1025;
+    const speedScale = Math.sqrt(G * boat.lwl);
+    const weight = boat.volume * rho * G;
+    const low = boat.cfg.hull.residuaryBlendFn;
+    expect(wakeResiduary(boat, 0.4 * speedScale, rho)).toBeCloseTo(boat.residuaryRatio.at(0.4) * weight, 9);
+    expect(wakeResiduary(boat, low * speedScale / 2, rho)).toBeCloseTo(
+      boat.residuaryRatio.at(low) * weight * 0.5 ** boat.cfg.hull.residuaryBlendExponent, 9,
+    );
+    expect(wakeResiduary(boat, 0, rho)).toBe(0);
+  });
+
   it('balances wave energy left behind against wave-making resistance', () => {
     const beam = 1.37;
     const A = wakeSourceAmplitude(9, 1025, beam);

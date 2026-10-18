@@ -3,7 +3,8 @@
  * compared with the local prediction after the same input (`ackSeq`), and the difference that has
  * not been corrected since is blended out over BLEND_SECONDS, or applied at once when it is large.
  */
-import { DEG, wrapPi, type BoatState } from '../sim';
+import { DEG, wrapPi } from '../sim';
+import type { BoatState } from '../physics/types';
 import type { SnapshotMessage } from './protocol';
 
 /** Position error above which the correction is applied at once instead of blended, m. */

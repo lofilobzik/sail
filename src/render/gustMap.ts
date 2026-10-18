@@ -9,7 +9,8 @@
  * sim reads `windSpeedFactor` directly and is unaffected.
  */
 import * as THREE from 'three';
-import { WIND_PARAMETERS, windSpeedFactor, type Vec2, type WindConfig } from '../sim';
+import { WIND_PARAMETERS, windSpeedFactor, type Vec2 } from '../sim';
+import type { WindConfig } from '../physics/types';
 
 const VISUAL = WIND_PARAMETERS.visual;
 const SIZE = VISUAL.mapSize;

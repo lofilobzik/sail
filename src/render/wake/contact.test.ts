@@ -1,16 +1,29 @@
-import { describe, expect, it } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { buildBoat, DEG } from '../../sim';
-import { defaultWaves, createWaveSample, sampleWaves, setWaveWind } from '../../sim/waves';
+import { createWaveSample, sampleWaves } from '../../sim/waves';
+import type { WaveConfig } from '../../physics/types';
+import { loadPhysics } from '../../physics/load';
 import { BoatLayout } from '../boatLayout';
 import { WAKE } from './kelvin';
 import { BowContact, type ContactPose } from './contact';
 
 const layout = new BoatLayout(buildBoat());
 const pose: ContactPose = { x: 0, z: 0, heading: 0, pitch: 0, heel: 0, t: 0 };
+let waves: WaveConfig;
+let flat: WaveConfig;
+beforeAll(async () => {
+  const physics = await loadPhysics(await readFile(new URL('../../../public/wasm/sim.wasm', import.meta.url)));
+  // Preserve the original contact scenario: seed 123, default spectrum, 16 kn sea.
+  const cfg = physics.browserConfig(123);
+  cfg.waves.windSpeedKn = 16;
+  waves = physics.setConfig(cfg).waves;
+  flat = { ...waves, enabled: false };
+});
 
 function contactAt(p: ContactPose, hullY = 0) {
   const contact = new BowContact(layout, WAKE.contactSamples);
-  expect(contact.update(p, defaultWaves(), hullY)).toBe(true);
+  expect(contact.update(p, flat, hullY)).toBe(true);
   return contact;
 }
 
@@ -38,16 +51,13 @@ describe('bow hull/sea contact', () => {
 
   it('keeps a submerged stem active but removes the bow wave when the whole hull clears water', () => {
     const c = new BowContact(layout, WAKE.contactSamples);
-    expect(c.update(pose, defaultWaves(), -1)).toBe(true);
+    expect(c.update(pose, flat, -1)).toBe(true);
     expect(c.forward).toBeCloseTo(layout.bowX, 5);
-    expect(c.update(pose, defaultWaves(), 1)).toBe(false);
-    expect(c.update(pose, defaultWaves(), 0)).toBe(true);
+    expect(c.update(pose, flat, 1)).toBe(false);
+    expect(c.update(pose, flat, 0)).toBe(true);
   });
 
   it('samples waves at the pitched and heeled world contact, including heading and heave', () => {
-    const waves = defaultWaves(123);
-    waves.enabled = true;
-    setWaveWind(waves, 16);
     const surface = createWaveSample();
     const c = new BowContact(layout, WAKE.contactSamples);
     for (const heading of [0, 90 * DEG, 215 * DEG]) {

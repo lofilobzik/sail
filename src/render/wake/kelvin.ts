@@ -14,6 +14,7 @@
  * the tests exercise the TS version.
  */
 import wake from '../../../data/wake.json';
+import type { BoatModel } from '../../sim/boat';
 
 export const WAKE = wake;
 const G = 9.81;
@@ -24,6 +25,20 @@ const SIN_T = Math.sin(wake.cuspWaveAngleDeg * DEG);
 /** Filter like the water grid: full detail at 8 samples per wavelength, none below 4. */
 const FILTER_FULL = (2 * Math.PI) / 8;
 const FILTER_ZERO = (2 * Math.PI) / 4;
+
+/**
+ * Drawing-only Delft wave-making estimate at the interpolated render speed.
+ * This preserves wake amplitude independently of gameplay forces, which come only from Go.
+ */
+export function wakeResiduary(boat: BoatModel, speed: number, rhoWater: number): number {
+  const fn = Math.abs(speed) / Math.sqrt(G * boat.lwl);
+  const weight = boat.volume * rhoWater * G;
+  const h = boat.cfg.hull;
+  const fnLow = h.residuaryBlendFn;
+  return fn >= fnLow
+    ? boat.residuaryRatio.at(fn) * weight
+    : boat.residuaryRatio.at(fnLow) * weight * (fn / fnLow) ** h.residuaryBlendExponent;
+}
 
 /** Source amplitude from wave-making resistance: R_w = 1/2 rho g A^2 * width. */
 export function wakeSourceAmplitude(residuaryN: number, rhoWater: number, beam: number): number {

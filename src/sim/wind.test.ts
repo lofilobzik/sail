@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { KNOT } from './frames';
-import type { WindConfig } from './config';
+import type { WindConfig } from '../physics/types';
 import { WIND_PARAMETERS, getWind, meanWind, windShiftDeg, windSpeedFactor } from './wind';
 
 const speed = (w: { x: number; z: number }): number => Math.hypot(w.x, w.z);

@@ -12,7 +12,10 @@ import { Vector2 } from 'three';
 import { interpolatePose } from './render/pose';
 import { SceneView, type RenderPose } from './render/scene';
 import { ForceVectors } from './render/vectors';
-import { BERTHS, DEG, FixedStep, NEUTRAL_CONTROLS, WAVE_PARAMETERS, browserConfig, buildBoat, castOff, clamp, evaluate, initialState, mooredAt, setWaveParameters, step, type BoatState, type Diagnostics } from './sim';
+import { DEG, FixedStep, NEUTRAL_CONTROLS, WAVE_PARAMETERS, buildBoat, clamp, initialState } from './sim';
+import type { BoatState, Diagnostics } from './physics/types';
+import { loadPhysics } from './physics/load';
+import { adoptPhysicsConfig } from './physics/bridge';
 import { joinServer, serverChoice } from './net/link';
 import type { RemotePose } from './net/remote';
 import { SailSound } from './audio/sound';
@@ -48,7 +51,7 @@ const PERF_FRAMES = 600; // ?perf=1: normal rAF frames recorded for the perf: li
  * `harbour.departure`'s).
  */
 function harbourStart(): BoatState {
-  if (!opts.start) return mooredAt(BERTHS[0]!, boat, cfg);
+  if (!opts.start) return physics.mooredAt(0, 0);
   const { x, z } = opts.start;
   const headingDeg = opts.start.headingDeg ?? BAY.harbour.departure.headingDeg;
   return { ...initialState(headingDeg * DEG, START_SPEED), x, z };
@@ -57,28 +60,40 @@ function harbourStart(): BoatState {
 const boat = buildBoat();
 const params = new URLSearchParams(location.search);
 const opts = parseDevOptions(params);
+const physics = await fetch(new URL('wasm/sim.wasm', document.baseURI)).then(loadPhysics).catch((error: unknown) => {
+  const banner = document.createElement('div');
+  banner.style.cssText =
+    'position:fixed;top:8px;left:50%;transform:translateX(-50%);padding:4px 10px;z-index:20;' +
+    'background:rgba(0,0,0,0.7);color:#e8e8e8;font:13px/1.35 ui-monospace,monospace;';
+  banner.textContent = 'Physics failed to load. Reload the page.';
+  document.body.appendChild(banner);
+  throw error; // Stop initialization: there is no second physics implementation to fall back to.
+});
 // The built site joins its own server (wss://<host>/ws); `npm run dev` sails offline unless
 // ?server[=ws://host:port/ws] is given, and ?offline always sails locally. With a server, the Go
-// server owns the seed, the config and the boat (src/net), the page predicts with the TS sim, and
+// server owns the seed, the config and the boat (src/net), the page predicts with the Go wasm sim, and
 // the URL physics parameters below are ignored. An unreachable server falls back to offline.
 // Preferences come first: the sailor code they keep (generated on the first visit) joins the server.
 const prefs = new Preferences();
 if (prefs.value.player === null) prefs.set({ player: newSailorCode() });
 const player = prefs.value.player!;
 const serverUrl = serverChoice(params, import.meta.env.PROD);
-const server = serverUrl === null ? null : await joinServer(serverUrl, player);
+const server = serverUrl === null ? null : await joinServer(serverUrl, player, physics);
 // Choose a sea pattern once. All subsequent sampling remains seeded and world-anchored.
-const cfg = server?.cfg ?? browserConfig(Math.floor(Math.random() * 0x100000000));
+let cfg = server?.cfg ?? physics.browserConfig(Math.floor(Math.random() * 0x100000000));
 if (!server) {
   // Browser sailing has gusts and shifts (seeded like the sea); ?gusts=0 keeps the wind constant.
-  // Headless runs and the polar use defaultConfig, where they are off.
+  // Headless runs and the polar use Go's DefaultConfig, where they are off.
   if (cfg.wind.gusts) cfg.wind.gusts.enabled = opts.gusts;
   if (!opts.waves) cfg.waves.enabled = false;
   if (opts.waveAmplitude !== null) {
     cfg.waves.amplitudeScale = clamp(opts.waveAmplitude, 0, WAVE_PARAMETERS.maxAmplitudeScale);
   }
-  setWaveParameters(cfg.waves, opts.wavePeriod ?? cfg.waves.periodSeconds, opts.waveDirection ?? cfg.waves.directionDeg);
+  cfg.waves.periodSeconds = opts.wavePeriod ?? cfg.waves.periodSeconds;
+  cfg.waves.directionDeg = opts.waveDirection ?? cfg.waves.directionDeg;
+  cfg = physics.setConfig(cfg);
 }
+const syncPhysicsConfig = (): void => { adoptPhysicsConfig(cfg, physics.setConfig(cfg)); };
 const fixed = new FixedStep(cfg.dt);
 
 const navigation = new Navigation();
@@ -118,7 +133,7 @@ function resetBoat(start: BoatState): void {
   memory.update(navigation, false);
   input.reset(start.moored ? MOORED_SHEET : undefined);
   castOffRequested = false;
-  diagnostics = evaluate(curr, input.update(0), boat, cfg);
+  diagnostics = physics.evaluate(curr, input.update(0));
 }
 resetBoat(server ? server.spawn : harbourStart());
 // The first launch is a departure, not a restart: the reset's "Dead reckoning restarted" note is for respawns.
@@ -126,7 +141,7 @@ navigation.message = '';
 
 // Server mode: respawning resets the server's boat; the local one follows on the next snapshot.
 const respawn = server ? () => server.reset() : () => resetBoat(harbourStart());
-const overlay = new DebugOverlay(cfg, respawn, server !== null);
+const overlay = new DebugOverlay(cfg, respawn, server !== null, { onConfigChange: syncPhysicsConfig });
 let showNavigationTruth = false;
 overlay.addToggle('navigation: show true position on chart', false, (v) => { showNavigationTruth = v; });
 overlay.addToggle('wake: Kelvin waves', true, (v) => view.wake.setLayer('kelvin', v));
@@ -360,19 +375,19 @@ function frame(now: number): void {
     const controls = view.mode === 'fly' ? (input.reset(), { ...NEUTRAL_CONTROLS }) : input.update(cfg.dt);
     const castingOff = castOffRequested && curr.moored;
     if (castingOff) {
-      castOff(curr);
+      curr = physics.castOff(curr);
       castOffRequested = false;
     }
-    const result = step(curr, controls, boat, cfg);
+    const next = physics.step(curr, controls);
     prev = curr;
-    curr = result.state;
-    diagnostics = result.diagnostics;
+    curr = next;
     // GPS watch: speed over ground, from how far the boat moved this step.
     speedOverGround = Math.hypot(curr.x - prev.x, curr.z - prev.z) / cfg.dt;
     server?.afterStep(curr, controls, castingOff);
     // Narrow instrument boundary: only the watch's speed over ground; no true x/z, heading or sway.
     navigation.advance({ t: curr.t, speed: speedOverGround }, cfg.dt);
   }
+  if (steps > 0) diagnostics = physics.diagnostics();
 
   lastPose = interpolatePose(prev, curr, fixed.alpha, diagnostics, boat, frameSeconds, look);
   if (view.mode === 'fly') {

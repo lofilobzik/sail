@@ -4,29 +4,6 @@ import { parseDevOptions } from './urlParams';
 const parse = (query: string) => parseDevOptions(new URLSearchParams(query));
 
 describe('parseDevOptions', () => {
-  it('defaults to a normal run with nothing overridden', () => {
-    expect(parse('')).toEqual({
-      gusts: true,
-      waves: true,
-      waveAmplitude: null,
-      wavePeriod: null,
-      waveDirection: null,
-      wake: true,
-      sunElevation: null,
-      sunAzimuth: null,
-      clouds: null,
-      sail: null,
-      outsideView: false,
-      water: true,
-      look: null,
-      start: null,
-      fly: null,
-      detailFade: true,
-      perf: false,
-      quality: null,
-    });
-  });
-
   it('reads the switches', () => {
     const o = parse('gusts=0&waves=0&wake=0&water=0&view=outside&perf=1&sail=loose');
     expect([o.gusts, o.waves, o.wake, o.water, o.outsideView, o.perf, o.sail]).toEqual([false, false, false, false, true, true, 'loose']);

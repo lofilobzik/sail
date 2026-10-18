@@ -324,11 +324,7 @@ func integrate(state *BoatState, d *Diagnostics, boat *BoatModel, cfg *SimConfig
 // Step advances one fixed step of cfg.Dt with cfg.Substeps substeps. Controls are clamped to
 // their ranges. As in TS, the returned diagnostics are those of the last substep's evaluation.
 func Step(state BoatState, controls Controls, boat *BoatModel, cfg *SimConfig) StepResult {
-	c := Controls{
-		Tiller: Clamp(controls.Tiller, -1, 1),
-		Sheet:  Clamp(controls.Sheet, 0, 1),
-		Hike:   Clamp(controls.Hike, 0, 1),
-	}
+	c := ClampControls(controls)
 	h := cfg.Dt / float64(cfg.Substeps)
 	s := state
 	// Every substep evaluates then integrates; only the last evaluation is returned (TS reassigns

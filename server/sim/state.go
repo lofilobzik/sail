@@ -1,5 +1,7 @@
 package sim
 
+import "math"
+
 // Controls are normalized, already rate-limited control values (src/sim/state.ts).
 type Controls struct {
 	// Tiller position -1..1, + = tiller to starboard (boat turns to port).
@@ -8,6 +10,15 @@ type Controls struct {
 	Sheet float64 `json:"sheet"`
 	// Hiking 0..1, 0 = sitting in, 1 = fully hiked.
 	Hike float64 `json:"hike"`
+}
+
+// ClampControls limits controls to their applied ranges, shared by the sim and input queue.
+func ClampControls(c Controls) Controls {
+	return Controls{
+		Tiller: math.Min(1, math.Max(-1, c.Tiller)),
+		Sheet:  math.Min(1, math.Max(0, c.Sheet)),
+		Hike:   math.Min(1, math.Max(0, c.Hike)),
+	}
 }
 
 // BoatState is the integrated state of the boat (src/sim/state.ts).

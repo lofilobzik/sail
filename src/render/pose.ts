@@ -1,8 +1,7 @@
 /** Blends the last two simulation states into the pose drawn this frame. */
 import type { BoatModel } from '../sim/boat';
 import { DEG, wrapPi } from '../sim/frames';
-import type { Diagnostics } from '../sim/step';
-import type { BoatState } from '../sim/state';
+import type { BoatState, Diagnostics } from '../physics/types';
 import type { RenderPose } from './scene';
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;

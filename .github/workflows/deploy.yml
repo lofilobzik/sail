@@ -29,10 +29,12 @@ jobs:
         with:
           go-version-file: go.mod
       - run: npm ci
+      - run: npm run build:wasm
       - run: npm run typecheck
       - run: npx eslint .
       - run: npx vitest run
       - run: go vet ./server/... ./data/...
+      - run: GOOS=js GOARCH=wasm go vet ./server/sim ./server/cmd/simwasm
       - run: go test -race ./server/...
 
   image:

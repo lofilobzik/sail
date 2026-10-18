@@ -3,7 +3,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', 'polar-out', 'docs'] },
+  { ignores: ['dist', 'node_modules', 'polar-out', 'docs', 'src/physics/wasm_exec.js'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

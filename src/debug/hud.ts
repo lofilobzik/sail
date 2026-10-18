@@ -4,7 +4,8 @@
  * Side letters: S = starboard, P = port (angles from the bow; heel: rail down; leeway:
  * sliding toward; tiller: tiller toward).
  */
-import { DEG, KNOT, wrap2Pi, worldToBody, type BoatModel, type BoatState, type Diagnostics } from '../sim';
+import { DEG, KNOT, wrap2Pi, worldToBody, type BoatModel } from '../sim';
+import type { BoatState, Diagnostics } from '../physics/types';
 import { isTypingTarget } from '../input/controls';
 import { BINDINGS } from '../input/bindings';
 import { GPU_LABELS, type GpuFrame } from './gpuTimer';

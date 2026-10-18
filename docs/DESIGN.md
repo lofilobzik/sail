@@ -55,25 +55,23 @@ server (optional: the browser still runs fully offline without it).
 
 ```
 src/
-  sim/      Pure math. NO Three.js imports, no DOM. Deterministic.
-            state + inputs + dt -> new state. Offline play and client-side prediction.
+  sim/      Render/data helpers and fixed-step scheduling. No gameplay integrator or force layers.
+  physics/  Shared types and the synchronous Go wasm bridge used by all local simulation.
   render/   Reads sim state, draws it. Never writes to sim state.
   input/    Keys / mouse -> normalized control values (tiller, sheet, hike, look).
   nav/      Chart, dead reckoning, bearings (reads sim state, own state for DR).
   net/      Browser client for the Go server (joined by default on the built site): input up, snapshots down,
-            local TS prediction corrected toward server state.
+            local Go wasm prediction corrected toward server state.
   debug/    Overlay: apparent wind, force vectors, speed, heel, polar plot.
   ui/       Esc menu, first-time look guides, player preferences (localStorage). Reads render/sim, never writes sim.
   audio/    Procedural Web Audio cues from boat speed, apparent wind and luff. Reads only.
 data/       JSON config shared by TS (Vite imports) and Go (data/embed.go, go:embed). No magic numbers in code.
 server/     Go module `sail` (go.mod at the repo root).
-  sim/      Go port of src/sim: the authoritative simulation (no render helpers). Golden fixtures
-            from TS in sim/testdata/golden/ keep the two within tolerance.
+  sim/      The shared physics implementation: native server and js/wasm browser.
+            Go-generated fixtures in sim/testdata/golden/ cover traces and render samples.
   netsim/   WebSocket protocol and per-connection sessions.
-  cmd/sailserver/  The server. cmd/polar/  Go port of scripts/polar.ts.
+  cmd/sailserver/  The server. cmd/simwasm/  Browser bridge. cmd/polar/  Native headless polar.
 scripts/
-  polar.ts         Headless: sails the boat at fixed headings, dumps a polar. Runs in Node.
-  goldenTraces.ts  `npm run golden`: writes the TS golden fixtures the Go tests compare against.
   renderMap.ts     `npm run map`: headless top-down PNG of the bay from the terrain function (no browser).
   renderChart.ts   `npm run chart`: browserless PNG using the actual `render/chartPage.ts` renderer
                    on @napi-rs/canvas, with native fonts; no copied chart layout or bitmap-font recreation.
@@ -82,24 +80,37 @@ docs/   Source papers and rules. See INDEX.md.
 
 Rules:
 - The sim runs on a **fixed timestep** (start at 60 Hz, raise if unstable). Rendering interpolates.
-- `sim/` must run headless under Node, so the polar script and tests work without a browser.
+- `server/sim` stays independent of server/browser code; the native polar and tests run headless.
 - Boat parameters live in `data/laser.json`, not in code. A second boat should be a new config file.
 - Every constant is either sourced from `docs/` or marked `// TUNING GUESS`.
   Do not recall coefficient tables from memory.
-- **Two simulations, one model.** `src/sim` (TS) and `server/sim` (Go) implement the same physics.
-  The server is authoritative; the TS copy predicts locally and is corrected toward server snapshots.
-  They are not bit-identical (V8 and Go math differ in the last bits); `npm run golden` exports TS
-  traces and samples, and `go test ./server/sim/...` checks the Go port against them within stated
-  tolerances. Any physics change goes into both, then regenerate the fixtures. The server owns the
-  seed and config; clients take them from the welcome message.
-  **Touch both implementations.** When you change anything under `src/sim/` or `server/sim/`, change
-  the matching code on the other side in the same commit:
-  1. Edit the TS file and its Go counterpart (`src/sim/layers/foils.ts` ↔ `server/sim/layer_foils.go`,
-     `src/sim/step.ts` ↔ `server/sim/step.go`, and so on).
-  2. A change to the headless polar goes into both `scripts/polar.ts` (with `scripts/lib/`) and
-     `server/cmd/polar/`.
-  3. Run `npm run golden`, then `npm test` and `go test ./server/...`. A pure refactor must leave the
-     regenerated fixtures byte-identical (`git status` shows no change under `server/sim/testdata/`).
+- **One simulation, two targets.** `server/sim` owns stepping, forces, initial config and derived
+  wave compilation. The native server is authoritative; the browser runs the same Go package
+  through wasm for prediction and offline play. The server owns online seed and config.
+  Change physics once in Go, run `npm run golden`, then `npm test` and `go test ./server/...`.
+  `npm run polar` invokes the native Go polar. TypeScript retains only rendering/data helpers;
+  wave, wind (including gusts over ten minutes) and terrain samples are checked against Go at
+  absolute 1e-9 tolerance. Do not reintroduce gameplay physics in TS.
+- **Go wasm cutover, step 3 gate.** `src/physics` validates Go's little-endian state/control
+  layout and loads wasm before connecting or starting play. Failure stops initialization with a
+  visible banner; there is no TS fallback. Go supplies offline config and recompiles derived
+  waves after debug-panel changes. Config adoption preserves references held by the renderer
+  and overlay, including gust settings. Fresh server welcomes also apply config through Go.
+  Ordinary fixed steps use one synchronous call each; diagnostics are evaluated once after the
+  frame's final step. Cast-off returns a new state and consumes its handshake only once.
+  `stepMany` remains available for future replay. The boundary tests replay Go fixtures and
+  the original TS trace through step 600 (601 inputs), including selected diagnostics.
+  The original TS fixtures remain frozen in `server/sim/testdata/golden-ts/` until step 3b
+  approval; normal fixtures are generated by Go. Rewind/replay remains a later gated step.
+- **Cutover performance check (Apple M5, headless Chromium).** In matched comparison runs,
+  mean TS steps were about 68–73 µs; wasm was 236–237 µs before and 201–208 µs after avoiding
+  redundant surface `exp(0)` work and using `Sincos` for wave particles. A no-op wasm call
+  cost about 8.2–8.5 µs, and state/control buffer round trips about 11 µs. Native profiling
+  attributed about 66% of cumulative CPU time to wave sampling. `sim.Step` retains one
+  576-byte allocation for its owned diagnostic results (intermediate substeps use stack
+  storage); the 3,000-step wasm allocation probe recorded no GC cycles. Physics, not boundary
+  overhead or GC, dominates. Hot-loop wasm timing is lower than live-frame timing and should
+  not be substituted for the comparison-run numbers.
 - Water follows the boat continuously, but wave phase stays anchored to world coordinates.
   Only the flat-water debug grid snaps. Filter rendering detail to mesh/pixel resolution.
   A **render-side floating origin** follows the interpolated boat every frame, without threshold jumps.
@@ -159,7 +170,7 @@ Rules:
   server-side, so a client cannot pick where it appears; a boat left moored starts at a free berth),
   else at a free berth or spawn slot. Leaving the page closes the
   socket at once (`pagehide`), so the boat disappears for others immediately.
-- **Client prediction** (`src/net/correction.ts`): the TS sim predicts every step; each snapshot is
+- **Client prediction** (`src/net/correction.ts`): Go wasm predicts every step; each snapshot is
   compared with the prediction recorded for its acked input (256-step history), minus corrections
   applied since. Small errors blend out over 0.2 s; over 2 m, 20 degrees, a different boom side or
   a different moored flag the state snaps; an ack older than the history resyncs. A cast-off the
@@ -676,7 +687,7 @@ capsize, planing and stronger wind, third-person camera, cruising / management l
 - Keep `sim/` pure. If a change needs Three.js inside `sim/`, stop and ask.
 - No invented constants. Cite a reference file or mark `// TUNING GUESS`.
 - Keep a debug overlay up to date with whatever you add to the physics.
-- After a physics change, run `scripts/polar.ts` and report the result.
+- After a physics change, run `npm run polar` and report the result.
 - Every physics layer must be individually toggleable. Never merge two layers into one function that cannot be disabled.
 - Prefer small files with clear names over large mixed ones.
 

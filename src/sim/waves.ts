@@ -1,4 +1,7 @@
 /**
+ * Render-only copy of server/sim/waves.go: drawing only. Gameplay (forces, wind on the sail, grounding, buoy checks) comes from the Go physics (src/physics). Kept equal by src/sim/renderParity.test.ts.
+ */
+/**
  * Shared CPU/shader Gerstner model. GPU Gems ch. 1 §1.2.3 Eq. 9, with y up,
  * k = 2 pi / wavelength and omega = sqrt(g k) (Eq. 13). Direction is TO.
  * Phase = k dot(direction, label) - omega t + phase0.
@@ -7,126 +10,10 @@
  * Multiple components and the boat response are approximations, not a sea-state VPP.
  */
 import parameters from '../../data/waves.json';
-import { DEG, G, clamp } from './frames';
-
-export interface WaveComponent {
-  readonly dx: number;
-  readonly dz: number;
-  readonly k: number;
-  readonly omega: number;
-  readonly amplitude: number;
-  readonly phase: number;
-  readonly choppiness: number;
-}
-
-export interface WaveConfig {
-  enabled: boolean;
-  amplitudeScale: number;
-  bigScale: number;
-  rippleScale: number;
-  /** Fixed seed for strengths/phases; wind and sea controls never re-roll it. */
-  seed: number;
-  /** Wind driving the compiled sea, updated alongside the true wind by its owner. */
-  windSpeedKn: number;
-  /** Cached safe overall amplitude multiplier for the compiled components. */
-  amplitudeLimit: number;
-  /** Primary broad-wave period at reference wind, seconds. */
-  periodSeconds: number;
-  /** Primary wave propagation TO compass bearing, degrees. */
-  directionDeg: number;
-  components: readonly WaveComponent[];
-}
-
-const components: readonly WaveComponent[] = [...parameters.bigWaves, ...parameters.ripples].map((w) => {
-  const k = 2 * Math.PI / w.wavelength;
-  return Object.freeze({
-    dx: Math.sin(w.directionOffsetDeg * DEG), dz: -Math.cos(w.directionOffsetDeg * DEG),
-    k, omega: Math.sqrt(G * k), amplitude: w.amplitude, phase: w.phase, choppiness: w.choppiness,
-  });
-});
-
-export function defaultWaves(seed = parameters.variation.seed): WaveConfig {
-  // Headless/flat-water callers retain their existing behavior. main.ts enables browser waves.
-  const cfg: WaveConfig = {
-    enabled: false, amplitudeScale: parameters.amplitudeScale,
-    bigScale: 1, rippleScale: 1, windSpeedKn: parameters.wind.referenceSpeedKn,
-    seed,
-    amplitudeLimit: parameters.maxAmplitudeScale,
-    periodSeconds: 2 * Math.PI / components[0]!.omega,
-    directionDeg: parameters.directionDeg, components,
-  };
-  compileWaves(cfg);
-  return cfg;
-}
+import { clamp } from './frames';
+import type { WaveComponent, WaveConfig } from '../physics/types';
 
 export const WAVE_PARAMETERS = parameters;
-
-/** Stateless 32-bit mixing: deterministic variation without per-sample randomness. */
-function randomUnit(seed: number, index: number): number {
-  let value = (seed + Math.imul(index + 1, 0x9e3779b9)) | 0;
-  value = Math.imul(value ^ (value >>> 16), 0x21f0aaad);
-  value = Math.imul(value ^ (value >>> 15), 0x735a2d97);
-  return ((value ^ (value >>> 15)) >>> 0) / 0x100000000;
-}
-
-/** Recompile only when wind or sea controls change, never per frame/sample. */
-function compileWaves(cfg: WaveConfig): void {
-  const ratio = cfg.windSpeedKn / parameters.wind.referenceSpeedKn;
-  const lengthRatio = Math.max(parameters.wind.minLengthRatio, ratio);
-  const periodRatio = cfg.periodSeconds * components[0]!.omega / (2 * Math.PI)
-    * lengthRatio ** parameters.wind.bigPeriodExponent;
-  const rippleLength = lengthRatio ** parameters.wind.rippleLengthExponent;
-  const bigHeight = ratio ** parameters.wind.bigHeightExponent * cfg.bigScale;
-  const rippleHeight = ratio ** parameters.wind.rippleHeightExponent * cfg.rippleScale;
-  const turn = cfg.directionDeg * DEG;
-  const c = Math.cos(turn), s = Math.sin(turn);
-  let steepness = 0;
-  let height = 0;
-  cfg.components = components.map((w, i) => {
-    const big = i < parameters.bigWaves.length;
-    // TUNING GUESS (waves.json variation): jitter ripple spacing/direction at compilation only.
-    // Extra random indices are disjoint from strength/phase, preserving the broad-wave spectrum.
-    const extra = 2 * (components.length + i);
-    const lengthVariation = big ? 1 : 1 + parameters.variation.rippleLengthSpread
-      * (2 * randomUnit(cfg.seed, extra) - 1);
-    const angleVariation = big ? 0 : parameters.variation.rippleDirectionSpreadDeg * DEG
-      * (2 * randomUnit(cfg.seed, extra + 1) - 1);
-    const direction = turn + angleVariation;
-    const dc = big ? c : Math.cos(direction), ds = big ? s : Math.sin(direction);
-    const length = (big ? periodRatio * periodRatio : rippleLength) * lengthVariation;
-    const k = w.k / length;
-    const strength = 1 + parameters.variation.amplitudeSpread * (2 * randomUnit(cfg.seed, i * 2) - 1);
-    const amplitude = w.amplitude * (big ? bigHeight : rippleHeight) * strength;
-    const phase = w.phase + 2 * Math.PI * randomUnit(cfg.seed, i * 2 + 1);
-    steepness += k * amplitude * w.choppiness;
-    height += amplitude;
-    return Object.freeze({
-      ...w, dx: w.dx * dc - w.dz * ds, dz: w.dx * ds + w.dz * dc,
-      k, omega: Math.sqrt(G * k), amplitude, phase,
-    });
-  });
-  cfg.amplitudeLimit = height === 0 ? 0
-    : Math.min(parameters.maxAmplitudeScale, parameters.maxSteepness / steepness);
-}
-
-export function setWaveParameters(cfg: WaveConfig, periodSeconds: number, directionDeg: number): void {
-  cfg.periodSeconds = clamp(periodSeconds, parameters.minPeriodSeconds, parameters.maxPeriodSeconds);
-  cfg.directionDeg = ((directionDeg % 360) + 360) % 360;
-  compileWaves(cfg);
-}
-
-export function setWaveWind(cfg: WaveConfig, speedKn: number): void {
-  const speed = Math.max(0, speedKn);
-  if (cfg.windSpeedKn === speed) return;
-  cfg.windSpeedKn = speed;
-  compileWaves(cfg);
-}
-
-export function setWaveLayers(cfg: WaveConfig, bigScale: number, rippleScale: number): void {
-  cfg.bigScale = clamp(bigScale, 0, parameters.maxLayerScale);
-  cfg.rippleScale = clamp(rippleScale, 0, parameters.maxLayerScale);
-  compileWaves(cfg);
-}
 
 export function waveAmplitude(cfg: WaveConfig): number {
   return cfg.enabled ? clamp(cfg.amplitudeScale, 0, cfg.amplitudeLimit) : 0;

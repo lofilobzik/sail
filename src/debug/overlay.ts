@@ -5,7 +5,8 @@
  * In server mode the server owns the config: the Physics controls are shown disabled, reset still works,
  * and a Network section shows the connection.
  */
-import { DEG, KNOT, WAVE_PARAMETERS, setWaveParameters, setWaveWind, setWaveLayers, waveAmplitude, worldToBearing, wrap2Pi, type BoatState, type Diagnostics, type SimConfig } from '../sim';
+import { DEG, KNOT, WAVE_PARAMETERS, waveAmplitude, worldToBearing, wrap2Pi } from '../sim';
+import type { BoatState, Diagnostics, SimConfig } from '../physics/types';
 import type { ArrowVisibility } from '../render/vectors';
 import { BINDINGS } from '../input/bindings';
 
@@ -42,7 +43,8 @@ export class DebugOverlay {
     private readonly cfg: SimConfig,
     onReset: () => void,
     /** Server mode: the config is the server's, so the Physics controls are read-only. */
-    serverOwned = false,
+    serverOwned: boolean,
+    options: { onConfigChange: () => void },
   ) {
     const r = this.root;
     r.style.cssText =
@@ -62,7 +64,7 @@ export class DebugOverlay {
       this.text[g] = pre;
     }
 
-    this.buildPhysics(onReset, serverOwned);
+    this.buildPhysics(onReset, serverOwned, options.onConfigChange);
     if (serverOwned) {
       const sec = this.section('Network');
       this.network = document.createElement('pre');
@@ -165,7 +167,7 @@ export class DebugOverlay {
     return sec;
   }
 
-  private buildPhysics(onReset: () => void, serverOwned: boolean): void {
+  private buildPhysics(onReset: () => void, serverOwned: boolean, onConfigChange: () => void): void {
     const cfg = this.cfg;
     const outer = this.section('Physics');
     // A disabled fieldset disables every control inside it; the reset button stays outside.
@@ -176,50 +178,57 @@ export class DebugOverlay {
     outer.appendChild(sec);
 
     for (const key of Object.keys(cfg.layers) as (keyof SimConfig['layers'])[]) {
-      this.checkbox(sec, `layer ${key}`, cfg.layers[key], (v) => (cfg.layers[key] = v));
+      this.checkbox(sec, `layer ${key}`, cfg.layers[key], (v) => { cfg.layers[key] = v; onConfigChange(); });
     }
     for (const key of Object.keys(cfg.terms) as (keyof SimConfig['terms'])[]) {
-      this.checkbox(sec, `term ${key}`, cfg.terms[key], (v) => (cfg.terms[key] = v));
+      this.checkbox(sec, `term ${key}`, cfg.terms[key], (v) => { cfg.terms[key] = v; onConfigChange(); });
     }
     const m = cfg.models;
-    this.select(sec, 'lift slope', ['standard', 'printed'], m.liftSlope, (v) => (m.liftSlope = v as typeof m.liftSlope));
-    this.select(sec, 'lambda0 unit', ['deg', 'rad'], m.lambda0Unit, (v) => (m.lambda0Unit = v as typeof m.lambda0Unit));
-    this.select(sec, 'lambda0 sign', ['1', '-1'], String(m.lambda0Sign), (v) => (m.lambda0Sign = v === '1' ? 1 : -1));
-    this.select(sec, 'upright hull', ['delft', 'tank'], m.uprightResistance, (v) => (m.uprightResistance = v as typeof m.uprightResistance));
+    this.select(sec, 'lift slope', ['standard', 'printed'], m.liftSlope, (v) => { m.liftSlope = v as typeof m.liftSlope; onConfigChange(); });
+    this.select(sec, 'lambda0 unit', ['deg', 'rad'], m.lambda0Unit, (v) => { m.lambda0Unit = v as typeof m.lambda0Unit; onConfigChange(); });
+    this.select(sec, 'lambda0 sign', ['1', '-1'], String(m.lambda0Sign), (v) => { m.lambda0Sign = v === '1' ? 1 : -1; onConfigChange(); });
+    this.select(sec, 'upright hull', ['delft', 'tank'], m.uprightResistance, (v) => { m.uprightResistance = v as typeof m.uprightResistance; onConfigChange(); });
 
     this.numberInput(sec, `wind kn (${WIND_MIN_KN}-${WIND_MAX_KN})`, cfg.wind.speedKn, (v, el) => {
       cfg.wind.speedKn = Math.min(WIND_MAX_KN, Math.max(WIND_MIN_KN, v));
-      setWaveWind(cfg.waves, cfg.wind.speedKn);
+      cfg.waves.windSpeedKn = cfg.wind.speedKn;
+      onConfigChange();
       el.value = String(cfg.wind.speedKn);
     });
     this.numberInput(sec, 'wind from °', cfg.wind.fromDeg, (v, el) => {
       cfg.wind.fromDeg = ((v % 360) + 360) % 360;
+      onConfigChange();
       el.value = String(cfg.wind.fromDeg);
     });
     const gusts = cfg.wind.gusts;
     if (gusts) {
-      this.checkbox(sec, 'gusts and shifts', gusts.enabled, (v) => (gusts.enabled = v));
-      this.rangeInput(sec, 'gust strength', gusts.gustScale, 2, (v) => (gusts.gustScale = v));
-      this.rangeInput(sec, 'wind shifts', gusts.shiftScale, 2, (v) => (gusts.shiftScale = v));
+      this.checkbox(sec, 'gusts and shifts', gusts.enabled, (v) => { gusts.enabled = v; onConfigChange(); });
+      this.rangeInput(sec, 'gust strength', gusts.gustScale, 2, (v) => { gusts.gustScale = v; onConfigChange(); });
+      this.rangeInput(sec, 'wind shifts', gusts.shiftScale, 2, (v) => { gusts.shiftScale = v; onConfigChange(); });
     }
 
-    this.checkbox(sec, 'seabed grounding (bay)', cfg.land, (v) => (cfg.land = v));
-    this.checkbox(sec, 'waves', cfg.waves.enabled, (v) => (cfg.waves.enabled = v));
+    this.checkbox(sec, 'seabed grounding (bay)', cfg.land, (v) => { cfg.land = v; onConfigChange(); });
+    this.checkbox(sec, 'waves', cfg.waves.enabled, (v) => { cfg.waves.enabled = v; onConfigChange(); });
     this.rangeInput(sec, 'wave amplitude', cfg.waves.amplitudeScale, WAVE_PARAMETERS.maxAmplitudeScale, (v) => {
       cfg.waves.amplitudeScale = v;
+      onConfigChange();
     });
     this.rangeInput(sec, 'big waves', cfg.waves.bigScale, WAVE_PARAMETERS.maxLayerScale, (v) => {
-      setWaveLayers(cfg.waves, v, cfg.waves.rippleScale);
+      cfg.waves.bigScale = v;
+      onConfigChange();
     });
     this.rangeInput(sec, 'ripples', cfg.waves.rippleScale, WAVE_PARAMETERS.maxLayerScale, (v) => {
-      setWaveLayers(cfg.waves, cfg.waves.bigScale, v);
+      cfg.waves.rippleScale = v;
+      onConfigChange();
     });
     this.numberInput(sec, 'broad period at 7 kn s (2–8)', cfg.waves.periodSeconds, (v, el) => {
-      setWaveParameters(cfg.waves, v, cfg.waves.directionDeg);
+      cfg.waves.periodSeconds = v;
+      onConfigChange();
       el.value = cfg.waves.periodSeconds.toFixed(2);
     });
     this.numberInput(sec, 'wave direction TO °', cfg.waves.directionDeg, (v, el) => {
-      setWaveParameters(cfg.waves, cfg.waves.periodSeconds, v);
+      cfg.waves.directionDeg = v;
+      onConfigChange();
       el.value = String(cfg.waves.directionDeg);
     });
 

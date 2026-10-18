@@ -1,6 +1,9 @@
 /**
- * The bay: one analytic, seeded elevation function shared by physics (grounding), the chart and the
- * land mesh. Elevation is metres above mean sea level; negative values are water depth.
+ * Render-only copy of server/sim/terrain.go: drawing only. Gameplay (forces, wind on the sail, grounding, buoy checks) comes from the Go physics (src/physics). Kept equal by src/sim/renderParity.test.ts.
+ */
+/**
+ * The bay: one analytic, seeded elevation function for the chart and land mesh.
+ * Elevation is metres above mean sea level; negative values are water depth.
  * Layout and every constant live in data/bay.json.
  */
 import bay from '../../data/bay.json';

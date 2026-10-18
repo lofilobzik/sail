@@ -468,7 +468,7 @@ position: the sailor reads values, remembers them and later plots them.
 
 Do not tune by feel. Validate against numbers.
 
-`scripts/polar.ts` (headless, Node):
+`npm run polar` (`server/cmd/polar`, native Go):
 1. Fix true wind at 7 kn (and test 6 and 8).
 2. For each true wind angle from 30 to 180 degrees in steps, hold a fixed heading with the sheet set to the
    best trim for that angle (search over sheet), run to steady state, record boat speed and leeway.

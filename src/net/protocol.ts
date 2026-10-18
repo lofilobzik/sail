@@ -5,7 +5,7 @@
  * The connect URL may carry `?resume=<token>` (the `resume` of an earlier welcome) to get the same
  * boat back after a drop, and `?player=<sailor code>` (src/net/sailorCode.ts) for challenge progress.
  */
-import type { BoatState, Controls, SimConfig } from '../sim';
+import type { BoatState, Controls, SimConfig } from '../physics/types';
 
 /** Sent once on connect. `config` is the SimConfig as the server runs it (Go JSON, same field names). */
 export interface WelcomeMessage {

@@ -1,6 +1,7 @@
 /** World-anchored Gerstner water, tinted over baked shallows; CPU samples and this shader share waves.ts. */
 import * as THREE from 'three';
-import { gerstnerGLSL, rippleCutoff, waveAmplitude, wavePhaseAt, WAVE_PARAMETERS, type WaveConfig } from '../sim/waves';
+import { gerstnerGLSL, rippleCutoff, waveAmplitude, wavePhaseAt, WAVE_PARAMETERS } from '../sim/waves';
+import type { WaveConfig } from '../physics/types';
 import type { Vec2 } from '../sim/frames';
 import { terrainGrid } from '../sim/terrain';
 import type { WakeView } from './wake';

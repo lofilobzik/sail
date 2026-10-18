@@ -2,7 +2,9 @@
  * WebSocket client for the Go server: sends inputs, keeps the newest snapshot, buffers the other
  * boats, measures round trips, and reconnects with the resume token after a drop.
  */
-import { browserConfig, setWaveLayers, setWaveParameters, setWaveWind, type Controls, type SimConfig } from '../sim';
+import { adoptPhysicsConfig } from '../physics/bridge';
+import type { Physics } from '../physics/bridge';
+import type { Controls, SimConfig } from '../physics/types';
 import { mergeChallenges } from './challenges';
 import type { ChallengeStatus, ClientMessage, ServerMessage, SnapshotMessage, WelcomeMessage } from './protocol';
 import { RemoteFleet } from './remote';
@@ -152,7 +154,7 @@ export class NetClient {
     };
     const arm = (ms: number, reason: string): void => {
       clearTimeout(watchdog);
-      watchdog = setTimeout(() => end(reason, 0), ms);
+      watchdog = window.setTimeout(() => end(reason, 0), ms);
     };
     arm(CONNECT_TIMEOUT_MS, `no answer within ${CONNECT_TIMEOUT_MS / 1000} s`);
     ws.addEventListener('message', (e) => {
@@ -221,38 +223,15 @@ export class NetClient {
   }
 }
 
-/**
- * The client's sim config: browserConfig(seed) with the server's settings copied over, so the
- * prediction runs the same world. Wave components are recompiled locally from the copied settings.
- */
-export function configFromWelcome(w: WelcomeMessage): SimConfig {
-  const cfg = browserConfig(w.seed);
-  adoptServerConfig(cfg, w);
-  return cfg;
+/** Normalize the authoritative world using the same Go sim that predicts it. */
+export function configFromWelcome(w: WelcomeMessage, physics: Physics): SimConfig {
+  return physics.setConfig({ ...w.config, dt: w.dt });
 }
 
 /**
  * Copies the server's settings into `cfg` in place (every seeded part included), so a reconnect to
  * a restarted server, with a new seed, changes the world the page already draws.
  */
-export function adoptServerConfig(cfg: SimConfig, w: WelcomeMessage): void {
-  const s = w.config;
-  Object.assign(cfg.layers, s.layers);
-  Object.assign(cfg.terms, s.terms);
-  Object.assign(cfg.models, s.models);
-  Object.assign(cfg.env, s.env);
-  cfg.wind.speedKn = s.wind.speedKn;
-  cfg.wind.fromDeg = s.wind.fromDeg;
-  if (s.wind.gusts) cfg.wind.gusts = { ...s.wind.gusts };
-  else delete cfg.wind.gusts;
-  cfg.land = s.land;
-  cfg.dt = w.dt;
-  cfg.substeps = s.substeps;
-  const waves = cfg.waves;
-  waves.enabled = s.waves.enabled;
-  waves.amplitudeScale = s.waves.amplitudeScale;
-  waves.seed = s.waves.seed;
-  setWaveWind(waves, s.waves.windSpeedKn);
-  setWaveLayers(waves, s.waves.bigScale, s.waves.rippleScale);
-  setWaveParameters(waves, s.waves.periodSeconds, s.waves.directionDeg);
+export function adoptServerConfig(cfg: SimConfig, w: WelcomeMessage, physics: Physics): void {
+  adoptPhysicsConfig(cfg, configFromWelcome(w, physics));
 }

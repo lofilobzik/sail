@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { WIND_PARAMETERS, windSpeedFactor, type WindConfig } from '../sim';
+import { WIND_PARAMETERS, windSpeedFactor } from '../sim';
+import type { WindConfig } from '../physics/types';
 import { GustMap } from './gustMap';
 
 const V = WIND_PARAMETERS.visual;

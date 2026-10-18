@@ -11,7 +11,7 @@ import buoyData from '../../data/buoys.json';
 import laser from '../../data/laser.json';
 import { BINDINGS, keyLabelList } from '../input/bindings';
 import type { CameraMode } from '../render/scene';
-import type { BoatState, Diagnostics } from '../sim';
+import type { BoatState, Diagnostics } from '../physics/types';
 import { DEG, type Vec2 } from '../sim/frames';
 import type { Preferences } from './prefs';
 

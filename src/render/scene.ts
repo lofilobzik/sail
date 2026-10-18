@@ -3,8 +3,9 @@
  * and cameras (first-person, plus an outside view for checking). Reads state only.
  */
 import * as THREE from 'three';
-import { BERTHS, berthIndexAt, meanWind, type BoatModel, type EnvironmentConfig, type Vec2, type WindConfig } from '../sim';
-import { createWaveSample, sampleWaves, waveAmplitude, type WaveConfig } from '../sim/waves';
+import { BERTHS, berthIndexAt, meanWind, type BoatModel, type Vec2 } from '../sim';
+import { createWaveSample, sampleWaves, waveAmplitude } from '../sim/waves';
+import type { EnvironmentConfig, WindConfig, WaveConfig } from '../physics/types';
 import { createBoatMesh, type BoatMesh, type BoatPose } from './boatMesh';
 import { QUALITY, type Quality } from './quality';
 import { createBuoys } from './environment';

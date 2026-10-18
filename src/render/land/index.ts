@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import { terrainGrid } from '../../sim/terrain';
 import type { Vec2 } from '../../sim/frames';
-import type { WaveConfig } from '../../sim/waves';
+import type { WaveConfig } from '../../physics/types';
 import type { SkyView } from '../sky';
 import { Footprints, waterDistance } from './ground';
 import { fadeDetailBySize } from './detailFade';

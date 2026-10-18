@@ -17,6 +17,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/sim", "src/nav", "data", "scripts"],
-  "exclude": ["scripts/renderChart.ts"]
+  "include": ["src/sim", "src/nav", "data", "scripts/renderMap.ts", "scripts/lib/raster.ts"]
 }

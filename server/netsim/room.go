@@ -493,7 +493,7 @@ func (r *Room) detach(b *roomBoat) {
 // input queues one input for m's boat; step applies it as one sim step, in seq order.
 func (r *Room) input(m *member, seq int64, c sim.Controls, castOff bool) {
 	if b := m.boat; b.member == m {
-		b.queue.push(queuedInput{seq: seq, controls: clampControls(c), castOff: castOff})
+		b.queue.push(queuedInput{seq: seq, controls: sim.ClampControls(c), castOff: castOff})
 	}
 }
 
@@ -583,13 +583,4 @@ func spawnSlots(n int) []sim.Vec2 {
 		slots[k] = sim.Vec2{X: dep.X + float64(cells[k].i)*spawnSpacing, Z: dep.Z + float64(cells[k].j)*spawnSpacing}
 	}
 	return slots
-}
-
-// clampControls clamps like TS step (src/sim/step.ts), so snapshots report the controls as applied.
-func clampControls(c sim.Controls) sim.Controls {
-	return sim.Controls{
-		Tiller: math.Min(1, math.Max(-1, c.Tiller)),
-		Sheet:  math.Min(1, math.Max(0, c.Sheet)),
-		Hike:   math.Min(1, math.Max(0, c.Hike)),
-	}
 }

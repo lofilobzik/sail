@@ -20,6 +20,11 @@ reaches the server at `wss://dinghysail.ing/ws`. Opening **https://dinghysail.in
 server automatically; `https://dinghysail.ing/?offline` sails locally in the browser instead. If the
 server can't be reached within 5 s, the page says so and sails offline.
 
+The image's build-platform Go stage compiles the platform-independent `public/wasm/sim.wasm`
+and copies the matching `wasm_exec.js` into the Node site stage before Vite builds. CI builds
+wasm before TypeScript checks and boundary tests, and vets the `js/wasm` target separately.
+The Go static server serves `.wasm` as `application/wasm` for streaming instantiation.
+
 ## One-time setup
 
 Do these in order: the box can only install once the image exists and is public.
@@ -111,7 +116,10 @@ there is no release tooling. The build is the short commit, embedded by `vite.co
 production builds: from `GIT_COMMIT` (the workflow passes `github.sha` as a build argument),
 otherwise from the checkout's `git rev-parse HEAD`. The dev server, tests and builds without git
 show `dev`. A local image build passes it explicitly:
-`podman build --build-arg GIT_COMMIT=$(git rev-parse HEAD) -f Containerfile .`
+`podman build --format docker --build-arg GIT_COMMIT=$(git rev-parse HEAD) -f Containerfile .`
+Use Docker image format with Podman to preserve the Containerfile's healthcheck (OCI format
+does not support it). The wasm build stage supplies both `wasm/sim.wasm` in the served site
+and the matching `wasm_exec.js`, bundled into the site's JavaScript.
 
 To release, set `"version"` in `package.json` (and `npm install --package-lock-only` so the lock
 file matches), note the release below, and push to `main`. Change the `Alpha` label in

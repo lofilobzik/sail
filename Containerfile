@@ -2,6 +2,14 @@
 # Built by .github/workflows/deploy.yml for linux/amd64 and linux/arm64. The build stages run on the
 # build machine's own architecture and Go cross-compiles, so no emulation is needed.
 
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.27 AS wasm
+WORKDIR /src
+COPY go.mod go.sum ./
+COPY data ./data
+COPY server ./server
+RUN GOOS=js GOARCH=wasm go build -trimpath -ldflags='-s -w' -o /out/sim.wasm ./server/cmd/simwasm \
+    && cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" /out/wasm_exec.js
+
 FROM --platform=$BUILDPLATFORM docker.io/library/node:24-bookworm-slim AS site
 WORKDIR /src
 COPY package.json package-lock.json ./
@@ -10,6 +18,8 @@ COPY index.html vite.config.ts tsconfig.json tsconfig.sim.json ./
 COPY data ./data
 COPY src ./src
 COPY scripts ./scripts
+COPY --from=wasm /out/sim.wasm public/wasm/sim.wasm
+COPY --from=wasm /out/wasm_exec.js src/physics/wasm_exec.js
 # The commit shown in the Esc menu (.git is not in the build context); without it the menu says "dev".
 ARG GIT_COMMIT
 # vite build only: typecheck and tests already ran in CI before the image job.

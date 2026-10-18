@@ -1,4 +1,7 @@
-import type { WindConfig } from './config';
+/**
+ * Render-only copy of server/sim/wind.go: drawing only. Gameplay (forces, wind on the sail, grounding, buoy checks) comes from the Go physics (src/physics). Kept equal by src/sim/renderParity.test.ts.
+ */
+import type { WindConfig } from '../physics/types';
 import { DEG, KNOT, bearingToWorld, type Vec2 } from './frames';
 import windData from '../../data/wind.json';
 

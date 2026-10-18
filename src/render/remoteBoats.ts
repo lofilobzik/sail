@@ -10,7 +10,8 @@
  */
 import * as THREE from 'three';
 import { DEG, type BoatModel, type Vec2 } from '../sim';
-import { createWaveSample, sampleWaves, waveAmplitude, type WaveConfig } from '../sim/waves';
+import { createWaveSample, sampleWaves, waveAmplitude } from '../sim/waves';
+import type { WaveConfig } from '../physics/types';
 import type { RemotePose } from '../net/remote';
 import { createBoatMesh, type BoatMesh, type BoatPose } from './boatMesh';
 

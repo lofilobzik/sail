@@ -2,14 +2,14 @@
  * Boat wake and emitted bow fronts for the water shader (visual only, reads sim state).
  * Keeps a world-anchored Kelvin trail and a bow field for render/wake/kelvin.ts; the bow field is
  * rendered on the GPU from the packed fronts (render/wake/bowField.ts) into a float target.
- * Kelvin source amplitude comes from the sim's Delft residuary resistance.
+ * Kelvin source amplitude comes from a drawing-only Delft wave-making estimate.
  */
 import * as THREE from 'three';
-import { delftUpright, type BoatModel, type EnvironmentConfig, type Vec2 } from '../sim';
-import type { WaveConfig } from '../sim/waves';
+import type { BoatModel, Vec2 } from '../sim';
+import type { EnvironmentConfig, WaveConfig } from '../physics/types';
 import type { GpuTimer } from '../debug/gpuTimer';
 import type { BoatLayout } from './boatLayout';
-import { WAKE, bowWaveHeight, wakeBoundsMargin, wakeSourceAmplitude } from './wake/kelvin';
+import { WAKE, bowWaveHeight, wakeBoundsMargin, wakeResiduary, wakeSourceAmplitude } from './wake/kelvin';
 import { BowContact, type ContactPose } from './wake/contact';
 import { BowWaveField, bowFieldGLSL, type BowEmitter } from './wake/bowField';
 import { WakeTrail } from './wake/trail';
@@ -128,7 +128,7 @@ export class WakeView {
     const stemX = pose.x + fx * this.stemX;
     const stemZ = pose.z + fz * this.stemX;
     const speed = this.enabled && pose.surge > WAKE.minSpeed ? pose.surge : 0;
-    const residuary = speed > 0 ? delftUpright(this.model, speed, this.env).residuary : 0;
+    const residuary = speed > 0 ? wakeResiduary(this.model, speed, this.env.rhoWater) : 0;
     const amplitude = WAKE.visualGain * wakeSourceAmplitude(residuary, this.env.rhoWater, this.model.cfg.hull.beam);
 
     const bounds = u.wakeBounds.value;
