@@ -263,9 +263,9 @@ describe('ServerLink rewind/replay lifecycle and render correction', () => {
 
   it('replays precisely the clamped controls sent to the server without mutating predictions', () => {
     const { client, link, initial } = h;
-    const applied = Object.freeze(physics.clampControls({ tiller: 1.7, sheet: -0.2, hike: 2 }));
     const first = Object.freeze(physics.step(initial, APPLIED));
-    const second = Object.freeze(physics.step(first, applied));
+    const second = Object.freeze(physics.step(first, { tiller: 1.7, sheet: -0.2, hike: 2 }));
+    const applied = Object.freeze(physics.appliedControls());
     link.afterStep(first, APPLIED, false);
     link.afterStep(second, applied, false);
     expect(client.sent[1]!.controls).toEqual({ tiller: 1, sheet: 0, hike: 1 });

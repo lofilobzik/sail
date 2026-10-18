@@ -96,8 +96,12 @@ Rules:
   visible banner; there is no TS fallback. Go supplies offline config and recompiles derived
   waves after debug-panel changes. Config adoption preserves references held by the renderer
   and overlay, including gust settings. Fresh server welcomes also apply config through Go.
-  Ordinary fixed steps use one synchronous call each; diagnostics are evaluated once after the
-  frame's final step. Cast-off returns a new state and consumes its handshake only once.
+  Ordinary fixed steps use one synchronous call each; the step writes back the new state and the
+  controls it applied (clamped like the server's queue), which the client sends and records, so
+  there is no separate clamp call. Diagnostics are read once after the frame's final step through
+  a shared float64 buffer: Go publishes the flattened `Diagnostics` field table (nullable sections
+  included) in `layout()`, and the bridge rebuilds a fresh object from it, with no JSON per frame.
+  Cast-off returns a new state and consumes its handshake only once.
   `stepMany` is available for batched stepping; reconciliation replays individual saved inputs
   so every intermediate prediction can be updated. Boundary tests replay Go fixtures through
   step 600 (601 inputs), including selected diagnostics. Frozen TS fixtures were removed after
@@ -285,7 +289,10 @@ fraction of a second and holds its position. Same idea for the sheet.
 - **Wake and bow wave (visual only):** the water shader adds a Kelvin wake (transverse and divergent
   waves, 19.47 degree cusp), a bow wave hugging the waterline, and turbulent foam behind the transom
   and on the bow crest. Only new bow emissions follow the foremost hull/sea contact using heave,
-  pitch and heel. Each emitted front retains its birth contact in logical-world doubles, propagates
+  pitch and heel. That contact search inverts the Gerstner displacement at every hull sample: each
+  hull point and waterline edge starts from last frame's displacement and root (a ±2^-8 bracket,
+  verified before use), and falls back to a cold start after resets, jumps over 2 m or 20°, gaps
+  over 0.25 s or a new wave spectrum. Each emitted front retains its birth contact in logical-world doubles, propagates
   outward and fades independently; lifting/dropping the bow cannot relocate the older V. Smooth
   birth/expiry and bounded overlap blend successive contributions without a live-anchored V fallback.
   Kelvin sits at `visualGain = 0.8`; bow height uses `bowHeadFrac = 0.30` and `bowLength = 5` for a more prominent

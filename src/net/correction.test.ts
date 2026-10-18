@@ -206,19 +206,17 @@ describe('Reconciler with Go physics', () => {
     expect(castOff).toHaveBeenCalledExactlyOnceWith(four.state);
   });
 
-  it('copies upstream-clamped controls without clamping again during record or replay', () => {
+  it('replays the controls the step applied, unaffected by later mutation of the recorded object', () => {
     const reconciler = new Reconciler(physics);
-    const controls = physics.clampControls({ tiller: 1.7, sheet: -0.2, hike: 2 });
-    expect(controls).toEqual({ tiller: 1, sheet: 0, hike: 1 });
     const authoritative = snapshot(1, physics.mooredAt(0, 0));
-    const expected = physics.step(authoritative.state, controls);
-    const clamp = vi.spyOn(physics, 'clampControls');
+    const expected = physics.step(authoritative.state, { tiller: 1.7, sheet: -0.2, hike: 2 });
+    const controls = physics.appliedControls();
+    expect(controls).toEqual({ tiller: 1, sheet: 0, hike: 1 });
     reconciler.record(2, controls, false, expected);
     Object.assign(controls, { tiller: -1, sheet: 1, hike: 0 });
     const step = vi.spyOn(physics, 'step');
     expect(reconciler.reconcile(authoritative, 2)?.curr).toEqual(expected);
     expect(step).toHaveBeenCalledExactlyOnceWith(authoritative.state, { tiller: 1, sheet: 0, hike: 1 });
-    expect(clamp).not.toHaveBeenCalled();
   });
 
   it('copies recorded predictions and refreshed replay predictions away from mutable states', () => {

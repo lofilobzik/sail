@@ -7,39 +7,66 @@ const STATE_FIELDS = [
 const CONTROL_FIELDS = ['tiller', 'sheet', 'hike'] as const satisfies readonly (keyof Controls)[];
 const CONTROL_OFFSET = STATE_FIELDS.length * 8;
 
+/** One float64 slot of Go's flattened Diagnostics (server/cmd/simwasm diagEntry). */
+interface DiagEntry {
+  key: string;
+  kind: 'object' | 'nullable' | 'number' | 'boolean';
+  parent: number;
+}
+type DiagObject = Record<string, unknown>;
+
 /** Synchronous exports installed by server/cmd/simwasm. */
 export interface GoPhysics {
   layout(): string;
   browserConfig(seed: number): string;
   setConfig(json: string): string;
+  /** Writes back the new state and the controls it applied (clamped). */
   step(io: Uint8Array): void;
   stepMany(io: Uint8Array, count: number): void;
   evaluate(io: Uint8Array): void;
   castOff(io: Uint8Array): void;
   mooredAt(berth: number, t: number, io: Uint8Array): void;
-  diagnostics(): string;
-  clampControls(io: Uint8Array): void;
+  diagnostics(out: Uint8Array): void;
 }
 
 export class Physics {
   private io = new Uint8Array((STATE_FIELDS.length + CONTROL_FIELDS.length) * 8);
   private view = new DataView(this.io.buffer);
+  private readonly diagLayout: readonly DiagEntry[];
+  private readonly diagIo: Uint8Array;
+  private readonly diagView: DataView;
+  /** Per entry, the object built for it this decode (null inside or for a null section). */
+  private readonly diagObjects: (DiagObject | null)[];
 
   constructor(private readonly api: GoPhysics) {
     const goNames = api.layout();
     const tsLayout = { state: STATE_FIELDS, controls: CONTROL_FIELDS };
-    const layout = JSON.parse(goNames) as { state: unknown; controls: unknown };
+    const layout = JSON.parse(goNames) as { state: unknown; controls: unknown; diagnostics: DiagEntry[] };
     if (JSON.stringify(layout.state) !== JSON.stringify(STATE_FIELDS)
       || JSON.stringify(layout.controls) !== JSON.stringify(CONTROL_FIELDS)) {
       throw new Error(`physics layout mismatch: ${goNames} vs ${JSON.stringify(tsLayout)}`);
     }
+    this.diagLayout = layout.diagnostics;
+    this.diagIo = new Uint8Array(this.diagLayout.length * 8);
+    this.diagView = new DataView(this.diagIo.buffer);
+    this.diagObjects = new Array<DiagObject | null>(this.diagLayout.length).fill(null);
   }
 
+  /** One fixed step; appliedControls() then returns the controls it used after clamping. */
   step(state: BoatState, controls: Controls): BoatState {
     this.writeState(state);
     this.writeControls(controls);
     this.api.step(this.io);
     return this.readState();
+  }
+
+  /** The clamped controls the last step() applied: what the server applies for the same input. */
+  appliedControls(): Controls {
+    return {
+      tiller: this.view.getFloat64(CONTROL_OFFSET, true),
+      sheet: this.view.getFloat64(CONTROL_OFFSET + 8, true),
+      hike: this.view.getFloat64(CONTROL_OFFSET + 16, true),
+    };
   }
 
   /** Consecutive inputs without intervening cast-offs; the final step owns diagnostics. */
@@ -64,8 +91,28 @@ export class Physics {
     return this.diagnostics();
   }
 
+  /** A fresh object each call, rebuilt in Go's field order from the shared buffer (no JSON). */
   diagnostics(): Diagnostics {
-    return JSON.parse(this.api.diagnostics()) as Diagnostics;
+    this.api.diagnostics(this.diagIo);
+    const layout = this.diagLayout, objects = this.diagObjects, view = this.diagView;
+    const root: DiagObject = {};
+    for (let i = 0; i < layout.length; i++) {
+      const e = layout[i]!;
+      const parent = e.parent < 0 ? root : objects[e.parent]!;
+      if (parent === null) {
+        objects[i] = null;
+        continue;
+      }
+      const v = view.getFloat64(i * 8, true);
+      if (e.kind === 'number') parent[e.key] = v;
+      else if (e.kind === 'boolean') parent[e.key] = v !== 0;
+      else {
+        const o = e.kind === 'nullable' && v === 0 ? null : {};
+        parent[e.key] = o;
+        objects[i] = o;
+      }
+    }
+    return root as unknown as Diagnostics;
   }
 
   castOff(state: BoatState): BoatState {
@@ -80,16 +127,6 @@ export class Physics {
       throw new RangeError(`invalid physics berth index: ${berthIndex}`);
     }
     return this.readState();
-  }
-
-  clampControls(controls: Controls): Controls {
-    this.writeControls(controls);
-    this.api.clampControls(this.io);
-    return {
-      tiller: this.view.getFloat64(CONTROL_OFFSET, true),
-      sheet: this.view.getFloat64(CONTROL_OFFSET + 8, true),
-      hike: this.view.getFloat64(CONTROL_OFFSET + 16, true),
-    };
   }
 
   browserConfig(seed: number): SimConfig {

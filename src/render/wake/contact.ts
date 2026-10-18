@@ -1,5 +1,5 @@
 /** Render-only intersection of the lofted hull with the undisturbed local sea. No Three.js. */
-import { createWaveSample, sampleWaves } from '../../sim/waves';
+import { createWaveSample, sampleWavesNear } from '../../sim/waves';
 import type { WaveConfig } from '../../physics/types';
 import type { BoatLayout } from '../boatLayout';
 
@@ -11,6 +11,19 @@ export interface ContactPose {
   heel: number;
   t: number;
 }
+
+/** Numerical root refinement, not a physics coefficient: 14 halvings of a sampled edge. */
+const HALVINGS = 14;
+/** A warm bracket of +-2^-8 around last frame's root needs 7 halvings for the same resolution. */
+const WARM_HALF_WIDTH = 2 ** -8;
+const WARM_HALVINGS = 7;
+/**
+ * Beyond these frame-to-frame changes (a reset, respawn, snap or paused tab) last frame's hull
+ * points say nothing about this one: start cold. Numerical choices, not physics.
+ */
+const WARM_MAX_DT = 0.25; // s
+const WARM_MAX_MOVE = 2; // m
+const WARM_MAX_TURN = 0.35; // rad, about 20 degrees
 
 export class BowContact {
   /** Contact in horizontal heading coordinates, relative to the boat reference point. */
@@ -24,6 +37,20 @@ export class BowContact {
   private readonly surface = createWaveSample();
   private sinHeading = 0;
   private cosHeading = 1;
+  /** Last wave displacement found at each hull point (2 per point), the inversion's warm start. */
+  private readonly pointOffsets: Float64Array;
+  /** The same for the bisection along each edge (2 edges per point: from the station ahead, from the point beside). */
+  private readonly edgeOffsets: Float64Array;
+  /** Last root along each edge, 0..1, and the update it was found in. */
+  private readonly edgeRoots: Float64Array;
+  private readonly edgeFrames: Int32Array;
+  private frame = 0;
+  private warm = false;
+  private lastX = 0;
+  private lastZ = 0;
+  private lastT = 0;
+  private lastHeading = 0;
+  private lastComponents: unknown = null;
 
   constructor(layout: BoatLayout, private readonly stations: number) {
     const p = layout.model.cfg.visual.sectionPoints;
@@ -32,6 +59,10 @@ export class BowContact {
     this.body = new Float64Array(count * 3);
     this.transformed = new Float64Array(count * 3);
     this.gaps = new Float64Array(count);
+    this.pointOffsets = new Float64Array(count * 2);
+    this.edgeOffsets = new Float64Array(count * 4);
+    this.edgeRoots = new Float64Array(count * 2);
+    this.edgeFrames = new Int32Array(count * 2).fill(-2);
     // Cache the loft once: no sectionPoint objects or geometry allocations per frame.
     for (let i = 0; i <= stations; i++) {
       const x = layout.bowX - layout.loa * i / stations;
@@ -45,37 +76,80 @@ export class BowContact {
     }
   }
 
-  private clearance(f: number, r: number, y: number, pose: ContactPose, waves: WaveConfig): number {
+  private clearance(f: number, r: number, y: number, pose: ContactPose, waves: WaveConfig, offsets: Float64Array, slot: number): number {
     const x = pose.x + this.sinHeading * f + this.cosHeading * r;
     const z = pose.z - this.cosHeading * f + this.sinHeading * r;
-    sampleWaves(waves, x, z, pose.t, 0, this.surface);
+    sampleWavesNear(waves, x, z, pose.t, 0, this.surface, offsets, slot);
     return y - this.surface.y;
   }
 
-  private consider(a: number, b: number, pose: ContactPose, waves: WaveConfig): void {
-    const points = this.transformed;
-    const ka = a * 3, kb = b * 3;
-    const af = points[ka]!, ar = points[ka + 1]!, ay = points[ka + 2]!;
-    const df = points[kb]! - af, dr = points[kb + 1]! - ar, dy = points[kb + 2]! - ay;
-    let lo = 0, hi = 1;
+  /** Whether the point at fraction t from point a to point b is above the sea. */
+  private dryAt(a: number, b: number, t: number, edge: number, pose: ContactPose, waves: WaveConfig): boolean {
+    const p = this.transformed, ka = a * 3, kb = b * 3;
+    const f = p[ka]! + (p[kb]! - p[ka]!) * t;
+    const r = p[ka + 1]! + (p[kb + 1]! - p[ka + 1]!) * t;
+    const y = p[ka + 2]! + (p[kb + 2]! - p[ka + 2]!) * t;
+    return this.clearance(f, r, y, pose, waves, this.edgeOffsets, edge) > 0;
+  }
+
+  /** Edge `edge` runs from point a (gap known) to point b; the waterline crosses it somewhere. */
+  private consider(a: number, b: number, edge: number, pose: ContactPose, waves: WaveConfig): void {
     const aDry = this.gaps[a]! > 0;
-    // Numerical root refinement, not a physics coefficient: 14 halvings of a sampled edge.
-    for (let i = 0; i < 14; i++) {
+    let lo = 0, hi = 1, halvings = HALVINGS;
+    if (this.edgeFrames[edge] === this.frame - 1) {
+      // Bracket last frame's root; keep it only if the waterline still crosses inside.
+      const root = this.edgeRoots[edge]!;
+      const wlo = Math.max(0, root - WARM_HALF_WIDTH), whi = Math.min(1, root + WARM_HALF_WIDTH);
+      if (this.dryAt(a, b, wlo, edge, pose, waves) === aDry && this.dryAt(a, b, whi, edge, pose, waves) !== aDry) {
+        lo = wlo;
+        hi = whi;
+        halvings = WARM_HALVINGS;
+      }
+    } else {
+      this.edgeOffsets[2 * edge] = this.pointOffsets[2 * a]!;
+      this.edgeOffsets[2 * edge + 1] = this.pointOffsets[2 * a + 1]!;
+    }
+    for (let i = 0; i < halvings; i++) {
       const t = (lo + hi) / 2;
-      if ((this.clearance(af + df * t, ar + dr * t, ay + dy * t, pose, waves) > 0) === aDry) lo = t;
+      if (this.dryAt(a, b, t, edge, pose, waves) === aDry) lo = t;
       else hi = t;
     }
     const t = (lo + hi) / 2;
-    const f = af + df * t;
+    this.edgeRoots[edge] = t;
+    this.edgeFrames[edge] = this.frame;
+    const p = this.transformed, ka = a * 3, kb = b * 3;
+    const f = p[ka]! + (p[kb]! - p[ka]!) * t;
     if (f > this.forward) {
       this.forward = f;
-      this.starboard = ar + dr * t;
-      this.height = ay + dy * t;
+      this.starboard = p[ka + 1]! + (p[kb + 1]! - p[ka + 1]!) * t;
+      this.height = p[ka + 2]! + (p[kb + 2]! - p[ka + 2]!) * t;
     }
+  }
+
+  /** Last frame's results seed this one unless the pose or sea jumped. */
+  private startFrame(pose: ContactPose, waves: WaveConfig): void {
+    const dt = pose.t - this.lastT;
+    const warm = this.warm && waves.components === this.lastComponents
+      && dt >= 0 && dt <= WARM_MAX_DT
+      && Math.hypot(pose.x - this.lastX, pose.z - this.lastZ) <= WARM_MAX_MOVE
+      && Math.abs(Math.atan2(Math.sin(pose.heading - this.lastHeading), Math.cos(pose.heading - this.lastHeading))) <= WARM_MAX_TURN;
+    if (!warm) {
+      this.pointOffsets.fill(0);
+      // No edge was solved "last frame" any more.
+      this.frame++;
+    }
+    this.frame++;
+    this.warm = true;
+    this.lastX = pose.x;
+    this.lastZ = pose.z;
+    this.lastT = pose.t;
+    this.lastHeading = pose.heading;
+    this.lastComponents = waves.components;
   }
 
   /** Search bow to transom; false only when the sampled hull is entirely above the sea. */
   update(pose: ContactPose, waves: WaveConfig, hullY: number, pitch = pose.pitch): boolean {
+    this.startFrame(pose, waves);
     this.sinHeading = Math.sin(pose.heading);
     this.cosHeading = Math.cos(pose.heading);
     const sp = Math.sin(pitch), cp = Math.cos(pitch);
@@ -95,15 +169,15 @@ export class BowContact {
         this.transformed[k] = f;
         this.transformed[k + 1] = side;
         this.transformed[k + 2] = y;
-        this.gaps[index] = this.clearance(f, side, y, pose, waves);
+        this.gaps[index] = this.clearance(f, side, y, pose, waves, this.pointOffsets, index);
         wet ||= this.gaps[index]! <= 0;
       }
       if (!wet) continue;
       for (let j = 0; j < this.row; j++) {
         const index = i * this.row + j;
-        if (i > 0 && this.gaps[index]! <= 0) this.consider(index - this.row, index, pose, waves);
+        if (i > 0 && this.gaps[index]! <= 0) this.consider(index - this.row, index, 2 * index, pose, waves);
         if (j > 0 && (this.gaps[index]! > 0) !== (this.gaps[index - 1]! > 0)) {
-          this.consider(index - 1, index, pose, waves);
+          this.consider(index - 1, index, 2 * index + 1, pose, waves);
         }
       }
       if (this.forward === -Infinity) {

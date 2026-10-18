@@ -79,9 +79,26 @@ export function sampleWaveParticle(
 export function sampleWaves(
   cfg: WaveConfig, x: number, z: number, t: number, depth: number, out: WaveSample,
 ): WaveSample {
+  return sampleWavesNear(cfg, x, z, t, depth, out, COLD_START, 0);
+}
+
+const COLD_START = new Float64Array(2);
+
+/**
+ * sampleWaves with the inversion started from a known horizontal displacement instead of none:
+ * `offsets[2 * slot]`, `offsets[2 * slot + 1]` hold the displacement (world minus particle label)
+ * at this or a nearby point, e.g. last frame's. The iteration has a unique fixed point, so a good
+ * guess only reaches it in fewer passes. The converged displacement is written back to the slot.
+ */
+export function sampleWavesNear(
+  cfg: WaveConfig, x: number, z: number, t: number, depth: number, out: WaveSample,
+  offsets: Float64Array, slot: number,
+): WaveSample {
   let qx = x, qz = z;
   const scale = waveAmplitude(cfg);
   if (scale !== 0) {
+    qx -= offsets[2 * slot]!;
+    qz -= offsets[2 * slot + 1]!;
     // Covers the shortest allowed period at maximum amplitude; exits early for light chop.
     for (let i = 0; i < 48; i++) {
       // Inversion only needs horizontal displacement, not normals or velocity.
@@ -94,6 +111,10 @@ export function sampleWaves(
       }
       qx -= ex; qz -= ez;
       if (Math.abs(ex) + Math.abs(ez) < 1e-10) break;
+    }
+    if (offsets !== COLD_START) {
+      offsets[2 * slot] = x - qx;
+      offsets[2 * slot + 1] = z - qz;
     }
   }
   return sampleWaveParticle(cfg, qx, qz, t, depth, out);

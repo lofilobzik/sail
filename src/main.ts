@@ -380,15 +380,16 @@ function frame(now: number): void {
   for (let i = 0; i < steps; i++) {
     // Flying the camera borrows WASD: the boat sails on with neutral controls.
     const controls = view.mode === 'fly' ? (input.reset(), { ...NEUTRAL_CONTROLS }) : input.update(cfg.dt);
-    const applied = server ? physics.clampControls(controls) : controls;
     const castingOff = castOffRequested && curr.moored;
     if (castingOff) {
       curr = physics.castOff(curr);
       castOffRequested = false;
     }
-    const next = physics.step(curr, applied);
+    const next = physics.step(curr, controls);
     prev = curr;
     curr = next;
+    // The step clamps like the server does; send and record exactly what it applied.
+    const applied = physics.appliedControls();
     lastApplied = applied;
     // GPS watch: speed over ground, from how far the boat moved this step.
     speedOverGround = Math.hypot(curr.x - prev.x, curr.z - prev.z) / cfg.dt;
@@ -439,8 +440,10 @@ function frame(now: number): void {
 
   if (overlay.visible) vectors.update(diagnostics, view.boat.yaw.position, overlay.arrows);
   else vectors.hideAll();
-  overlay.update(diagnostics, curr);
-  if (server && overlay.visible) overlay.setNetwork(server.describe());
+  if (overlay.refreshDue(now)) {
+    overlay.update(diagnostics, curr);
+    if (server) overlay.setNetwork(server.describe());
+  }
   const info = view.renderer.info.render;
   view.renderer.getDrawingBufferSize(hudBuffer);
   hud.update(diagnostics, curr, {

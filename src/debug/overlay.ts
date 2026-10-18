@@ -32,12 +32,17 @@ const n = (v: number): string => `${v.toFixed(1)} N`;
 const nm = (v: number): string => `${v.toFixed(1)} N m`;
 const f3 = (v: number): string => v.toFixed(3);
 
+/** Panel text refresh interval, ms: about 5 Hz is readable and keeps layout work off most frames. */
+const REFRESH_MS = 200;
+
 export class DebugOverlay {
   visible = false;
   readonly show: Record<GroupId, boolean> = { L1: true, L2: true, L3: true, L4: true, L5: true, L6: true, Waves: true, Boat: true };
   private readonly root = document.createElement('div');
   private readonly text = {} as Record<GroupId, HTMLPreElement>;
   private network: HTMLPreElement | null = null;
+  /** When the panel text is next rewritten, ms (performance.now). */
+  private refreshAt = 0;
 
   constructor(
     private readonly cfg: SimConfig,
@@ -77,6 +82,7 @@ export class DebugOverlay {
       e.preventDefault();
       this.visible = !this.visible;
       r.style.display = this.visible ? '' : 'none';
+      this.refreshAt = 0;
     });
   }
 
@@ -84,6 +90,13 @@ export class DebugOverlay {
   get arrows(): ArrowVisibility {
     const v = this.visible;
     return { L1: v && this.show.L1, L2: v && this.show.L2, L3: v && this.show.L3, L4: v && this.show.L4 };
+  }
+
+  /** True at most every REFRESH_MS while visible (at once after opening): time to call update/setNetwork. */
+  refreshDue(now: number): boolean {
+    if (!this.visible || now < this.refreshAt) return false;
+    this.refreshAt = now + REFRESH_MS;
+    return true;
   }
 
   update(d: Diagnostics, s: BoatState): void {

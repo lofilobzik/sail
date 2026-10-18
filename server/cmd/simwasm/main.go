@@ -5,7 +5,10 @@ package main
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"math"
+	"reflect"
+	"strings"
 	"syscall/js"
 
 	"sail/server/sim"
@@ -56,6 +59,89 @@ func jsonResult(value any) string {
 	return string(data)
 }
 
+// diagEntry is one float64 slot of the flattened Diagnostics, in field walk order. Objects take a
+// slot too (1); a nullable section's slot is 1 when present and 0 for null, and its `span`
+// descendants follow either way. Parent is the enclosing entry's index, -1 for the root. The
+// browser rebuilds the same nested shape the JSON had from this table.
+type diagEntry struct {
+	Key    string `json:"key"`
+	Kind   string `json:"kind"` // object, nullable, number or boolean
+	Parent int    `json:"parent"`
+	span   int
+}
+
+func jsonName(f reflect.StructField) string {
+	name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+	return name
+}
+
+// diagLayout flattens struct type t like encoding/json would: embedded untagged structs inline.
+func diagLayout(t reflect.Type, parent int, out []diagEntry) []diagEntry {
+	for i := range t.NumField() {
+		f := t.Field(i)
+		name := jsonName(f)
+		if f.Anonymous && name == "" {
+			out = diagLayout(f.Type, parent, out)
+			continue
+		}
+		switch f.Type.Kind() {
+		case reflect.Float64, reflect.Int:
+			out = append(out, diagEntry{Key: name, Kind: "number", Parent: parent})
+		case reflect.Bool:
+			out = append(out, diagEntry{Key: name, Kind: "boolean", Parent: parent})
+		case reflect.Struct:
+			index := len(out)
+			out = diagLayout(f.Type, index, append(out, diagEntry{Key: name, Kind: "object", Parent: parent}))
+		case reflect.Pointer:
+			index := len(out)
+			out = diagLayout(f.Type.Elem(), index, append(out, diagEntry{Key: name, Kind: "nullable", Parent: parent}))
+			out[index].span = len(out) - index - 1
+		default:
+			panic(fmt.Sprintf("diagnostics field %s: unsupported kind %s", f.Name, f.Type.Kind()))
+		}
+	}
+	return out
+}
+
+// encodeDiag writes struct value v into out from slot i, in diagLayout's order; returns the next slot.
+func encodeDiag(v reflect.Value, layout []diagEntry, out []byte, i int) int {
+	put := func(x float64) { binary.LittleEndian.PutUint64(out[i*8:], math.Float64bits(x)) }
+	t := v.Type()
+	for f := range t.NumField() {
+		field, fv := t.Field(f), v.Field(f)
+		if field.Anonymous && jsonName(field) == "" {
+			i = encodeDiag(fv, layout, out, i)
+			continue
+		}
+		switch fv.Kind() {
+		case reflect.Float64:
+			put(fv.Float())
+			i++
+		case reflect.Int:
+			put(float64(fv.Int()))
+			i++
+		case reflect.Bool:
+			put(0)
+			if fv.Bool() {
+				put(1)
+			}
+			i++
+		case reflect.Struct:
+			put(1)
+			i = encodeDiag(fv, layout, out, i+1)
+		case reflect.Pointer:
+			if fv.IsNil() {
+				put(0)
+				i += 1 + layout[i].span
+			} else {
+				put(1)
+				i = encodeDiag(fv.Elem(), layout, out, i+1)
+			}
+		}
+	}
+	return i
+}
+
 func main() {
 	boat := sim.BuildBoat()
 	cfg := sim.BrowserConfig(1)
@@ -64,11 +150,15 @@ func main() {
 	var state sim.BoatState
 	var controls sim.Controls
 	stateBytes := len(stateFields) * 8
-	scratch := make([]byte, stateBytes+len(controlFields)*8)
+	ioBytes := stateBytes + len(controlFields)*8
+	scratch := make([]byte, ioBytes)
+	diagFields := diagLayout(reflect.TypeFor[sim.Diagnostics](), -1, nil)
+	diagBytes := make([]byte, len(diagFields)*8)
 	layout := struct {
-		State    []string `json:"state"`
-		Controls []string `json:"controls"`
-	}{State: make([]string, len(stateFields)), Controls: make([]string, len(controlFields))}
+		State       []string    `json:"state"`
+		Controls    []string    `json:"controls"`
+		Diagnostics []diagEntry `json:"diagnostics"`
+	}{State: make([]string, len(stateFields)), Controls: make([]string, len(controlFields)), Diagnostics: diagFields}
 	for i, field := range stateFields {
 		layout.State[i] = field.name
 	}
@@ -119,13 +209,22 @@ func main() {
 		cfg = next
 		return string(data)
 	}))
+	// Writes back the state and the controls actually applied: sim.Step clamps exactly like the
+	// server's queue boundary (sim.ClampControls), so the caller can send and record these.
 	obj.Set("step", js.FuncOf(func(_ js.Value, args []js.Value) any {
-		js.CopyBytesToGo(scratch[:stateBytes+len(controlFields)*8], args[0])
+		js.CopyBytesToGo(scratch[:ioBytes], args[0])
 		decodeState()
 		decodeControls(stateBytes)
 		result := sim.Step(state, controls, boat, &cfg)
 		state, last = result.State, result.Diagnostics
-		writeState(args[0])
+		controls = sim.ClampControls(controls)
+		for i, field := range controlFields {
+			binary.LittleEndian.PutUint64(scratch[stateBytes+i*8:], math.Float64bits(field.get(&controls)))
+		}
+		for i, field := range stateFields {
+			binary.LittleEndian.PutUint64(scratch[i*8:], math.Float64bits(field.get(&state)))
+		}
+		js.CopyBytesToJS(args[0], scratch[:ioBytes])
 		return nil
 	}))
 	// Batch consecutive controls for replay without paying a JS/Go crossing per input.
@@ -146,7 +245,7 @@ func main() {
 		return nil
 	}))
 	obj.Set("evaluate", js.FuncOf(func(_ js.Value, args []js.Value) any {
-		js.CopyBytesToGo(scratch[:stateBytes+len(controlFields)*8], args[0])
+		js.CopyBytesToGo(scratch[:ioBytes], args[0])
 		decodeState()
 		decodeControls(stateBytes)
 		last = sim.Evaluate(state, controls, boat, &cfg)
@@ -170,17 +269,11 @@ func main() {
 		writeState(args[2])
 		return nil
 	}))
-	obj.Set("diagnostics", js.FuncOf(func(_ js.Value, _ []js.Value) any {
-		return jsonResult(last)
-	}))
-	obj.Set("clampControls", js.FuncOf(func(_ js.Value, args []js.Value) any {
-		js.CopyBytesToGo(scratch[:stateBytes+len(controlFields)*8], args[0])
-		decodeControls(stateBytes)
-		controls = sim.ClampControls(controls)
-		for i, field := range controlFields {
-			binary.LittleEndian.PutUint64(scratch[stateBytes+i*8:], math.Float64bits(field.get(&controls)))
-		}
-		js.CopyBytesToJS(args[0], scratch[:stateBytes+len(controlFields)*8])
+	// Fills the given buffer with the last step's or evaluation's diagnostics, laid out as in layout().diagnostics.
+	lastValue := reflect.ValueOf(&last).Elem()
+	obj.Set("diagnostics", js.FuncOf(func(_ js.Value, args []js.Value) any {
+		encodeDiag(lastValue, diagFields, diagBytes, 0)
+		js.CopyBytesToJS(args[0], diagBytes)
 		return nil
 	}))
 	js.Global().Set("sailPhysics", obj)

@@ -74,7 +74,8 @@ describe('Go WebAssembly physics boundary', () => {
     compare(physics.stepMany(actual, []), actual, 'empty batch');
     const input = trace.controls[120]!;
     compare(physics.step(actual, input), trace.record.find((record) => record.step === 120)!.state, 'single after batch');
-    expect(physics.clampControls({ tiller: 1.7, sheet: -0.2, hike: 2 })).toEqual({ tiller: 1, sheet: 0, hike: 1 });
+    physics.step(actual, { tiller: 1.7, sheet: -0.2, hike: 2 });
+    expect(physics.appliedControls()).toEqual({ tiller: 1, sheet: 0, hike: 1 });
   });
 
   it('creates a moored boat at the first berth', () => {
