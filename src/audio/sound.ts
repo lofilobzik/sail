@@ -56,11 +56,14 @@ export class SailSound {
     private volume: number,
     private muted: boolean,
   ) {
+    // A first input that is not a user activation (Escape, for one) leaves the context suspended,
+    // so every input retries resume() until it runs. Running, this is just the state check.
     const start = (): void => {
-      window.removeEventListener('pointerdown', start);
-      window.removeEventListener('keydown', start);
-      this.graph = build();
-      this.applyMaster();
+      if (!this.graph) {
+        this.graph = build();
+        this.applyMaster();
+      }
+      if (this.graph.ctx.state !== 'running' && !document.hidden) void this.graph.ctx.resume();
     };
     window.addEventListener('pointerdown', start);
     window.addEventListener('keydown', start);
@@ -83,7 +86,8 @@ export class SailSound {
 
   update(input: SoundInput): void {
     const g = this.graph;
-    if (!g) return;
+    // A context that is not running keeps every scheduled event, so per-frame ramps would pile up.
+    if (!g || g.ctx.state !== 'running') return;
     const now = g.ctx.currentTime;
     const s = Math.min(Math.max(input.speed / WATER_FULL_SPEED, 0), 1);
     g.water.gain.setTargetAtTime(WATER_GAIN * s ** 1.5, now, RAMP);
