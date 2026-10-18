@@ -34,7 +34,7 @@ const STYLE = `
 .qt-goals{position:relative;min-height:20px;display:flex;flex-direction:column;gap:4px;}
 .qt-goal{display:flex;align-items:baseline;gap:8px;white-space:nowrap;}
 .qt-goal.qt-enter{animation:qt-in 0.45s ease-out 0.8s both;}
-.qt-goal.qt-leave{position:absolute;left:0;right:0;top:0;color:#8fd19e;
+.qt-goal.qt-leave{position:relative;color:#8fd19e;
   animation:qt-lit 0.75s ease-out both,qt-out 0.55s cubic-bezier(.5,0,.9,.4) 0.7s forwards;}
 .qt-mark{position:relative;display:inline-block;font-size:10px;color:#e8c56b;}
 .qt-leave .qt-mark{color:#fff;font-size:13px;animation:qt-pop 0.45s ease-out both;}
@@ -44,6 +44,7 @@ const STYLE = `
   background:radial-gradient(ellipse 60% 70% at 30% 50%,rgba(255,255,255,0.85),rgba(255,255,255,0.3) 40%,transparent 72%);
   transform-origin:30% 50%;animation:qt-flare 0.8s ease-out forwards;}
 .qt-text{flex:1;overflow:hidden;text-overflow:ellipsis;}
+.qt-goal.qt-collapse{overflow:hidden;transition:height 0.3s ease-in-out,margin-bottom 0.3s ease-in-out;}
 .qt-dist{color:rgba(255,255,255,0.55);font-variant-numeric:tabular-nums;}
 .qt-goal.qt-complete{color:#8fd19e;font-weight:600;position:relative;animation:qt-in 0.45s ease-out 0.7s both,qt-lit 1.1s ease-out 0.7s both;}
 .qt-complete .qt-flare{animation-delay:0.7s;animation-fill-mode:both;}
@@ -139,23 +140,42 @@ export class QuestTracker {
     this.rows.set(step, { row, dist, text: '' });
   }
 
-  /** A reached goal: a white flare behind it, the text lit white, the mark popping to a tick, then out. */
+  /**
+   * A reached goal: a white flare behind it, the text lit white, the mark popping to a tick, then it
+   * slides out. It keeps its place meanwhile; only then does it fold away, so the rows below slide up.
+   */
   private leave(step: string): void {
     const r = this.rows.get(step);
     if (!r) return;
     this.rows.delete(step);
     const row = r.row;
-    // Out of the flow where it stands, so the rows below close up under it as it leaves.
-    row.style.top = `${row.offsetTop}px`;
     row.className = 'qt-goal qt-leave';
     row.querySelector('.qt-mark')!.textContent = '\u2713';
     r.dist.textContent = '';
     row.appendChild(flare());
     // Its children's animations bubble here too: only the slide out ends the row.
     row.addEventListener('animationend', (e) => {
-      if (e.target === row && e.animationName === 'qt-out') row.remove();
+      if (e.target === row && e.animationName === 'qt-out') collapse(row);
     });
   }
+}
+
+/**
+ * Folds `row` to nothing, the column gap after it included (the negative margin), so the rows below
+ * slide up into its place, then removes it.
+ */
+function collapse(row: HTMLElement): void {
+  row.style.height = `${row.offsetHeight}px`;
+  row.classList.add('qt-collapse');
+  // Start from the measured height: the change to 0 below must be a new frame to transition.
+  requestAnimationFrame(() => {
+    row.style.height = '0px';
+    row.style.marginBottom = '-4px';
+  });
+  // A hidden tab may never fire transitionend: the timeout removes it either way.
+  const done = () => row.remove();
+  row.addEventListener('transitionend', (e) => { if (e.propertyName === 'height') done(); });
+  setTimeout(done, 600);
 }
 
 /** A white flare that bursts behind its parent row and fades. */

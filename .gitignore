@@ -3,6 +3,7 @@ dist/
 polar-out/
 public/wasm/
 src/physics/wasm_exec.js
+/sailserver
 .DS_Store
 WATCHDOG.yml
 *.swp
