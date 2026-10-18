@@ -2,6 +2,7 @@
 import type { BoatModel } from '../sim/boat';
 import { DEG, wrapPi } from '../sim/frames';
 import type { BoatState, Diagnostics } from '../physics/types';
+import type { RenderOffset } from '../net/correction';
 import type { RenderPose } from './scene';
 
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
@@ -18,13 +19,14 @@ export function interpolatePose(
   boat: BoatModel,
   dt: number,
   look: { yaw: number; pitch: number },
+  offset: Readonly<RenderOffset>,
 ): RenderPose {
   const c = diagnostics.controls;
   return {
     t: lerp(prev.t, curr.t, alpha),
-    x: lerp(prev.x, curr.x, alpha),
-    z: lerp(prev.z, curr.z, alpha),
-    heading: prev.heading + wrapPi(curr.heading - prev.heading) * alpha,
+    x: lerp(prev.x, curr.x, alpha) + offset.dx,
+    z: lerp(prev.z, curr.z, alpha) + offset.dz,
+    heading: prev.heading + wrapPi(curr.heading - prev.heading) * alpha + offset.dHeading,
     surge: lerp(prev.u, curr.u, alpha),
     heel: lerp(prev.heel, curr.heel, alpha),
     pitch: lerp(prev.pitch, curr.pitch, alpha),

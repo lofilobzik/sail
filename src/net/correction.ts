@@ -1,160 +1,126 @@
-/**
- * Corrects the locally predicted boat toward the server's. No rewind/replay: each snapshot is
- * compared with the local prediction after the same input (`ackSeq`), and the difference that has
- * not been corrected since is blended out over BLEND_SECONDS, or applied at once when it is large.
- */
-import { DEG, wrapPi } from '../sim';
-import type { BoatState } from '../physics/types';
+import type { Physics } from '../physics/bridge';
+import type { BoatState, Controls } from '../physics/types';
+import { DEG, wrapPi } from '../sim/frames';
 import type { SnapshotMessage } from './protocol';
 
-/** Position error above which the correction is applied at once instead of blended, m. */
-export const SNAP_DISTANCE = 2; // TUNING GUESS: a boat length is visibly wrong, smaller jumps blend
-/** Heading error above which the correction is applied at once, rad. */
+/** Render corrections larger than these thresholds snap instead of easing. */
+export const SNAP_DISTANCE = 2; // TUNING GUESS: about a boat length.
 export const SNAP_HEADING = 20 * DEG; // TUNING GUESS
-/** Time over which a small error is blended out, s. */
-export const BLEND_SECONDS = 0.2; // TUNING GUESS
-/** Predicted steps kept for comparison: about 4 s at 60 Hz. An older ack re-syncs to the server. */
-const HISTORY_STEPS = 256;
-const MEAN_SMOOTHING = 0.1; // exponential smoothing of the correction-size readout
+/** Exponential decay time constant for render-only corrections, s. */
+export const OFFSET_TAU = 0.2; // TUNING GUESS
+export type RenderOffset = { dx: number; dz: number; dHeading: number };
+export const ZERO_OFFSET: Readonly<RenderOffset> = Object.freeze({ dx: 0, dz: 0, dHeading: 0 });
 
-/** Continuous state fields; boomSide is discrete and compared separately. */
+export type Timeline = { prev: BoatState; curr: BoatState };
+export type ReconcileKind = 'replay' | 'resync';
+
+/** About four seconds of inputs at 60 Hz; an incomplete replay window requires a resync. */
+const HISTORY_STEPS = 256;
+const MATCH_EPSILON = 1e-9;
 const FIELDS = ['t', 'x', 'z', 'heading', 'u', 'v', 'r', 'heel', 'p', 'pitch', 'pitchRate', 'boom', 'crewY'] as const;
 const N = FIELDS.length;
-const X = FIELDS.indexOf('x');
-const Z = FIELDS.indexOf('z');
-const HEADING = FIELDS.indexOf('heading');
 
-/** blend: spread over BLEND_SECONDS; snap: applied at once; resync: server state adopted outright. */
-export type CorrectionKind = 'blend' | 'snap' | 'resync';
-
-export interface CorrectionReport {
-  kind: CorrectionKind;
-  /** Position error, m. */
-  position: number;
-  /** Heading error, rad (absolute). */
-  heading: number;
-}
-
-export class Corrector {
-  last: CorrectionReport | null = null;
-  /** Smoothed position error of blended corrections, m. */
-  meanPosition = 0;
-  readonly counts: Record<CorrectionKind, number> = { blend: 0, snap: 0, resync: 0 };
-
-  private readonly seqs = new Float64Array(HISTORY_STEPS).fill(-1);
+/** Keeps applied inputs and independent predictions for authoritative rewind/replay. */
+export class Reconciler {
+  private readonly seqs = new Int32Array(HISTORY_STEPS).fill(-1);
+  private readonly controls = new Float64Array(HISTORY_STEPS * 3);
+  private readonly castOff = new Uint8Array(HISTORY_STEPS);
   private readonly states = new Float64Array(HISTORY_STEPS * N);
   private readonly boomSides = new Int8Array(HISTORY_STEPS);
-  /** 1 where the boat was moored after that input; discrete, compared like boomSide. */
   private readonly mooreds = new Uint8Array(HISTORY_STEPS);
-  /** `total` when each history entry was recorded. */
-  private readonly totals = new Float64Array(HISTORY_STEPS * N);
-  /** Sum of all corrections applied so far. */
-  private readonly total = new Float64Array(N);
-  private readonly pending = new Float64Array(N);
-  private readonly error = new Float64Array(N);
-  private blendLeft = 0;
-  /** Acks below this predate the last reset/resync and are ignored. */
-  private minAck = 1;
-  /**
-   * Seq of a sent cast-off input the server has not acked yet, else 0. Until it is acked, snapshots
-   * still say moored and must not moor the boat again.
-   */
-  private castOffSeq = 0;
+  private minAck = 0;
+  private lastAck = 0;
+  private lastKind: ReconcileKind = 'replay';
 
-  /** Applies this step's share of the blend to `s` (the state after input `seq`) and records it. */
-  afterStep(s: BoatState, seq: number, dt: number): void {
-    if (this.blendLeft > 0) {
-      const f = Math.min(1, dt / this.blendLeft);
-      this.blendLeft = Math.max(0, this.blendLeft - dt);
-      for (let i = 0; i < N; i++) {
-        const d = this.pending[i]! * f;
-        this.pending[i]! -= d;
-        this.total[i]! += d;
-        s[FIELDS[i]!] += d;
-      }
-    }
+  constructor(private readonly physics: Physics) {}
+
+  /** The kind of the most recent non-null reconciliation. */
+  get kind(): ReconcileKind {
+    return this.lastKind;
+  }
+
+  /** Controls were already clamped before the local step; copy exactly what was applied. */
+  record(seq: number, controls: Controls, castOff: boolean, state: BoatState): void {
     const slot = seq % HISTORY_STEPS;
     this.seqs[slot] = seq;
-    this.boomSides[slot] = s.boomSide;
-    this.mooreds[slot] = s.moored ? 1 : 0;
-    for (let i = 0; i < N; i++) {
-      this.states[slot * N + i] = s[FIELDS[i]!];
-      this.totals[slot * N + i] = this.total[i]!;
+    this.controls[slot * 3] = controls.tiller;
+    this.controls[slot * 3 + 1] = controls.sheet;
+    this.controls[slot * 3 + 2] = controls.hike;
+    this.castOff[slot] = castOff ? 1 : 0;
+    this.recordPrediction(slot, state);
+  }
+
+  reconcile(snapshot: SnapshotMessage, latestSeq: number): Timeline | null {
+    const ack = snapshot.ackSeq;
+    if (ack < this.minAck || ack <= this.lastAck) return null;
+
+    const slot = ack % HISTORY_STEPS;
+    const matches = this.seqs[slot] === ack && this.matches(slot, snapshot.state);
+    this.lastAck = ack;
+    this.prune(ack);
+
+    // Check completeness even for a matching ack: matching cannot repair a missing later input.
+    let complete = latestSeq - ack <= HISTORY_STEPS;
+    for (let seq = ack + 1; complete && seq <= latestSeq; seq++) {
+      complete = this.seqs[seq % HISTORY_STEPS] === seq;
     }
-  }
-
-  /**
-   * Folds a snapshot into the predicted state `s` (mutated). `nextSeq` is the next input seq to be
-   * sent. Returns true when `s` jumped, so the caller should not interpolate from the previous state.
-   */
-  apply(snap: SnapshotMessage, s: BoatState, nextSeq: number): boolean {
-    if (snap.ackSeq < this.minAck) return false;
-    if (this.castOffSeq && snap.ackSeq >= this.castOffSeq) this.castOffSeq = 0;
-    const server = snap.state;
-    const slot = snap.ackSeq % HISTORY_STEPS;
-    if (this.seqs[slot] !== snap.ackSeq) {
-      // No prediction for that input (too old): adopt the server state as it is.
-      this.resync(server, s, nextSeq);
-      return true;
+    if (!complete) {
+      this.minAck = latestSeq + 1;
+      // Inputs recorded beyond this caller's timeline are still usable on a later snapshot.
+      this.prune(latestSeq);
+      this.lastKind = 'resync';
+      return { prev: snapshot.state, curr: snapshot.state };
     }
-    const e = this.error;
-    for (let i = 0; i < N; i++) {
-      const f = FIELDS[i]!;
-      const diff = server[f] - this.states[slot * N + i]!;
-      // Error at that input, minus the corrections applied since it was predicted.
-      e[i] = (i === HEADING ? wrapPi(diff) : diff) - (this.total[i]! - this.totals[slot * N + i]!);
+    if (matches) return null;
+
+    let curr = snapshot.state;
+    let prev = curr;
+    for (let seq = ack + 1; seq <= latestSeq; seq++) {
+      const replaySlot = seq % HISTORY_STEPS;
+      prev = curr;
+      if (this.castOff[replaySlot]) curr = this.physics.castOff(curr);
+      curr = this.physics.step(curr, {
+        tiller: this.controls[replaySlot * 3]!,
+        sheet: this.controls[replaySlot * 3 + 1]!,
+        hike: this.controls[replaySlot * 3 + 2]!,
+      });
+      this.recordPrediction(replaySlot, curr);
     }
-    const position = Math.hypot(e[X]!, e[Z]!);
-    const heading = Math.abs(e[HEADING]!);
-    const mooredChanged = (server.moored ? 1 : 0) !== this.mooreds[slot];
-    if (position > SNAP_DISTANCE || heading > SNAP_HEADING || server.boomSide !== this.boomSides[slot] || mooredChanged) {
-      this.report('snap', position, heading);
-      for (let i = 0; i < N; i++) {
-        s[FIELDS[i]!] += e[i]!;
-        this.total[i]! += e[i]!;
-      }
-      s.boomSide = server.boomSide;
-      s.moored = server.moored && this.castOffSeq === 0;
-      this.pending.fill(0);
-      this.blendLeft = 0;
-      return true;
-    }
-    this.report('blend', position, heading);
-    this.meanPosition += (position - this.meanPosition) * MEAN_SMOOTHING;
-    this.pending.set(e);
-    this.blendLeft = BLEND_SECONDS;
-    return false;
+    this.lastKind = 'replay';
+    return { prev, curr };
   }
 
-  /** Adopts the server state `server` into `s` outright and forgets all predictions. */
-  resync(server: BoatState, s: BoatState, nextSeq: number): void {
-    this.report('resync', Math.hypot(server.x - s.x, server.z - s.z), Math.abs(wrapPi(server.heading - s.heading)));
-    Object.assign(s, server);
-    s.moored = server.moored && this.castOffSeq === 0;
-    this.reset(nextSeq);
-  }
-
-  /** Input `seq` carries a cast-off: snapshots acking older inputs must not moor the boat again. */
-  noteCastOff(seq: number): void {
-    this.castOffSeq = seq;
-  }
-
-  /** The pending cast-off will never apply (the server boat or connection changed): the server's moored flag is the truth. */
-  forgetCastOff(): void {
-    this.castOffSeq = 0;
-  }
-
-  /** Forgets all predictions (not a pending cast-off); acks below `nextSeq` are ignored from now on. */
+  /** Discards the old connection/reset timeline; earlier acks cannot restore it. */
   reset(nextSeq: number): void {
     this.seqs.fill(-1);
-    this.total.fill(0);
-    this.pending.fill(0);
-    this.blendLeft = 0;
     this.minAck = nextSeq;
+    this.lastAck = 0;
   }
 
-  private report(kind: CorrectionKind, position: number, heading: number): void {
-    this.last = { kind, position, heading };
-    this.counts[kind]++;
+  private recordPrediction(slot: number, state: BoatState): void {
+    for (let i = 0; i < N; i++) this.states[slot * N + i] = state[FIELDS[i]!];
+    this.boomSides[slot] = state.boomSide;
+    this.mooreds[slot] = state.moored ? 1 : 0;
+  }
+
+  private matches(slot: number, state: BoatState): boolean {
+    if (state.boomSide !== this.boomSides[slot] || Number(state.moored) !== this.mooreds[slot]) return false;
+    for (let i = 0; i < N; i++) {
+      const field = FIELDS[i]!;
+      const predicted = this.states[slot * N + i]!;
+      const actual = state[field];
+      if (!Number.isFinite(predicted) || !Number.isFinite(actual)) return false;
+      let difference = actual - predicted;
+      // Avoid adding/subtracting π at the inclusive 1e-9 boundary when already in range.
+      if (field === 'heading' && Math.abs(difference) > Math.PI) difference = wrapPi(difference);
+      if (!Number.isFinite(difference) || Math.abs(difference) > MATCH_EPSILON) return false;
+    }
+    return true;
+  }
+
+  private prune(throughSeq: number): void {
+    for (let slot = 0; slot < HISTORY_STEPS; slot++) {
+      if (this.seqs[slot]! <= throughSeq) this.seqs[slot] = -1;
+    }
   }
 }

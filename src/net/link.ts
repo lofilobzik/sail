@@ -5,23 +5,28 @@
  * reconnects with its resume token. Which server (or none) is decided by `serverChoice`: the built
  * site joins its own host, dev stays offline unless ?server.
  */
-import { DEG } from '../sim';
+import { DEG, wrapPi } from '../sim/frames';
 import type { BoatState, Controls, SimConfig } from '../physics/types';
 import type { Physics } from '../physics/bridge';
 import { NetClient, adoptServerConfig, configFromWelcome, type NetStatus } from './client';
-import { Corrector } from './correction';
+import { Reconciler, OFFSET_TAU, SNAP_DISTANCE, SNAP_HEADING, ZERO_OFFSET } from './correction';
+import type { ReconcileKind, RenderOffset } from './correction';
 import type { WelcomeMessage } from './protocol';
 
-/** What the server's news did to the predicted boat this frame. */
-export type Sync =
-  | 'steady'
-  /** The state jumped (a snap or a resync, e.g. a resumed boat): do not interpolate from before. */
-  | 'jumped'
-  /** A new boat (a fresh welcome or a reset): restart the boat and navigation from `spawn`. */
-  | 'respawned';
+/** The pose drawn last frame, including its remaining render-only correction. */
+export type ShownPose = { x: number; z: number; heading: number };
+
+/** What the server's news did to the predicted timeline this frame. */
+export type SyncResult =
+  | { kind: 'steady' }
+  | { kind: 'respawned' }
+  | { kind: 'moved'; prev: BoatState; curr: BoatState };
 
 export class ServerLink {
-  readonly corrector = new Corrector();
+  readonly reconciler: Reconciler;
+  offset: RenderOffset = { ...ZERO_OFFSET };
+  last: { kind: ReconcileKind; snap: boolean; position: number; heading: number } | null = null;
+  readonly counts = { replay: 0, resync: 0, snap: 0 };
   /** The boat's known departure: the spawn of the newest new-boat welcome or reset. */
   spawn: BoatState;
   /** After a reset: the first snapshot acking this seq or later shows the new spawn. 0 when none is pending. */
@@ -35,45 +40,80 @@ export class ServerLink {
     private readonly physics: Physics,
   ) {
     this.spawn = { ...welcome.state };
+    this.reconciler = new Reconciler(physics);
   }
 
-  /**
-   * Folds in what the server sent since the last frame: a reconnect's welcome, then the newest
-   * snapshot. `s` is corrected in place, except on 'respawned', where the caller restarts from `spawn`.
-   */
-  sync(s: BoatState): Sync {
+  /** Folds in a reconnect's welcome, then the newest snapshot, without mutating the old timeline. */
+  sync(prev: BoatState, curr: BoatState, shown: ShownPose | null, alpha: number): SyncResult {
     const c = this.client;
+    let moved = false;
     const w = c.takeRewelcome();
     if (w) {
       this.welcome = w;
       this.respawnSeq = 0;
-      // A new connection drops the old one's queued inputs, so a cast-off sent there never applied.
-      this.corrector.forgetCastOff();
+      // The new connection cannot apply inputs queued on the old one.
+      this.reconciler.reset(c.nextSeq);
       if (!w.resumed) {
-        // A new boat, maybe in a restarted server's new world: adopt its config too.
         adoptServerConfig(this.cfg, w, this.physics);
-        this.corrector.reset(c.nextSeq);
         this.spawn = { ...w.state };
-        return 'respawned';
+        this.offset = { ...ZERO_OFFSET };
+        return { kind: 'respawned' };
       }
-      this.corrector.resync(w.state, s, c.nextSeq);
+      prev = curr = w.state;
+      this.correctVisuals(prev, curr, shown, alpha, 'resync');
+      moved = true;
     }
     const snap = c.takeSnapshot();
     if (snap && this.respawnSeq && snap.ackSeq >= this.respawnSeq) {
       this.respawnSeq = 0;
-      this.corrector.reset(c.nextSeq);
+      this.reconciler.reset(c.nextSeq);
       this.spawn = { ...snap.state };
-      return 'respawned';
+      this.offset = { ...ZERO_OFFSET };
+      return { kind: 'respawned' };
     }
-    const jumped = snap !== null && this.corrector.apply(snap, s, c.nextSeq);
-    return w || jumped ? 'jumped' : 'steady';
+    const timeline = snap ? this.reconciler.reconcile(snap, c.nextSeq - 1) : null;
+    if (timeline) {
+      prev = timeline.prev;
+      curr = timeline.curr;
+      this.correctVisuals(prev, curr, shown, alpha, this.reconciler.kind);
+      moved = true;
+    }
+    return moved ? { kind: 'moved', prev, curr } : { kind: 'steady' };
+  }
+
+  /** Replace, rather than accumulate, the remaining correction against the last displayed pose. */
+  private correctVisuals(prev: BoatState, curr: BoatState, shown: ShownPose | null, alpha: number, kind: ReconcileKind): void {
+    const offset: RenderOffset = shown
+      ? {
+          dx: shown.x - (prev.x + (curr.x - prev.x) * alpha),
+          dz: shown.z - (prev.z + (curr.z - prev.z) * alpha),
+          dHeading: wrapPi(shown.heading - (prev.heading + wrapPi(curr.heading - prev.heading) * alpha)),
+        }
+      : { ...ZERO_OFFSET };
+    const position = Math.hypot(offset.dx, offset.dz);
+    const heading = Math.abs(offset.dHeading);
+    const snap = position > SNAP_DISTANCE || heading > SNAP_HEADING;
+    this.offset = snap ? { ...ZERO_OFFSET } : offset;
+    this.last = { kind, snap, position, heading };
+    this.counts[kind]++;
+    if (snap) this.counts.snap++;
+  }
+
+  /** Exponential render-only easing, independent of the physics timestep. */
+  decay(dt: number): void {
+    const factor = Math.exp(-dt / OFFSET_TAU);
+    this.offset.dx *= factor;
+    this.offset.dz *= factor;
+    this.offset.dHeading *= factor;
+    if (Math.hypot(this.offset.dx, this.offset.dz) < 0.001 && Math.abs(this.offset.dHeading) < 0.001) {
+      this.offset = { ...ZERO_OFFSET };
+    }
   }
 
   /** Sends one fixed step's controls (and cast-off, if this step releases the boat) and records `s`, the predicted state after them. */
-  afterStep(s: BoatState, controls: Controls, castOff: boolean): void {
-    const seq = this.client.sendInput(controls, castOff);
-    this.corrector.afterStep(s, seq, this.cfg.dt);
-    if (castOff) this.corrector.noteCastOff(seq);
+  afterStep(s: BoatState, applied: Controls, castOff: boolean): void {
+    const seq = this.client.sendInput(applied, castOff);
+    this.reconciler.record(seq, applied, castOff, s);
   }
 
   /**
@@ -83,17 +123,14 @@ export class ServerLink {
   reset(): void {
     this.client.sendReset();
     this.respawnSeq = this.client.nextSeq;
-    // The respawn returns the boat to a berth; a cast-off still in flight is moot.
-    this.corrector.forgetCastOff();
-    this.corrector.reset(this.respawnSeq);
+    this.reconciler.reset(this.respawnSeq);
   }
 
   /** Debug overlay text. */
   describe(): string {
     const c = this.client;
     const snap = c.latest;
-    const corr = this.corrector;
-    const last = corr.last;
+    const last = this.last;
     const ms = (v: number): string => (Number.isNaN(v) ? '–' : `${v.toFixed(1)} ms`);
     return (
       `${c.url}  ${c.status}${c.status === 'connected' ? '' : ` (${c.closeReason})`}  seed ${this.welcome.seed}\n` +
@@ -104,9 +141,9 @@ export class ServerLink {
           `server controls tiller ${snap.controls.tiller.toFixed(2)}  sheet ${snap.controls.sheet.toFixed(2)}  hike ${snap.controls.hike.toFixed(2)}\n`
         : 'no snapshot yet\n') +
       (last
-        ? `last correction ${last.kind} ${(last.position * 100).toFixed(1)} cm  ${(last.heading / DEG).toFixed(2)}°  (blend mean ${(corr.meanPosition * 100).toFixed(1)} cm)\n`
+        ? `last correction ${last.kind}${last.snap ? ' snap' : ''} ${(last.position * 100).toFixed(1)} cm  ${(last.heading / DEG).toFixed(2)}°\n`
         : 'no correction yet\n') +
-      `blends ${corr.counts.blend}  snaps ${corr.counts.snap}  resyncs ${corr.counts.resync}`
+      `replays ${this.counts.replay}  resyncs ${this.counts.resync}  snaps ${this.counts.snap}`
     );
   }
 }

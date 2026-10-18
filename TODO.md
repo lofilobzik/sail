@@ -4,6 +4,12 @@
       podman-auto-update on the box (deploy/box/, install.sh) restarts within 5 min; document `?quality=low|high`
       and `?perf=1`
 
+## Physics
+
+- [ ] Profile why a wasm step is ~14× slower than native (~220 vs 15 µs), mostly wave sampling.
+      Try computing each wave component's time-dependent terms once per step and reusing them for
+      every sample point; check whether Go's pure-Go math implementation in wasm is the cost.
+
 ## Rendering
 
 - [ ] Profile on a weak machine (older Intel iGPU) with `?perf=1`; let the per-pass GPU split drive the items below.

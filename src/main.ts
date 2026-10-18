@@ -13,10 +13,11 @@ import { interpolatePose } from './render/pose';
 import { SceneView, type RenderPose } from './render/scene';
 import { ForceVectors } from './render/vectors';
 import { DEG, FixedStep, NEUTRAL_CONTROLS, WAVE_PARAMETERS, buildBoat, clamp, initialState } from './sim';
-import type { BoatState, Diagnostics } from './physics/types';
+import type { BoatState, Controls, Diagnostics } from './physics/types';
 import { loadPhysics } from './physics/load';
 import { adoptPhysicsConfig } from './physics/bridge';
 import { joinServer, serverChoice } from './net/link';
+import { ZERO_OFFSET } from './net/correction';
 import type { RemotePose } from './net/remote';
 import { SailSound } from './audio/sound';
 import { LookGuide } from './ui/lookGuide';
@@ -118,6 +119,7 @@ const vectors = new ForceVectors(boat, view.scene, view.boat.yaw, view.boat.heel
 let prev: BoatState;
 let curr: BoatState;
 let diagnostics: Diagnostics;
+let lastApplied: Controls = { ...NEUTRAL_CONTROLS };
 /** E was pressed at a berth: the next fixed step casts off. */
 let castOffRequested = false;
 
@@ -133,7 +135,8 @@ function resetBoat(start: BoatState): void {
   memory.update(navigation, false);
   input.reset(start.moored ? MOORED_SHEET : undefined);
   castOffRequested = false;
-  diagnostics = physics.evaluate(curr, input.update(0));
+  lastApplied = input.update(0);
+  diagnostics = physics.evaluate(curr, lastApplied);
 }
 resetBoat(server ? server.spawn : harbourStart());
 // The first launch is a departure, not a restart: the reset's "Dead reckoning restarted" note is for respawns.
@@ -362,34 +365,40 @@ function frame(now: number): void {
   look.sensitivityScale = 1 / view.binoculars.zoom;
   navigationInput.update(navigation, view.navigation, glassesUp);
 
-  // Server mode: fold in a reconnect's welcome and the newest snapshot first; a jump is not
-  // interpolated, and a new boat (fresh spawn or reset) restarts navigation from its spawn.
+  // Reconcile the whole timeline before stepping; only the drawn pose carries a visual offset.
   if (server) {
-    const sync = server.sync(curr);
-    if (sync === 'respawned') resetBoat(server.spawn);
-    else if (sync === 'jumped') prev = curr;
+    const sync = server.sync(prev, curr, lastPose, fixed.alpha);
+    if (sync.kind === 'respawned') resetBoat(server.spawn);
+    else if (sync.kind === 'moved') {
+      prev = sync.prev;
+      curr = sync.curr;
+      diagnostics = physics.evaluate(curr, lastApplied);
+    }
+    server.decay(frameSeconds);
   }
   const steps = fixed.advance(frameSeconds);
   for (let i = 0; i < steps; i++) {
     // Flying the camera borrows WASD: the boat sails on with neutral controls.
     const controls = view.mode === 'fly' ? (input.reset(), { ...NEUTRAL_CONTROLS }) : input.update(cfg.dt);
+    const applied = server ? physics.clampControls(controls) : controls;
     const castingOff = castOffRequested && curr.moored;
     if (castingOff) {
       curr = physics.castOff(curr);
       castOffRequested = false;
     }
-    const next = physics.step(curr, controls);
+    const next = physics.step(curr, applied);
     prev = curr;
     curr = next;
+    lastApplied = applied;
     // GPS watch: speed over ground, from how far the boat moved this step.
     speedOverGround = Math.hypot(curr.x - prev.x, curr.z - prev.z) / cfg.dt;
-    server?.afterStep(curr, controls, castingOff);
+    server?.afterStep(curr, applied, castingOff);
     // Narrow instrument boundary: only the watch's speed over ground; no true x/z, heading or sway.
     navigation.advance({ t: curr.t, speed: speedOverGround }, cfg.dt);
   }
   if (steps > 0) diagnostics = physics.diagnostics();
 
-  lastPose = interpolatePose(prev, curr, fixed.alpha, diagnostics, boat, frameSeconds, look);
+  lastPose = interpolatePose(prev, curr, fixed.alpha, diagnostics, boat, frameSeconds, look, server?.offset ?? ZERO_OFFSET);
   if (view.mode === 'fly') {
     fly.update(frameSeconds, look.yaw, look.pitch);
     [view.fly.x, view.fly.y, view.fly.z] = [fly.x, fly.y, fly.z];

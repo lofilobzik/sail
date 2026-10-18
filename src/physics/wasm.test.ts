@@ -64,12 +64,6 @@ describe('Go WebAssembly physics boundary', () => {
     replayTrace(physics, trace, 600);
   });
 
-  // MIGRATION-ONLY: frozen TS sim output; delete in step 3b once step 3 is approved.
-  it('replays the frozen TS browser trace and matches states and final diagnostics', async () => {
-    const fixture = await readFile(new URL('../../server/sim/testdata/golden-ts/trace-browser.json', import.meta.url), 'utf8');
-    replayTrace(physics, JSON.parse(fixture) as GoldenTrace, 600);
-  });
-
   it('replays batched controls in order and can return to individual steps', () => {
     const controls = trace.controls.slice(0, 120);
     const expected = replayTrace(physics, trace, 119);
