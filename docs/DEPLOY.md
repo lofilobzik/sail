@@ -126,6 +126,8 @@ file matches), note the release below, and push to `main`. Change the `Alpha` la
 `src/version.ts` when the game leaves alpha.
 
 - **0.1.0** Alpha: Buoy Tour Update (persistent challenges, the Buoy tour, sailor codes)
+- **0.1.1** Alpha: Gusts Update (drifting gust puffs you can see on the water and hear coming, a steady
+  wind in Westcove)
 
 ## Not covered
 
