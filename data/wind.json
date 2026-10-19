@@ -1,28 +1,39 @@
 {
-  "gustAmplitude": 0.5,
-  "minFactor": 0.25,
-  "gustLengthM": 90,
-  "fineLengthM": 35,
-  "fineWeight": 0.4,
-  "gustVeerDeg": 8,
+  "puffs": {
+    "cellM": 250,
+    "slotS": 30,
+    "probability": 0.9,
+    "lifeS": [60, 120],
+    "riseFraction": 0.2,
+    "radiusM": [50, 90],
+    "elongation": 2,
+    "strength": [0.15, 0.5],
+    "cap": 0.6,
+    "veerDeg": 2,
+    "drift": 1.2
+  },
+  "steadyZone": { "x": -1760, "z": 770, "innerM": 300, "outerM": 650 },
   "shifts": [
     { "amplitudeDeg": 5, "periodS": 280 },
     { "amplitudeDeg": 3, "periodS": 97 }
   ],
   "visual": {
-    "mapSize": 64,
-    "mapCellM": 10,
-    "referenceDeviation": 0.5,
-    "edgeFadeCells": 6,
-    "darkenMax": 0.3,
-    "lullBrighten": 0.08
+    "mapSize": 160,
+    "mapCellM": 12.5,
+    "referenceExcess": 0.15,
+    "edgeLow": 0.13,
+    "edgeHigh": 0.4,
+    "fadeStartM": 500,
+    "fadeEndM": 950,
+    "waveRough": 0.4,
+    "rippleSlope": 0.12,
+    "fresnelDrop": 10,
+    "skyLift": 2
   },
   "sources": {
-    "model": "Frozen turbulence (Taylor's hypothesis): the gust field is a fixed seeded pattern carried downwind by the mean wind, so wind speed and direction at (position, time) are a pure function of both and a gust reaches a boat downwind of it later. https://en.wikipedia.org/wiki/Taylor%27s_frozen_turbulence_hypothesis is the idea; the pattern itself is smoothed value noise (quintic fade) at two scales, not a measured turbulence spectrum.",
-    "gustAmplitude/minFactor": "TUNING GUESS: speed factor = 1 + gustAmplitude * n, n in about [-1, 1] (standard deviation about 0.35), so about +/-17% typical and about +/-40% in the strongest gusts and lulls at gust strength 1; floored at minFactor. No measured gust factor for Laser sailing is stored in docs/.",
-    "gustLengthM/fineLengthM/fineWeight": "TUNING GUESS: 90 m primary gust size plus a 35 m component at 0.4 weight, so a patch crosses a boat in a 7 kn wind in about 25 s.",
-    "gustVeerDeg": "TUNING GUESS: a full-strength gust turns the wind clockwise by up to this much (stronger gusts veer), scaled by the gust strength.",
+    "puffs": "TUNING GUESS: seeded gust puffs on a space-time lattice in a frame drifting at drift x mean wind; one puff per (cell, slot) with this probability; ellipse elongated along the wind, (1 - d^2)^3 falloff; envelope rises over riseFraction of its life and fades over the rest; strength = min + (max - min) u^3 (mostly moderate, occasionally strong); overlaps combine as cap (1 - prod(1 - c_i / cap)); veer uniform in +/- veerDeg. Speed factor is 1 + excess, never a lull.",
+    "steadyZone": "TUNING GUESS: gusts and slow shifts fade to zero inside innerM of the Westcove basin (berths, spawn grid, H1/H2) and are at full strength beyond outerM (buoy S at 665 m), smoothstep in between, so the tutorial sails in a steady north wind.",
     "shifts": "TUNING GUESS: slow time-only oscillation of the wind direction, a sum of two sine waves (5 deg / 280 s and 3 deg / 97 s) with seeded phases, scaled by the shift strength. Position independent.",
-    "visual": "VISUAL ESTIMATE, render only: gust speed factors are sampled from the same sim function into a 64 x 64 world-anchored single-channel texture with 10 m cells (about 640 m across, fading out over the last 6 cells); referenceDeviation 0.5 is the speed-factor deviation that fills the texture range. The water body colour darkens by up to darkenMax in gusts (ruffled water scatters light) and brightens by lullBrighten in lulls."
+    "visual": "VISUAL ESTIMATE, render only: the sim speed factor sampled into a 160 x 160 world-anchored texture of 12.5 m cells (2 km across, centred on the boat), byte = 255 (factor - 1) / referenceExcess (stronger excess saturates). The shader sharpens the soft puff falloff into a patch with a rim: smoothstep(edgeLow, edgeHigh) of the map value (about +2% / +6% wind), with stronger gusts kept a little stronger; noise drifting with the puffs frays the patch edges. Patches show fully to fadeStartM from the boat and fade out by fadeEndM. A patch is not painted: it is rougher, as wind ruffles water. The sea's own slopes grow by up to waveRough, and eight fine ripples (15-62 cm, within 45 deg of the mean downwind direction, RMS slope rippleSlope at full gust, at their real speed) appear (src/render/gustMap.ts). Ripples fade into unresolved roughness well before they get near pixel size: it broadens the sun glint (a wider, energy-conserving glitter toward the sun), lowers the sky reflection by fresnelDrop x that slope variance, and lifts the reflected sky direction by skyLift x the RMS slope, since the facets facing a low eye mirror higher, darker sky than the bright horizon: that is what makes a cat's paw read as a dark patch from the side. Mean-square slope of wind ripples is of order 0.01-0.03 at light winds (Cox and Munk 1954, from memory, not checked against the paper), which rippleSlope 0.12 sits in."
   }
 }

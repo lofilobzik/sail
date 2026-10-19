@@ -94,21 +94,30 @@ and direction exactly. Do not hardcode wind anywhere else. See L7 for gusts and 
   Values **[tune]** unless a reference gives them.
 
 ### L7. Environment and waves
-- Gusts and shifts (`sim/wind.ts`, `data/wind.json`, all **TUNING GUESS**, no measured Laser gust data):
-  `cfg.wind.gusts = { enabled, seed, gustScale, shiftScale }`, off in `defaultConfig()`, on in the browser
-  (`?gusts=0` off). The speed factor `windSpeedFactor` is `1 + 0.5 * gustScale * n`, floored at 0.25, where `n`
-  (about -1 to 1, standard deviation about 0.35) is smoothed value noise at 90 m and 35 m scales. The noise
-  is sampled at `position - meanWind * time` (frozen turbulence carried downwind), so the factor at `p` now
-  appears at `p + meanWind * dt` a time `dt` later. Direction is `fromDeg` plus a slow time-only oscillation
-  (two sines, 5 deg / 280 s and 3 deg / 97 s, seeded phases, scaled by `shiftScale`) plus a gust veer of
-  8 deg * `gustScale` * `n` (stronger gusts veer clockwise). Zero scale removes the corresponding part.
+- Gusts and shifts (`server/sim/wind.go`, render copy `sim/wind.ts`, `data/wind.json`, all **TUNING GUESS**, no
+  measured Laser gust data): `cfg.wind.gusts = { enabled, seed, gustScale, shiftScale }`, off in `defaultConfig()`,
+  on in the browser (`?gusts=0` off). The wind is layered `base × shifts × gusts`: the base is the mean wind
+  (a baked base map can replace it later). Gusts are discrete puffs, one per seeded space-time lattice cell
+  (250 m, 30 s slots, probability 0.9; a boat meets about 7 gusts per 10 minutes) in a frame drifting at 1.2 × the mean wind: an ellipse 50-90 m across
+  and twice as long downwind, `(1 - d²)³` falloff, rising over 20% of a 60-120 s life and fading over the rest.
+  Strength is 0.15-0.5 (mostly moderate), overlaps combine as `cap (1 - prod(1 - c_i / cap))` with cap 0.6, so
+  `windSpeedFactor` is `1 + excess`, never below 1. Puffs veer the wind by up to ±2 deg (shape-weighted mean).
+  `gustScale` scales strength, veer and cap. Direction is `fromDeg` plus a slow time-only oscillation (two
+  sines, 5 deg / 280 s and 3 deg / 97 s, seeded phases, scaled by `shiftScale`) plus the puff veer. Shifts and
+  gusts fade to zero (smoothstep, 650 m to 300 m) around the Westcove basin, so the berths, start and H1/H2
+  sail in the steady mean wind. Zero scale removes the corresponding part.
   Waves (`setWaveWind`) and cloud drift use the mean wind (`meanWind`), not the gusts; the debug readout shows the
   actual instantaneous direction and speed. `vmg` is still relative to the mean direction.
-  Changing the mean wind speed or direction at run time re-bases the carried pattern (it can jump), because
+  Changing the mean wind speed or direction at run time re-lays all puffs (the drift frame changes), because
   `getWind` is a pure function of position and time. Wind gradient with height remains a later drop-in.
-- Render: `render/gustMap.ts` samples `windSpeedFactor` into a 64 x 64 world-anchored texture (10 m cells,
-  about 640 m across) each frame; the water darkens up to 30% in gusts and brightens 8% in lulls. It is the
-  same function the sim uses, so the patches on the water are the gusts that will reach the boat.
+- Render: `render/gustMap.ts` rasterizes the same puffs into a 160 x 160 world-anchored texture (12.5 m cells,
+  2 km across, centred on the boat), exactly `windSpeedFactor` per texel before byte quantization (full range
+  at +15 % wind). The shader sharpens the soft puff falloff into patches with a rim (from about +2 % to +6 %
+  wind). Patches are not painted but ruffled, their edges frayed by noise that drifts with the puffs: the
+  sea's slopes grow a little and fine ripples (15-62 cm, within 45° of the mean downwind direction, moving at
+  their real 0.5-1 m/s) appear; ripples fade into smooth roughness well before pixel size: it broadens the sun glint, weakens the sky reflection and lifts the reflected sky direction (facets facing a low eye mirror higher, darker sky), so a patch reads brighter
+  toward the sun and darker from the side and away from it (fading out from 500 m to 950 m). It is the same function the sim
+  uses, so the patches on the water are the gusts that will reach the boat.
 - `sim/waves.ts` is the shared Gerstner model for CPU and shader. `data/waves.json` holds the spectrum,
   controls' bounds, pitch response and water mesh settings, with sources or **TUNING GUESS** labels.
 - Each component uses `k = 2 pi / L`, `omega = sqrt(g k)`, and phase

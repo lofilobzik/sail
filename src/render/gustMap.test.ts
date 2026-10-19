@@ -8,17 +8,19 @@ const wind: WindConfig = {
   speedKn: 7, fromDeg: 20,
   gusts: { enabled: true, seed: 1987, gustScale: 1, shiftScale: 1 },
 };
-const decode = (byte: number): number => 1 + ((byte - 127.5) / 127.5) * V.referenceDeviation;
+const decode = (byte: number): number => 1 + (byte / 255) * V.referenceExcess;
 
 describe('gust map', () => {
   it('stores the sim wind speed factor at each texel to byte precision, on a fixed world grid', () => {
     const map = new GustMap();
-    const boat = { x: 1234.5, z: -987.6 };
-    map.update(wind, boat, boat, 42);
-    for (const [i, j] of [[0, 0], [10, 20], [V.mapSize - 1, V.mapSize - 1], [31, 32]] as const) {
+    const boat = { x: 0, z: -600 }; // open water, gusty at t = 300
+    const t = 300;
+    map.update(wind, boat, boat, t);
+    expect(map.data.some((byte) => byte > 10)).toBe(true); // not an all-calm comparison
+    for (const [i, j] of [[0, 0], [40, 80], [159, 159], [79, 80]] as const) {
       const x = map.originX + i * V.mapCellM;
       const z = map.originZ + j * V.mapCellM;
-      const expected = windSpeedFactor({ x, z }, 42, wind);
+      const expected = windSpeedFactor({ x, z }, t, wind);
       expect(decode(map.data[j * V.mapSize + i]!)).toBeCloseTo(expected, 2);
     }
     // Render-local texel origin is the logical grid origin relative to the rebased boat.
@@ -64,8 +66,8 @@ describe('gust map', () => {
       const out = new Uint8Array(V.mapSize * V.mapSize);
       for (let j = 0; j < V.mapSize; j++) {
         for (let i = 0; i < V.mapSize; i++) {
-          const deviation = windSpeedFactor({ x: map.originX + i * V.mapCellM, z: map.originZ + j * V.mapCellM }, t, w) - 1;
-          out[j * V.mapSize + i] = Math.min(255, Math.max(0, Math.round(127.5 + (deviation * 127.5) / V.referenceDeviation)));
+          const factor = windSpeedFactor({ x: map.originX + i * V.mapCellM, z: map.originZ + j * V.mapCellM }, t, w);
+          out[j * V.mapSize + i] = Math.min(255, Math.max(0, Math.round((255 * (factor - 1)) / V.referenceExcess)));
         }
       }
       return out;

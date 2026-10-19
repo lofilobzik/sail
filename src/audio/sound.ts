@@ -4,11 +4,17 @@
  *   wind   band-passed noise that grows with apparent wind speed
  *   flog   the sail flapping: noise bursts at a flutter rate that rises with the apparent wind,
  *          as loud as the sail luffs, so an eased or pinching sail is heard before it is seen
- * Reads only the boat's speed, apparent wind and luffAmount. Browsers only allow audio after a
+ *   gusts  (gustCue.ts) a soft hiss and rush, panned from the side the puff comes from, swelling
+ *          over the last seconds before it reaches the boat; on arrival a sail-fill thump, a faint
+ *          hum from the control lines and louder hull water, all easing off as the puff leaves.
+ *          Kept quiet: the dark patches on the water are the main cue.
+ * Reads only the boat's speed, apparent wind, luffAmount and the gust cue. Browsers only allow audio after a
  * user gesture, so the graph is built on the first click or key press. All levels, frequencies and
  * rates are TUNING GUESS values chosen by ear.
  */
-const RAMP = 0.08; // s, smoothing time constant for every parameter change
+import { GUST_ONSET, type GustCue } from './gustCue';
+
+const RAMP = 0.08; // s, smoothing time constant for every parameter change except the gust layers'
 
 const WATER_FULL_SPEED = 3; // m/s at which the water noise is at full level and brightness
 const WATER_GAIN = 0.5;
@@ -29,6 +35,21 @@ const FLOG_BODY_HZ = 180; // the cloth's thump
 const FLOG_SNAP_HZ = 1900; // the crack of the leech
 const FLOG_SNAP_GAIN = 0.5;
 
+const GUST_RISE = 0.5; // s, time constant of gust layers getting louder
+const GUST_FALL = 1.5; // s, and of them easing off: a puff leaves more slowly than it arrives
+const APPROACH_GAIN = 0.05;
+const APPROACH_HISS_HZ = 2400; // high-pass of the water hiss of the ruffled patch
+const APPROACH_RUSH_HZ = 500; // band-pass centre of the wind rush
+const APPROACH_PAN = 0.7; // how far the cue sits to one side at most
+const HUM_GAIN = 0.015;
+// Aeolian tone of the control lines: f = Strouhal 0.2 * apparent wind / 8 mm line diameter.
+const HUM_HZ_PER_MS = 0.2 / 0.008;
+const HUM_DETUNE = 1.06; // a second line, slightly different, so the hum beats softly
+const FILL_GAIN = 0.35; // low-passed noise carries little energy
+const FILL_HZ = 140;
+const FILL_REARM = 0.03; // excess the boat must drop below before another fill can sound
+const WATER_GUST_BOOST = 0.6; // extra hull-water level at full gust, on top of the speed-up it causes
+
 export interface SoundInput {
   /** Boat speed through the water, m/s. */
   speed: number;
@@ -36,6 +57,7 @@ export interface SoundInput {
   apparentSpeed: number;
   /** 0 = the sail draws, 1 = fully luffing. */
   luffAmount: number;
+  gust: Readonly<GustCue>;
 }
 
 interface Graph {
@@ -47,10 +69,20 @@ interface Graph {
   windFilter: BiquadFilterNode;
   flogDepth: GainNode;
   flaps: OscillatorNode[];
+  approach: GainNode;
+  approachPan: StereoPannerNode;
+  hum: GainNode;
+  hums: OscillatorNode[];
+  fill: GainNode;
 }
 
 export class SailSound {
   private graph: Graph | null = null;
+  /** Last gust-layer targets, to pick the rise or fall time constant. */
+  private approachTarget = 0;
+  private humTarget = 0;
+  /** The sail has filled for the current gust; rearmed once the boat is out of it. */
+  private filled = false;
 
   constructor(
     private volume: number,
@@ -90,7 +122,8 @@ export class SailSound {
     if (!g || g.ctx.state !== 'running') return;
     const now = g.ctx.currentTime;
     const s = Math.min(Math.max(input.speed / WATER_FULL_SPEED, 0), 1);
-    g.water.gain.setTargetAtTime(WATER_GAIN * s ** 1.5, now, RAMP);
+    const gust = input.gust;
+    g.water.gain.setTargetAtTime(WATER_GAIN * s ** 1.5 * (1 + WATER_GUST_BOOST * gust.excess), now, RAMP);
     g.waterFilter.frequency.setTargetAtTime(WATER_FREQ[0] + (WATER_FREQ[1] - WATER_FREQ[0]) * s, now, RAMP);
 
     const aws = Math.max(input.apparentSpeed, 0);
@@ -104,6 +137,26 @@ export class SailSound {
     const rate = FLOG_RATE[0] + FLOG_RATE[1] * aws;
     g.flaps[0]!.frequency.setTargetAtTime(rate, now, RAMP);
     g.flaps[1]!.frequency.setTargetAtTime(rate * FLOG_SECOND_RATIO, now, RAMP);
+
+    const approach = APPROACH_GAIN * gust.approach;
+    g.approach.gain.setTargetAtTime(approach, now, approach > this.approachTarget ? GUST_RISE : GUST_FALL);
+    this.approachTarget = approach;
+    g.approachPan.pan.setTargetAtTime(APPROACH_PAN * gust.pan, now, GUST_RISE);
+    // The lines hum with the wind over them; only the gust brings it up to a just audible level.
+    const hum = HUM_GAIN * gust.excess * drive;
+    g.hum.gain.setTargetAtTime(hum, now, hum > this.humTarget ? GUST_RISE : GUST_FALL);
+    this.humTarget = hum;
+    const humHz = HUM_HZ_PER_MS * aws;
+    g.hums[0]!.frequency.setTargetAtTime(humHz, now, GUST_RISE);
+    g.hums[1]!.frequency.setTargetAtTime(humHz * HUM_DETUNE, now, GUST_RISE);
+    if (!this.filled && gust.excess >= GUST_ONSET) {
+      this.filled = true;
+      // A drawing sail loads up with a soft thump; a luffing one just flogs harder.
+      g.fill.gain.setTargetAtTime(FILL_GAIN * (1 - luff), now, 0.06);
+      g.fill.gain.setTargetAtTime(0, now + 0.25, 0.5);
+    } else if (gust.excess < FILL_REARM) {
+      this.filled = false;
+    }
   }
 
   private applyMaster(): void {
@@ -189,5 +242,44 @@ function build(): Graph {
   cloth.connect(snap).connect(snapGain).connect(gate);
   gate.connect(master);
 
-  return { ctx, master, water, waterFilter, wind, windFilter, flogDepth, flaps };
+  // Gust warning: the hiss of the ruffled patch plus a low wind rush, one panner for both.
+  const approach = ctx.createGain();
+  approach.gain.value = 0;
+  const approachPan = ctx.createStereoPanner();
+  const hiss = ctx.createBiquadFilter();
+  hiss.type = 'highpass';
+  hiss.frequency.value = APPROACH_HISS_HZ;
+  hiss.Q.value = 0.5;
+  const rush = ctx.createBiquadFilter();
+  rush.type = 'bandpass';
+  rush.frequency.value = APPROACH_RUSH_HZ;
+  rush.Q.value = 0.5;
+  const breeze = source(0.35);
+  breeze.connect(hiss).connect(approach);
+  breeze.connect(rush).connect(approach);
+  approach.connect(approachPan).connect(master);
+
+  // Line hum in the gust: two soft triangle tones.
+  const hum = ctx.createGain();
+  hum.gain.value = 0;
+  const hums = [0, 1].map(() => {
+    const o = ctx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.value = 0;
+    o.connect(hum);
+    o.start();
+    return o;
+  });
+  hum.connect(master);
+
+  // Sail fill: a low thump of noise, gated per gust in update.
+  const fill = ctx.createGain();
+  fill.gain.value = 0;
+  const fillFilter = ctx.createBiquadFilter();
+  fillFilter.type = 'lowpass';
+  fillFilter.frequency.value = FILL_HZ;
+  fillFilter.Q.value = 0.7;
+  source(1.7).connect(fillFilter).connect(fill).connect(master);
+
+  return { ctx, master, water, waterFilter, wind, windFilter, flogDepth, flaps, approach, approachPan, hum, hums, fill };
 }

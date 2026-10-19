@@ -70,11 +70,11 @@ type ModelOptions struct {
 	UprightResistance string `json:"uprightResistance"`
 }
 
-// GustConfig is seeded gusts and slow direction shifts layered on the mean wind (data/wind.json).
+// GustConfig is seeded gust puffs and slow direction shifts (data/wind.json).
 type GustConfig struct {
 	Enabled bool   `json:"enabled"`
 	Seed    uint32 `json:"seed"`
-	// Multiplier on gust speed variation and veer; 0 removes gusts.
+	// Multiplier on gust puff strength and veer; 0 removes gusts.
 	GustScale float64 `json:"gustScale"`
 	// Multiplier on the slow direction oscillation; 0 removes shifts.
 	ShiftScale float64 `json:"shiftScale"`

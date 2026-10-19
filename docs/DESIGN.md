@@ -542,7 +542,11 @@ The debug overlay is a developer tool, not a player aid, and is toggled off by d
 
 - **Sound** (`src/audio/sound.ts`): procedural, no samples. Water rush rises with boat speed, wind
   with apparent wind, and the sail flogs as loud as `luffAmount`, so a luffing sail is heard before
-  it is seen. Starts on the first click or key press (browser autoplay rules); the Esc menu mutes.
+  it is seen. Gusts (`src/audio/gustCue.ts`): a soft hiss and rush, panned from the side the puff
+  comes from, swells over the last 5 s before a puff the boat's course meets arrives; on arrival a
+  sail-fill thump, a faint line hum and louder hull water, easing off as it leaves. Kept quiet: the
+  patches on the water are the main cue. Starts on the first click or key press (browser autoplay
+  rules); the Esc menu mutes.
 - **First-time guidance** (`src/ui/lookGuide.ts`) shows where to look, never what to think: a
   "click to look" mouse glyph while the pointer is free, then one guide at a time, a chevron at the
   screen edge or a steady ring when on screen, each with one plain word naming what the part is for

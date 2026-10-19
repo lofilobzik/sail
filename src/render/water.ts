@@ -271,7 +271,13 @@ export function createWater(
         vec2 tangent = wakeSN.zw / max(length(wakeSN.zw), 1e-6);
         vec3 view = normalize(cameraPosition - waterPosition);
         float grazing = mix(${GRAZING_FLOOR.toFixed(2)}, 1.0, smoothstep(0.0, ${GRAZING_FULL.toFixed(2)}, view.y));
-        vec2 slope = grazing * (-normal.xz / normal.y)
+        // Gust patches (cat's paws) are not painted: the wind ruffles them. The sea's own slopes grow and
+        // fine wind-aligned ripples appear; ripples the pixel cannot resolve become unresolved roughness below.
+        vec2 worldPosition = waterLabel + renderOrigin;
+        float gust = gustAmount(waterPosition.xz, worldPosition);
+        vec3 ripples = gust > 0.0 ? gustRipples(worldPosition, waterTime, pixel) : vec3(0.0);
+        float gustVariance = gust * ripples.z;
+        vec2 slope = grazing * ((-normal.xz / normal.y) * (1.0 + GUST_WAVE_ROUGH * gust) + gust * ripples.xy)
           + kelvin.y * tangent + kelvin.z * vec2(-tangent.y, tangent.x);
         vec4 bowSample = wakeBowSample(wakePos);
         float bow = bowSample.r * wakeBowFilter(bowSample, pixel);
@@ -290,12 +296,17 @@ export function createWater(
         normal = normalize(vec3(-slope.x, 1.0, -slope.y));
 
         vec3 reflection = reflect(-view, normal);
-        // Schlick Fresnel: water/air normal-incidence reflectance from their indices.
-        float fresnel = ${WATER_F0.toExponential(16)} + (1.0 - ${WATER_F0.toExponential(16)})
-          * pow(1.0 - max(dot(normal, view), 0.0), 5.0);
+        // Schlick Fresnel: water/air normal-incidence reflectance from their indices. Unresolved gust
+        // roughness tilts facets toward the eye, so the rough patch reflects less sky: darker away from the sun.
+        float fresnel = (${WATER_F0.toExponential(16)} + (1.0 - ${WATER_F0.toExponential(16)})
+          * pow(1.0 - max(dot(normal, view), 0.0), 5.0)) / (1.0 + GUST_FRESNEL_DROP * gustVariance);
+        // Unresolved gust ripples are many small facets tilted every way; seen at a low angle, the ones
+        // toward the eye mirror sky from higher up, which is deeper and darker than the bright horizon, so a
+        // rough patch reads darker from the side. Lift the sky lookup by the facets' RMS slope.
+        vec3 skyDirection = normalize(reflection + vec3(0.0, GUST_SKY_LIFT * sqrt(gustVariance), 0.0));
         // The same sky as the dome, through its reflection cubemaps (sky.ts). Clouds fade in with the
         // reflectance (TUNING GUESS, data/sky.json) so steep, weakly reflecting views show the clear sky.
-        vec3 reflectedSky = mix(textureCube(skyReflectionClear, reflection).rgb, textureCube(skyReflectionCloudy, reflection).rgb,
+        vec3 reflectedSky = mix(textureCube(skyReflectionClear, skyDirection).rgb, textureCube(skyReflectionCloudy, skyDirection).rgb,
           smoothstep(${SKY.waterCloudFresnelFrom}, ${SKY.waterCloudFresnelFull}, fresnel));
         vec3 ambient = mix(hemisphereGround, hemisphereSky, normal.y * 0.5 + 0.5);
         // Shallows: one filtered fetch of the baked seabed, in logical world coordinates. Outside
@@ -313,21 +324,18 @@ export function createWater(
         float towardSun = max(dot(-view, sunDirection), 0.0);
         diffuse += scatterColour * sunColour * ${SCATTER_GAIN.toFixed(2)}
           * smoothstep(-0.3, 1.0, crestHeight) * (0.2 + 0.8 * towardSun * towardSun) * (1.0 - shallow);
-        // TUNING GUESS: broaden the specular lobe by the pixel's normal variance;
+        // TUNING GUESS: broaden the specular lobe by the pixel's normal variance (plus the unresolved gust
+        // ripples, so a rough patch glitters wider and brighter toward the sun);
         // preserve the cosine-power lobe's integrated energy instead of flashing
         // a narrow highlight on/off as it crosses a pixel.
         vec3 normalDx = dFdx(normal), normalDy = dFdy(normal);
-        float variance = dot(normalDx, normalDx) + dot(normalDy, normalDy);
+        float variance = dot(normalDx, normalDx) + dot(normalDy, normalDy) + gustVariance;
         float glintPower = ${SUN_SHININESS.toFixed(1)} / (1.0 + ${SUN_SHININESS.toFixed(1)} * variance);
         float glint = pow(max(dot(reflection, sunDirection), 0.0), glintPower)
           * (glintPower + 1.0) / ${(SUN_SHININESS + 1).toFixed(1)};
         // Over the shallows the bright bed keeps part of its colour even at grazing angles,
         // so shoals and beaches still read from a sitting eye height.
         vec3 colour = mix(diffuse, reflectedSky + sunColour * glint, fresnel * (1.0 - ${SHALLOW_GLANCE.toFixed(2)} * shallow));
-        // Gust patches (cat's paws): wind ruffles the surface, which scatters light, so the water
-        // darkens where the sim's wind is stronger; lulls are slightly smoother and brighter.
-        float gust = gustAmount(waterPosition.xz);
-        colour *= 1.0 - gustMapInfo.z * max(gust, 0.0) + gustMapInfo.w * max(-gust, 0.0);
         // Whitewater: diffuse, unpolished, so it replaces the reflective water colour.
         float foam = wakeLayers.z * wakeFoamAmount(wakePos, wakeSN, wakeProps, bow, bowSample.g, bowSample.b, pixel);
         vec3 foamColour = ${FOAM_ALBEDO.toFixed(3)} * (ambient + sunColour * max(dot(normal, sunDirection), 0.0));

@@ -8,7 +8,7 @@ import { BinocularInput } from './input/binoculars';
 import { NavigationInput } from './input/navigation';
 import { Navigation } from './nav/navigation';
 import { MemoryReadout } from './render/memory';
-import { Vector2 } from 'three';
+import { Vector2, Vector3 } from 'three';
 import { interpolatePose } from './render/pose';
 import { SceneView, type RenderPose } from './render/scene';
 import { ForceVectors } from './render/vectors';
@@ -20,6 +20,7 @@ import { joinServer, serverChoice } from './net/link';
 import { ZERO_OFFSET } from './net/correction';
 import type { RemotePose } from './net/remote';
 import { SailSound } from './audio/sound';
+import { gustCue, type GustCue } from './audio/gustCue';
 import { LookGuide } from './ui/lookGuide';
 import { Hints } from './ui/hints';
 import { FlyCamera } from './input/flyCamera';
@@ -38,6 +39,7 @@ import { BAY } from './sim/terrain';
 import { BINDINGS } from './input/bindings';
 import { GPU_LABELS } from './debug/gpuTimer';
 import { QUALITY, detectQuality } from './render/quality';
+import { BUILD_HASH } from './version';
 
 const START_SPEED = 1; // TUNING GUESS: initial boat speed, m/s
 const FRAME_SMOOTHING = 0.05; // exponential smoothing of the frame-time readout
@@ -61,7 +63,7 @@ function harbourStart(): BoatState {
 const boat = buildBoat();
 const params = new URLSearchParams(location.search);
 const opts = parseDevOptions(params);
-const physics = await fetch(new URL('wasm/sim.wasm', document.baseURI)).then(loadPhysics).catch((error: unknown) => {
+const physics = await fetch(new URL(`wasm/sim.wasm?v=${BUILD_HASH}`, document.baseURI)).then(loadPhysics).catch((error: unknown) => {
   const banner = document.createElement('div');
   banner.style.cssText =
     'position:fixed;top:8px;left:50%;transform:translateX(-50%);padding:4px 10px;z-index:20;' +
@@ -351,6 +353,8 @@ let speedOverGround = 0; // m/s, from the last fixed step (the GPS watch and dea
 let lastPose: RenderPose | null = null;
 let lastRemotes: ReadonlyMap<number, RemotePose> | undefined;
 const hudBuffer = new Vector2(); // drawing buffer size for the H overlay, reused every frame
+const listenerFacing = new Vector3(); // camera direction for panning the gust warning, reused every frame
+const gustSound: GustCue = { approach: 0, pan: 0, excess: 0 }; // reused every frame
 /** ?perf=1: per-frame rAF interval and frame() CPU time over the recorded window. */
 let perfWindow: { frame: number[]; cpu: number[]; done: () => void } | null = null;
 function frame(now: number): void {
@@ -436,7 +440,9 @@ function frame(now: number): void {
     },
     menu.open,
   );
-  sound.update({ speed: diagnostics.speed, apparentSpeed: diagnostics.apparent.speed, luffAmount });
+  view.camera.getWorldDirection(listenerFacing);
+  gustCue(curr, cfg.wind, listenerFacing.x, listenerFacing.z, gustSound);
+  sound.update({ speed: diagnostics.speed, apparentSpeed: diagnostics.apparent.speed, luffAmount, gust: gustSound });
 
   if (overlay.visible) vectors.update(diagnostics, view.boat.yaw.position, overlay.arrows);
   else vectors.hideAll();

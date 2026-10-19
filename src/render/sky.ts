@@ -20,7 +20,7 @@ const DOME_SEGMENTS: [number, number] = [32, 16]; // smooth horizon silhouette; 
 const SUN_LIGHT_DISTANCE = 100; // m: only the direction matters
 // Sky.js: evolve = time * cloudSpeed * 300 with cloudSpeed 0.00002, per second of sim time.
 const CLOUD_EVOLVE_RATE = 0.00002 * 300;
-const NOISE_SIZE = 256; // texels per side of the tiling cloud noise texture
+export const NOISE_SIZE = 256; // texels per side of the tiling cloud noise texture (gust patch edges reuse it)
 const NOISE_SEED = 1987; // TUNING GUESS: any seed gives a valid sky; fixed for repeatable looks
 // Cloud-plane offsets wrap here: 1000 * 2.56 and 300 * 2.56 are both whole texture periods, so
 // the fbm (x1000) and coverage (x300) lookups repeat exactly and the float offset stays small.

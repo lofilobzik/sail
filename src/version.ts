@@ -5,4 +5,7 @@
 declare const __APP_VERSION__: string;
 declare const __BUILD_HASH__: string;
 
-export const VERSION_LABEL = `Alpha v${__APP_VERSION__} · build ${__BUILD_HASH__}`;
+/** Short commit of this build, or "dev"; also versions the physics Wasm URL so a deploy never pairs new JS with an old binary. */
+export const BUILD_HASH = __BUILD_HASH__;
+
+export const VERSION_LABEL = `Alpha v${__APP_VERSION__} · build ${BUILD_HASH}`;

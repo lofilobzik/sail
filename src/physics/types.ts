@@ -105,11 +105,11 @@ export interface ModelOptions {
   uprightResistance: 'delft' | 'tank';
 }
 
-/** Seeded gusts and slow direction shifts layered on the mean wind (data/wind.json). */
+/** Seeded gust puffs and slow direction shifts (data/wind.json). */
 export interface GustConfig {
   enabled: boolean;
   seed: number;
-  /** Multiplier on gust speed variation and veer; 0 removes gusts. */
+  /** Multiplier on gust puff strength and veer; 0 removes gusts. */
   gustScale: number;
   /** Multiplier on the slow direction oscillation; 0 removes shifts. */
   shiftScale: number;

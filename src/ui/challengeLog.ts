@@ -50,7 +50,9 @@ export class ChallengeLog {
         if (this.isOpen) this.close();
         else if (opts.canOpen()) this.openLog();
       } else if (e.code === BINDINGS.menu.keys.toggle && this.isOpen) {
-        this.close();
+        // No recapture here: the browser's own Esc handling runs after this event and would drop a
+        // freshly taken pointer lock again, which opens the menu. A click on the sea resumes looking.
+        this.setOpen(false);
       }
     });
     document.addEventListener('pointerlockchange', () => {

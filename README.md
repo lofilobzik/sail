@@ -73,7 +73,8 @@ Offline debug-panel changes are normalized by Go; online config comes from the s
 `npm run build:wasm` generates `public/wasm/sim.wasm` and its matching Go runtime in
 `src/physics/wasm_exec.js`; neither is committed. Vite rebuilds after Go source changes, debouncing
 saves and retaining the previous working wasm on compiler errors.
-Production builds serve `wasm/sim.wasm` and bundle `wasm_exec.js` into the site's JavaScript.
+Production builds serve `wasm/sim.wasm` (fetched as `wasm/sim.wasm?v=<build hash>`, so caches never pair a
+new bundle with an old binary) and bundle `wasm_exec.js` into the site's JavaScript.
 
 Tests and tools:
 
